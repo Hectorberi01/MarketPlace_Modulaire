@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- SEUL projet référençable de l'extérieur : API in-process + integration events. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+  </ItemGroup>
+
+</Project>

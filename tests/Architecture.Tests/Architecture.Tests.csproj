@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Les analyseurs xUnit ne doivent pas casser le build des tests. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- On inspecte les assemblies des modules pour vérifier les frontières. -->
+    <ProjectReference Include="..\..\src\BuildingBlocks\Marketplace.BuildingBlocks.Domain\Marketplace.BuildingBlocks.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Marketplace.Modules.Catalog.Domain\Marketplace.Modules.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Marketplace.Modules.Catalog.Application\Marketplace.Modules.Catalog.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Marketplace.Modules.Catalog.Infrastructure\Marketplace.Modules.Catalog.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\Marketplace.Modules.Identity.Domain\Marketplace.Modules.Identity.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\Marketplace.Modules.Identity.Application\Marketplace.Modules.Identity.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\Marketplace.Modules.Identity.Infrastructure\Marketplace.Modules.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Sellers\Marketplace.Modules.Sellers.Domain\Marketplace.Modules.Sellers.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Sellers\Marketplace.Modules.Sellers.Application\Marketplace.Modules.Sellers.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Sellers\Marketplace.Modules.Sellers.Infrastructure\Marketplace.Modules.Sellers.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Offers\Marketplace.Modules.Offers.Domain\Marketplace.Modules.Offers.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Offers\Marketplace.Modules.Offers.Application\Marketplace.Modules.Offers.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Offers\Marketplace.Modules.Offers.Contracts\Marketplace.Modules.Offers.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Marketplace.Modules.Inventory.Domain\Marketplace.Modules.Inventory.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Marketplace.Modules.Inventory.Application\Marketplace.Modules.Inventory.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Marketplace.Modules.Inventory.Contracts\Marketplace.Modules.Inventory.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Pricing\Marketplace.Modules.Pricing.Domain\Marketplace.Modules.Pricing.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Pricing\Marketplace.Modules.Pricing.Application\Marketplace.Modules.Pricing.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Pricing\Marketplace.Modules.Pricing.Contracts\Marketplace.Modules.Pricing.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Cart\Marketplace.Modules.Cart.Domain\Marketplace.Modules.Cart.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Cart\Marketplace.Modules.Cart.Application\Marketplace.Modules.Cart.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Cart\Marketplace.Modules.Cart.Contracts\Marketplace.Modules.Cart.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Domain\Marketplace.Modules.Ordering.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Application\Marketplace.Modules.Ordering.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Domain\Marketplace.Modules.Payments.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Application\Marketplace.Modules.Payments.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Shipping\Marketplace.Modules.Shipping.Domain\Marketplace.Modules.Shipping.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Shipping\Marketplace.Modules.Shipping.Application\Marketplace.Modules.Shipping.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reviews\Marketplace.Modules.Reviews.Domain\Marketplace.Modules.Reviews.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reviews\Marketplace.Modules.Reviews.Application\Marketplace.Modules.Reviews.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Search\Marketplace.Modules.Search.Domain\Marketplace.Modules.Search.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Search\Marketplace.Modules.Search.Application\Marketplace.Modules.Search.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Notifications\Marketplace.Modules.Notifications.Domain\Marketplace.Modules.Notifications.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Notifications\Marketplace.Modules.Notifications.Application\Marketplace.Modules.Notifications.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Billing\Marketplace.Modules.Billing.Domain\Marketplace.Modules.Billing.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Billing\Marketplace.Modules.Billing.Application\Marketplace.Modules.Billing.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Settlement\Marketplace.Modules.Settlement.Domain\Marketplace.Modules.Settlement.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Settlement\Marketplace.Modules.Settlement.Application\Marketplace.Modules.Settlement.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Returns\Marketplace.Modules.Returns.Domain\Marketplace.Modules.Returns.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Returns\Marketplace.Modules.Returns.Application\Marketplace.Modules.Returns.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Disputes\Marketplace.Modules.Disputes.Domain\Marketplace.Modules.Disputes.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Disputes\Marketplace.Modules.Disputes.Application\Marketplace.Modules.Disputes.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Messaging\Marketplace.Modules.Messaging.Domain\Marketplace.Modules.Messaging.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Messaging\Marketplace.Modules.Messaging.Application\Marketplace.Modules.Messaging.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Wishlist\Marketplace.Modules.Wishlist.Domain\Marketplace.Modules.Wishlist.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Wishlist\Marketplace.Modules.Wishlist.Application\Marketplace.Modules.Wishlist.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Loyalty\Marketplace.Modules.Loyalty.Domain\Marketplace.Modules.Loyalty.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Loyalty\Marketplace.Modules.Loyalty.Application\Marketplace.Modules.Loyalty.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Tax\Marketplace.Modules.Tax.Domain\Marketplace.Modules.Tax.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Tax\Marketplace.Modules.Tax.Application\Marketplace.Modules.Tax.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Marketing\Marketplace.Modules.Marketing.Domain\Marketplace.Modules.Marketing.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Marketing\Marketplace.Modules.Marketing.Application\Marketplace.Modules.Marketing.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Recommendations\Marketplace.Modules.Recommendations.Domain\Marketplace.Modules.Recommendations.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Recommendations\Marketplace.Modules.Recommendations.Application\Marketplace.Modules.Recommendations.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Analytics\Marketplace.Modules.Analytics.Domain\Marketplace.Modules.Analytics.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Analytics\Marketplace.Modules.Analytics.Application\Marketplace.Modules.Analytics.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fraud\Marketplace.Modules.Fraud.Domain\Marketplace.Modules.Fraud.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fraud\Marketplace.Modules.Fraud.Application\Marketplace.Modules.Fraud.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NetArchTest.Rules" />
+  </ItemGroup>
+
+</Project>

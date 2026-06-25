@@ -1,0 +1,29 @@
+# Configuration STATIQUE de Traefik (montée en lecture seule dans le conteneur).
+# Les routers/services sont découverts via les labels Docker du compose ; les
+# middlewares partagés vivent dans le provider « file » (./dynamic).
+
+entryPoints:
+  web:
+    address: ":80"
+  traefik:
+    address: ":8080"
+
+# Dashboard de dev (insecure = exposé en clair sur l'entrypoint traefik:8080).
+# À désactiver / sécuriser avant tout environnement public.
+api:
+  dashboard: true
+  insecure: true
+
+providers:
+  # Provider « file » uniquement : aucun accès au socket Docker requis (évite les
+  # erreurs « Error response from daemon » selon le runtime Docker). Les routes
+  # vers les conteneurs sont déclarées explicitement dans ./dynamic/routers.yml,
+  # par nom de service Docker sur le réseau marketplace-net.
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

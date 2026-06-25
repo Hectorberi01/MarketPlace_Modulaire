@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Domain transverse : Result, Entity, AggregateRoot, ValueObject, IDomainEvent.
+    Ne référence RIEN. C'est la racine de la pyramide de dépendances.
+  -->
+
+</Project>

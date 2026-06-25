@@ -1,0 +1,40 @@
+using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Marketplace.BuildingBlocks.Infrastructure.Modularity;
+using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
+using Marketplace.Modules.Analytics.Application.Metrics;
+using Marketplace.Modules.Analytics.Domain.Metrics;
+using Marketplace.Modules.Analytics.Infrastructure.Persistence;
+using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
+
+namespace Marketplace.Modules.Analytics.Infrastructure;
+
+/// <summary>Enregistre le module Analytics : DbContext read model, repository, accrual consumer, outbox.</summary>
+public sealed class AnalyticsModuleInstaller : IModuleInstaller
+{
+    public string ModuleName => "Analytics";
+
+    public Assembly ApplicationAssembly => typeof(GetReportQuery).Assembly;
+
+    public void Install(IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("Marketplace")
+            ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");
+
+        services.AddDbContext<AnalyticsDbContext>(options =>
+            options.UseNpgsql(connectionString, npgsql =>
+                npgsql.MigrationsHistoryTable("__ef_migrations_history", AnalyticsDbContext.SchemaName)));
+
+        services.AddScoped<IAnalyticsUnitOfWork>(sp => sp.GetRequiredService<AnalyticsDbContext>());
+
+        services.AddScoped<IMetricSnapshotRepository, MetricSnapshotRepository>();
+
+        // Chorégraphie : accumulation des métriques à la confirmation de commande.
+        services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueMetricsOnOrderConfirmedHandler>();
+
+        services.AddHostedService<OutboxProcessor<AnalyticsDbContext>>();
+    }
+}

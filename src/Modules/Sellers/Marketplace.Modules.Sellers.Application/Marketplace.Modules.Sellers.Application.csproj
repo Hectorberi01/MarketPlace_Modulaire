@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Application Sellers. Référence son Domain + Contracts, les BuildingBlocks,
+       et les CONTRACTS du module Identity (lecture in-process autorisée). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Sellers.Domain\Marketplace.Modules.Sellers.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sellers.UnitTests" />
+  </ItemGroup>
+
+</Project>

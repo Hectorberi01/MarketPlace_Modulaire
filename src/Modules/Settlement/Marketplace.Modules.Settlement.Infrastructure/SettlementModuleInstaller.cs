@@ -1,0 +1,60 @@
+using System.Reflection;
+using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Marketplace.BuildingBlocks.Application.Abstractions;
+using Marketplace.BuildingBlocks.Domain.Events;
+using Marketplace.BuildingBlocks.Infrastructure.Modularity;
+using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
+using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
+using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
+using Marketplace.Modules.Settlement.Application.Abstractions;
+using Marketplace.Modules.Settlement.Application.Batches;
+using Marketplace.Modules.Settlement.Application.Batches.EventHandlers;
+using Marketplace.Modules.Settlement.Application.Earnings;
+using Marketplace.Modules.Settlement.Domain.Batches;
+using Marketplace.Modules.Settlement.Domain.Batches.Events;
+using Marketplace.Modules.Settlement.Domain.Earnings;
+using Marketplace.Modules.Settlement.Infrastructure.Persistence;
+
+namespace Marketplace.Modules.Settlement.Infrastructure;
+
+/// <summary>Enregistre le module Settlement : DbContext, repositories, accrual consumer, validators, outbox.</summary>
+public sealed class SettlementModuleInstaller : IModuleInstaller
+{
+    public string ModuleName => "Settlement";
+
+    public Assembly ApplicationAssembly => typeof(RunSettlementCommand).Assembly;
+
+    public void Install(IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("Marketplace")
+            ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");
+
+        services.AddDbContext<SettlementDbContext>(options =>
+            options.UseNpgsql(connectionString, npgsql =>
+                npgsql.MigrationsHistoryTable("__ef_migrations_history", SettlementDbContext.SchemaName)));
+
+        services.AddScoped<ISettlementUnitOfWork>(sp => sp.GetRequiredService<SettlementDbContext>());
+
+        services.AddScoped<ISellerEarningRepository, SellerEarningRepository>();
+        services.AddScoped<ISettlementBatchRepository, SettlementBatchRepository>();
+
+        services.AddScoped<IDomainEventHandler<PayoutPaidDomainEvent>, PayoutPaidDomainEventHandler>();
+
+        // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
+        services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueEarningsOnOrderConfirmedHandler>();
+
+        // Libération des gains (escrow levé) à la livraison confirmée → payables.
+        services.AddScoped<IIntegrationEventHandler<OrderDeliveredIntegrationEvent>, ReleaseEarningsOnOrderDeliveredHandler>();
+
+        // Affinage multi-vendeur : libération des gains d'un vendeur dès SA livraison.
+        services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, ReleaseSellerEarningsOnShipmentDeliveredHandler>();
+
+        services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
+
+        services.AddHostedService<OutboxProcessor<SettlementDbContext>>();
+    }
+}

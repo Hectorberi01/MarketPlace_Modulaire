@@ -1,0 +1,111 @@
+using Marketplace.BuildingBlocks.Domain.Primitives;
+using Marketplace.BuildingBlocks.Domain.Results;
+using Marketplace.Modules.Messaging.Domain.Conversations.Events;
+
+namespace Marketplace.Modules.Messaging.Domain.Conversations;
+
+/// <summary>
+/// Fil de discussion entre participants (acheteur ↔ vendeur, ou support),
+/// optionnellement rattaché à un contexte (produit, commande). Agrégat racine :
+/// possède ses messages.
+/// </summary>
+public sealed class Conversation : AggregateRoot<ConversationId>
+{
+    private readonly List<ConversationParticipant> _participants = new();
+    private readonly List<Message> _messages = new();
+
+    private Conversation()
+    {
+    }
+
+    private Conversation(ConversationId id, IEnumerable<Guid> participantIds, string? contextType, Guid? contextId)
+        : base(id)
+    {
+        foreach (var userId in participantIds.Distinct())
+        {
+            _participants.Add(new ConversationParticipant(Guid.NewGuid(), userId));
+        }
+
+        ContextType = contextType;
+        ContextId = contextId;
+        Status = ConversationStatus.Open;
+        LastMessageAtUtc = DateTime.UtcNow;
+    }
+
+    public IReadOnlyCollection<ConversationParticipant> Participants => _participants.AsReadOnly();
+    public IReadOnlyCollection<Guid> ParticipantIds => _participants.Select(p => p.UserId).ToList().AsReadOnly();
+    public string? ContextType { get; private set; }
+    public Guid? ContextId { get; private set; }
+    public ConversationStatus Status { get; private set; }
+    public DateTime LastMessageAtUtc { get; private set; }
+    public IReadOnlyCollection<Message> Messages => _messages.AsReadOnly();
+
+    public static Result<Conversation> Start(
+        IEnumerable<Guid> participantIds, string? contextType, Guid? contextId, Guid senderId, string initialBody)
+    {
+        var participants = participantIds?.Where(p => p != Guid.Empty).Distinct().ToList() ?? new List<Guid>();
+        if (participants.Count < 2)
+        {
+            return Error.Validation("messaging.participants_required", "Une conversation requiert au moins deux participants.");
+        }
+
+        if (!participants.Contains(senderId))
+        {
+            return Error.Validation("messaging.sender_not_participant", "L'expéditeur doit être un participant.");
+        }
+
+        if (string.IsNullOrWhiteSpace(initialBody))
+        {
+            return Error.Validation("messaging.body_required", "Le message initial est obligatoire.");
+        }
+
+        var conversation = new Conversation(ConversationId.New(), participants, contextType, contextId);
+        conversation._messages.Add(new Message(Guid.NewGuid(), senderId, initialBody.Trim(), Array.Empty<string>()));
+        conversation.Raise(new ConversationStartedDomainEvent(conversation.Id.Value, senderId));
+        return conversation;
+    }
+
+    public Result SendMessage(Guid senderId, string body, IEnumerable<string> attachments)
+    {
+        if (Status != ConversationStatus.Open)
+        {
+            return Result.Failure(Error.Conflict("messaging.not_open", "La conversation n'est pas ouverte."));
+        }
+
+        if (_participants.All(p => p.UserId != senderId))
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return Result.Failure(Error.Validation("messaging.body_required", "Le message ne peut pas être vide."));
+        }
+
+        var message = new Message(Guid.NewGuid(), senderId, body.Trim(), attachments ?? Array.Empty<string>());
+        _messages.Add(message);
+        LastMessageAtUtc = message.CreatedAtUtc;
+        Raise(new MessageSentDomainEvent(Id.Value, message.Id, senderId));
+        return Result.Success();
+    }
+
+    /// <summary>Marque comme lus les messages reçus par le lecteur (non envoyés par lui).</summary>
+    public Result MarkRead(Guid readerId)
+    {
+        if (_participants.All(p => p.UserId != readerId))
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+        }
+
+        foreach (var message in _messages.Where(m => m.SenderId != readerId && m.ReadAtUtc is null))
+        {
+            message.MarkRead();
+        }
+
+        return Result.Success();
+    }
+
+    public void Archive() => Status = ConversationStatus.Archived;
+
+    public void Block() => Status = ConversationStatus.Blocked;
+}

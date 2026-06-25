@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Infrastructure : EF Core, repositories, hasher BCrypt, JWT, TOTP, DI du
+       module. Référence Application + Domain + Contracts + BuildingBlocks.Infra. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Identity.Domain\Marketplace.Modules.Identity.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Identity.Application\Marketplace.Modules.Identity.Application.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Infrastructure\Marketplace.BuildingBlocks.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="BCrypt.Net-Next" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <PackageReference Include="Otp.NET" />
+  </ItemGroup>
+
+</Project>

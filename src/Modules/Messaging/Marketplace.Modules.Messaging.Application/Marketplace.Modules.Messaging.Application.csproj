@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Messaging.Domain\Marketplace.Modules.Messaging.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Messaging.Contracts\Marketplace.Modules.Messaging.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Messaging.UnitTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Contrats d'events inter-modules (le langage du bus).
+    Volontairement sans dépendance : un IntegrationEvent est un DTO pur,
+    sérialisable, qui survivra au passage in-process -> Kafka.
+  -->
+
+</Project>

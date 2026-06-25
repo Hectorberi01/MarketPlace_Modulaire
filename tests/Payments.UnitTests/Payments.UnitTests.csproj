@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Domain\Marketplace.Modules.Payments.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Application\Marketplace.Modules.Payments.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Infrastructure\Marketplace.Modules.Payments.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+</Project>

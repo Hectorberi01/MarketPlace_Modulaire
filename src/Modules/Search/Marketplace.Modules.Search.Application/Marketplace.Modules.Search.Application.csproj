@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Search.Domain\Marketplace.Modules.Search.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Search.Contracts\Marketplace.Modules.Search.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Offers\Marketplace.Modules.Offers.Contracts\Marketplace.Modules.Offers.Contracts.csproj" />
+    <ProjectReference Include="..\..\Reviews\Marketplace.Modules.Reviews.Contracts\Marketplace.Modules.Reviews.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Search.UnitTests" />
+  </ItemGroup>
+
+</Project>

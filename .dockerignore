@@ -1,0 +1,12 @@
+# Accélère le contexte de build Docker (la racine du dépôt est le contexte).
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.git/
+**/.github/
+**/*.user
+**/TestResults/
+**/node_modules/
+deploy/.env
+*.md

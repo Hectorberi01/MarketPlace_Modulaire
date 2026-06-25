@@ -1,0 +1,168 @@
+# Stack complète : Traefik (edge) → 4 BFF + monolithe Marketplace.Api, adossés à
+# Postgres et Redis. Traefik est le SEUL point d'entrée (port 80) ; il route par
+# hôte (api/mobile/web/seller/admin.localhost, chacun avec son Swagger) et par
+# préfixe sur http://localhost (/api, /mobile, /web, /seller, /admin).
+#
+# Démarrage :  cd deploy && cp .env.example .env && docker compose up --build
+# Dashboard Traefik : http://traefik.localhost  (ou http://localhost:8080)
+#
+# Les *.localhost résolvent vers 127.0.0.1 (navigateurs + curl --resolve).
+
+name: marketplace
+
+x-app-env: &app-env
+  ConnectionStrings__Marketplace: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-marketplace};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+  Redis__ConnectionString: "redis:6379"
+  Jwt__Issuer: "marketplace"
+  Jwt__Audience: "marketplace"
+  Jwt__SigningKey: "${JWT_SIGNING_KEY}"
+
+x-app-depends: &app-depends
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+x-healthcheck: &app-healthcheck
+  test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+  interval: 15s
+  timeout: 5s
+  retries: 10
+  start_period: 40s
+
+services:
+  # ---------------- Infrastructure ----------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [marketplace-net]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [marketplace-net]
+
+  # ---------------- Edge gateway ----------------
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    ports:
+      - "80:80"        # entrypoint web (clients)
+      - "8080:8080"    # dashboard Traefik (dev uniquement)
+    volumes:
+      # Plus de montage du socket Docker : routage via le provider « file ».
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+    networks: [marketplace-net]
+
+  # ---------------- Monolithe modulaire ----------------
+  api:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj
+        APP_DLL: Marketplace.Api.dll
+    environment:
+      <<: *app-env
+      # L'Api est le migrateur : elle applique les migrations de tous les modules
+      # au démarrage. Les BFF attendent qu'elle soit saine.
+      RunMigrationsAtStartup: "true"
+    depends_on: *app-depends
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+  # ---------------- BFF ----------------
+  bff-mobile:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj
+        APP_DLL: Marketplace.Bff.Mobile.dll
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+  bff-web:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj
+        APP_DLL: Marketplace.Bff.Web.dll
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+  bff-seller:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj
+        APP_DLL: Marketplace.Bff.Seller.dll
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+  bff-admin:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj
+        APP_DLL: Marketplace.Bff.Admin.dll
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+networks:
+  marketplace-net:
+    name: marketplace-net
+
+volumes:
+  pgdata:
+  redisdata:

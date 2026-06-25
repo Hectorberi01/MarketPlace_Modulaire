@@ -1,0 +1,32 @@
+# Configuration DYNAMIQUE (provider file) : middlewares partagés appliqués aux
+# routers via le label `...middlewares=edge-chain@file`.
+
+http:
+  middlewares:
+    # En-têtes de sécurité de base (durcir selon le contexte de déploiement).
+    sec-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Gateway: "traefik"
+
+    # Limitation de débit par client (moyenne req/s + rafale).
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+
+    # Compression des réponses.
+    gzip:
+      compress: {}
+
+    # Chaîne appliquée à toutes les routes de l'edge.
+    edge-chain:
+      chain:
+        middlewares:
+          - sec-headers
+          - rate-limit
+          - gzip

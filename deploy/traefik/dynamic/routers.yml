@@ -1,0 +1,88 @@
+# Routes déclaratives (provider file). Chaque surface est joignable de deux
+# façons : par hôte (xxx.localhost, avec Swagger) et par préfixe sur localhost.
+# Les services pointent vers les conteneurs par leur nom Docker (réseau interne,
+# port 8080). La chaîne de middlewares « edge-chain » vit dans middlewares.yml.
+
+http:
+  routers:
+    # --- Monolithe ---
+    api-host:
+      rule: "Host(`api.localhost`)"
+      entryPoints: [web]
+      service: api
+      middlewares: [edge-chain]
+    api-path:
+      rule: "Host(`localhost`) && PathPrefix(`/api`)"
+      entryPoints: [web]
+      service: api
+      middlewares: [edge-chain]
+
+    # --- BFF Mobile ---
+    mobile-host:
+      rule: "Host(`mobile.localhost`)"
+      entryPoints: [web]
+      service: mobile
+      middlewares: [edge-chain]
+    mobile-path:
+      rule: "Host(`localhost`) && PathPrefix(`/mobile`)"
+      entryPoints: [web]
+      service: mobile
+      middlewares: [edge-chain]
+
+    # --- BFF Web ---
+    web-host:
+      rule: "Host(`web.localhost`)"
+      entryPoints: [web]
+      service: web
+      middlewares: [edge-chain]
+    web-path:
+      rule: "Host(`localhost`) && PathPrefix(`/web`)"
+      entryPoints: [web]
+      service: web
+      middlewares: [edge-chain]
+
+    # --- BFF Vendeur ---
+    seller-host:
+      rule: "Host(`seller.localhost`)"
+      entryPoints: [web]
+      service: seller
+      middlewares: [edge-chain]
+    seller-path:
+      rule: "Host(`localhost`) && PathPrefix(`/seller`)"
+      entryPoints: [web]
+      service: seller
+      middlewares: [edge-chain]
+
+    # --- BFF Admin ---
+    admin-host:
+      rule: "Host(`admin.localhost`)"
+      entryPoints: [web]
+      service: admin
+      middlewares: [edge-chain]
+    admin-path:
+      rule: "Host(`localhost`) && PathPrefix(`/admin`)"
+      entryPoints: [web]
+      service: admin
+      middlewares: [edge-chain]
+
+  services:
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://api:8080"
+    mobile:
+      loadBalancer:
+        servers:
+          - url: "http://bff-mobile:8080"
+    web:
+      loadBalancer:
+        servers:
+          - url: "http://bff-web:8080"
+    seller:
+      loadBalancer:
+        servers:
+          - url: "http://bff-seller:8080"
+    admin:
+      loadBalancer:
+        servers:
+          - url: "http://bff-admin:8080"

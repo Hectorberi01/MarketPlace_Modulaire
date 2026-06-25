@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Disputes.Domain\Marketplace.Modules.Disputes.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Disputes.Contracts\Marketplace.Modules.Disputes.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Disputes.UnitTests" />
+  </ItemGroup>
+
+</Project>

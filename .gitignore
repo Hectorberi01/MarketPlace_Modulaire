@@ -1,0 +1,34 @@
+## .NET / Visual Studio
+bin/
+obj/
+.vs/
+*.user
+*.suo
+artifacts/
+
+## Rider
+.idea/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+*.dll
+*.exe
+*.pdb
+
+## Environnement local — secrets JAMAIS commités
+## Les appsettings.json (commités) ne contiennent que des placeholders ; les
+## vraies valeurs locales vivent dans des overrides Development ignorés ci-dessous.
+appsettings.Development.json
+appsettings.*.local.json
+appsettings.Local.json
+.env
+*.env
+!*.env.example
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain du module Catalog : entités, VOs, domain events. Référence
+       UNIQUEMENT BuildingBlocks.Domain (vérifié par Architecture.Tests). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Domain\Marketplace.BuildingBlocks.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

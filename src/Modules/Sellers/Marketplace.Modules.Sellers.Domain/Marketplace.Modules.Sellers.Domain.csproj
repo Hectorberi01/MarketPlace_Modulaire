@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain du module Sellers. Référence UNIQUEMENT BuildingBlocks.Domain. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Domain\Marketplace.BuildingBlocks.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

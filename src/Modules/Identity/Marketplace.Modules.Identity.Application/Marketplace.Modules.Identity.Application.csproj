@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Application : commands/queries/handlers/validators + abstractions d'auth
+       (hasher, JWT, TOTP). Référence Domain + Contracts + BuildingBlocks. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Identity.Domain\Marketplace.Modules.Identity.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <!-- Handlers internes : visibles aux tests et à l'Infrastructure (DI). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Identity.UnitTests" />
+    <InternalsVisibleTo Include="Marketplace.Modules.Identity.Infrastructure" />
+  </ItemGroup>
+
+</Project>

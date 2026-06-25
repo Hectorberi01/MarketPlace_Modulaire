@@ -1,0 +1,33 @@
+using Microsoft.EntityFrameworkCore;
+using Marketplace.Modules.Notifications.Domain.Notifications;
+
+namespace Marketplace.Modules.Notifications.Infrastructure.Persistence;
+
+internal sealed class NotificationRepository : INotificationRepository
+{
+    private readonly NotificationsDbContext _dbContext;
+
+    public NotificationRepository(NotificationsDbContext dbContext) => _dbContext = dbContext;
+
+    public async Task AddAsync(Notification notification, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications.AddAsync(notification, cancellationToken);
+
+    public async Task<Notification?> GetByIdAsync(NotificationId id, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications
+            .Where(n => n.RecipientUserId == recipientUserId)
+            .OrderByDescending(n => n.CreatedAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+    public async Task<int> CountUnreadAsync(Guid recipientUserId, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications
+            .CountAsync(n => n.RecipientUserId == recipientUserId && n.Status != NotificationStatus.Read, cancellationToken);
+
+    public async Task<IReadOnlyList<Notification>> ListUnreadAsync(Guid recipientUserId, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications
+            .Where(n => n.RecipientUserId == recipientUserId && n.Status != NotificationStatus.Read)
+            .ToListAsync(cancellationToken);
+}

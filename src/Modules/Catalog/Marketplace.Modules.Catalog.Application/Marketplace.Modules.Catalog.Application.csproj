@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Application : commands/queries/handlers/validators. Référence le Domain et
+       les Contracts du module + les BuildingBlocks applicatifs. Jamais EF Core. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Catalog.Domain\Marketplace.Modules.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <!-- Les handlers internes sont testables par le projet de tests unitaires. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Catalog.UnitTests" />
+  </ItemGroup>
+
+</Project>

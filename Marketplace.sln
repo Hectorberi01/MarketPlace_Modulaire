@@ -1,0 +1,1066 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{11111111-0000-0000-0000-000000000001}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Bootstrap", "Bootstrap", "{11111111-0000-0000-0000-000000000002}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BuildingBlocks", "BuildingBlocks", "{11111111-0000-0000-0000-000000000003}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Modules", "Modules", "{11111111-0000-0000-0000-000000000004}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Catalog", "Catalog", "{11111111-0000-0000-0000-000000000005}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{11111111-0000-0000-0000-000000000006}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Api", "src\Bootstrap\Marketplace.Api\Marketplace.Api.csproj", "{22222222-0000-0000-0000-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.BuildingBlocks.Domain", "src\BuildingBlocks\Marketplace.BuildingBlocks.Domain\Marketplace.BuildingBlocks.Domain.csproj", "{22222222-0000-0000-0000-000000000002}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.BuildingBlocks.Application", "src\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj", "{22222222-0000-0000-0000-000000000003}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.BuildingBlocks.Infrastructure", "src\BuildingBlocks\Marketplace.BuildingBlocks.Infrastructure\Marketplace.BuildingBlocks.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000004}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.BuildingBlocks.IntegrationEvents", "src\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj", "{22222222-0000-0000-0000-000000000005}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Catalog.Domain", "src\Modules\Catalog\Marketplace.Modules.Catalog.Domain\Marketplace.Modules.Catalog.Domain.csproj", "{22222222-0000-0000-0000-000000000006}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Catalog.Application", "src\Modules\Catalog\Marketplace.Modules.Catalog.Application\Marketplace.Modules.Catalog.Application.csproj", "{22222222-0000-0000-0000-000000000007}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Catalog.Infrastructure", "src\Modules\Catalog\Marketplace.Modules.Catalog.Infrastructure\Marketplace.Modules.Catalog.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000008}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Catalog.Contracts", "src\Modules\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj", "{22222222-0000-0000-0000-000000000009}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Catalog.UnitTests", "tests\Catalog.UnitTests\Catalog.UnitTests.csproj", "{22222222-0000-0000-0000-00000000000A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Catalog.IntegrationTests", "tests\Catalog.IntegrationTests\Catalog.IntegrationTests.csproj", "{22222222-0000-0000-0000-00000000000B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Architecture.Tests", "tests\Architecture.Tests\Architecture.Tests.csproj", "{22222222-0000-0000-0000-00000000000C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Identity", "Identity", "{11111111-0000-0000-0000-000000000007}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Identity.Domain", "src\Modules\Identity\Marketplace.Modules.Identity.Domain\Marketplace.Modules.Identity.Domain.csproj", "{22222222-0000-0000-0000-00000000000D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Identity.Application", "src\Modules\Identity\Marketplace.Modules.Identity.Application\Marketplace.Modules.Identity.Application.csproj", "{22222222-0000-0000-0000-00000000000E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Identity.Infrastructure", "src\Modules\Identity\Marketplace.Modules.Identity.Infrastructure\Marketplace.Modules.Identity.Infrastructure.csproj", "{22222222-0000-0000-0000-00000000000F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Identity.Contracts", "src\Modules\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj", "{22222222-0000-0000-0000-000000000010}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Identity.UnitTests", "tests\Identity.UnitTests\Identity.UnitTests.csproj", "{22222222-0000-0000-0000-000000000011}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sellers", "Sellers", "{11111111-0000-0000-0000-000000000008}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Sellers.Domain", "src\Modules\Sellers\Marketplace.Modules.Sellers.Domain\Marketplace.Modules.Sellers.Domain.csproj", "{22222222-0000-0000-0000-000000000012}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Sellers.Application", "src\Modules\Sellers\Marketplace.Modules.Sellers.Application\Marketplace.Modules.Sellers.Application.csproj", "{22222222-0000-0000-0000-000000000013}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Sellers.Infrastructure", "src\Modules\Sellers\Marketplace.Modules.Sellers.Infrastructure\Marketplace.Modules.Sellers.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000014}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Sellers.Contracts", "src\Modules\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj", "{22222222-0000-0000-0000-000000000015}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sellers.UnitTests", "tests\Sellers.UnitTests\Sellers.UnitTests.csproj", "{22222222-0000-0000-0000-000000000016}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Offers", "Offers", "{11111111-0000-0000-0000-000000000009}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Inventory", "Inventory", "{11111111-0000-0000-0000-00000000000A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Offers.Domain", "src\Modules\Offers\Marketplace.Modules.Offers.Domain\Marketplace.Modules.Offers.Domain.csproj", "{22222222-0000-0000-0000-000000000017}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Offers.Application", "src\Modules\Offers\Marketplace.Modules.Offers.Application\Marketplace.Modules.Offers.Application.csproj", "{22222222-0000-0000-0000-000000000018}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Offers.Infrastructure", "src\Modules\Offers\Marketplace.Modules.Offers.Infrastructure\Marketplace.Modules.Offers.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000019}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Offers.Contracts", "src\Modules\Offers\Marketplace.Modules.Offers.Contracts\Marketplace.Modules.Offers.Contracts.csproj", "{22222222-0000-0000-0000-00000000001A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Offers.UnitTests", "tests\Offers.UnitTests\Offers.UnitTests.csproj", "{22222222-0000-0000-0000-00000000001B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Inventory.Domain", "src\Modules\Inventory\Marketplace.Modules.Inventory.Domain\Marketplace.Modules.Inventory.Domain.csproj", "{22222222-0000-0000-0000-00000000001C}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Inventory.Application", "src\Modules\Inventory\Marketplace.Modules.Inventory.Application\Marketplace.Modules.Inventory.Application.csproj", "{22222222-0000-0000-0000-00000000001D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Inventory.Infrastructure", "src\Modules\Inventory\Marketplace.Modules.Inventory.Infrastructure\Marketplace.Modules.Inventory.Infrastructure.csproj", "{22222222-0000-0000-0000-00000000001E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Inventory.Contracts", "src\Modules\Inventory\Marketplace.Modules.Inventory.Contracts\Marketplace.Modules.Inventory.Contracts.csproj", "{22222222-0000-0000-0000-00000000001F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Inventory.UnitTests", "tests\Inventory.UnitTests\Inventory.UnitTests.csproj", "{22222222-0000-0000-0000-000000000020}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Pricing", "Pricing", "{11111111-0000-0000-0000-00000000000B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Pricing.Domain", "src\Modules\Pricing\Marketplace.Modules.Pricing.Domain\Marketplace.Modules.Pricing.Domain.csproj", "{22222222-0000-0000-0000-000000000021}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Pricing.Application", "src\Modules\Pricing\Marketplace.Modules.Pricing.Application\Marketplace.Modules.Pricing.Application.csproj", "{22222222-0000-0000-0000-000000000022}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Pricing.Infrastructure", "src\Modules\Pricing\Marketplace.Modules.Pricing.Infrastructure\Marketplace.Modules.Pricing.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000023}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Pricing.Contracts", "src\Modules\Pricing\Marketplace.Modules.Pricing.Contracts\Marketplace.Modules.Pricing.Contracts.csproj", "{22222222-0000-0000-0000-000000000024}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Pricing.UnitTests", "tests\Pricing.UnitTests\Pricing.UnitTests.csproj", "{22222222-0000-0000-0000-000000000025}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Cart", "Cart", "{11111111-0000-0000-0000-00000000000C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Ordering", "Ordering", "{11111111-0000-0000-0000-00000000000D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Cart.Domain", "src\Modules\Cart\Marketplace.Modules.Cart.Domain\Marketplace.Modules.Cart.Domain.csproj", "{22222222-0000-0000-0000-000000000031}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Cart.Application", "src\Modules\Cart\Marketplace.Modules.Cart.Application\Marketplace.Modules.Cart.Application.csproj", "{22222222-0000-0000-0000-000000000032}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Cart.Infrastructure", "src\Modules\Cart\Marketplace.Modules.Cart.Infrastructure\Marketplace.Modules.Cart.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000033}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Cart.Contracts", "src\Modules\Cart\Marketplace.Modules.Cart.Contracts\Marketplace.Modules.Cart.Contracts.csproj", "{22222222-0000-0000-0000-000000000034}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Cart.UnitTests", "tests\Cart.UnitTests\Cart.UnitTests.csproj", "{22222222-0000-0000-0000-000000000035}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Ordering.Domain", "src\Modules\Ordering\Marketplace.Modules.Ordering.Domain\Marketplace.Modules.Ordering.Domain.csproj", "{22222222-0000-0000-0000-000000000041}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Ordering.Application", "src\Modules\Ordering\Marketplace.Modules.Ordering.Application\Marketplace.Modules.Ordering.Application.csproj", "{22222222-0000-0000-0000-000000000042}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Ordering.Infrastructure", "src\Modules\Ordering\Marketplace.Modules.Ordering.Infrastructure\Marketplace.Modules.Ordering.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000043}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Ordering.Contracts", "src\Modules\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj", "{22222222-0000-0000-0000-000000000044}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ordering.UnitTests", "tests\Ordering.UnitTests\Ordering.UnitTests.csproj", "{22222222-0000-0000-0000-000000000045}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Payments", "Payments", "{11111111-0000-0000-0000-00000000000E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Shipping", "Shipping", "{11111111-0000-0000-0000-00000000000F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Payments.Domain", "src\Modules\Payments\Marketplace.Modules.Payments.Domain\Marketplace.Modules.Payments.Domain.csproj", "{22222222-0000-0000-0000-000000000051}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Payments.Application", "src\Modules\Payments\Marketplace.Modules.Payments.Application\Marketplace.Modules.Payments.Application.csproj", "{22222222-0000-0000-0000-000000000052}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Payments.Infrastructure", "src\Modules\Payments\Marketplace.Modules.Payments.Infrastructure\Marketplace.Modules.Payments.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000053}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Payments.Contracts", "src\Modules\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj", "{22222222-0000-0000-0000-000000000054}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Payments.UnitTests", "tests\Payments.UnitTests\Payments.UnitTests.csproj", "{22222222-0000-0000-0000-000000000055}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Shipping.Domain", "src\Modules\Shipping\Marketplace.Modules.Shipping.Domain\Marketplace.Modules.Shipping.Domain.csproj", "{22222222-0000-0000-0000-000000000061}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Shipping.Application", "src\Modules\Shipping\Marketplace.Modules.Shipping.Application\Marketplace.Modules.Shipping.Application.csproj", "{22222222-0000-0000-0000-000000000062}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Shipping.Infrastructure", "src\Modules\Shipping\Marketplace.Modules.Shipping.Infrastructure\Marketplace.Modules.Shipping.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000063}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Shipping.Contracts", "src\Modules\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj", "{22222222-0000-0000-0000-000000000064}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Shipping.UnitTests", "tests\Shipping.UnitTests\Shipping.UnitTests.csproj", "{22222222-0000-0000-0000-000000000065}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Reviews", "Reviews", "{11111111-0000-0000-0000-000000000010}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Search", "Search", "{11111111-0000-0000-0000-000000000011}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Notifications", "Notifications", "{11111111-0000-0000-0000-000000000012}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Reviews.Domain", "src\Modules\Reviews\Marketplace.Modules.Reviews.Domain\Marketplace.Modules.Reviews.Domain.csproj", "{22222222-0000-0000-0000-000000000071}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Reviews.Application", "src\Modules\Reviews\Marketplace.Modules.Reviews.Application\Marketplace.Modules.Reviews.Application.csproj", "{22222222-0000-0000-0000-000000000072}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Reviews.Infrastructure", "src\Modules\Reviews\Marketplace.Modules.Reviews.Infrastructure\Marketplace.Modules.Reviews.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000073}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Reviews.Contracts", "src\Modules\Reviews\Marketplace.Modules.Reviews.Contracts\Marketplace.Modules.Reviews.Contracts.csproj", "{22222222-0000-0000-0000-000000000074}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reviews.UnitTests", "tests\Reviews.UnitTests\Reviews.UnitTests.csproj", "{22222222-0000-0000-0000-000000000075}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Search.Domain", "src\Modules\Search\Marketplace.Modules.Search.Domain\Marketplace.Modules.Search.Domain.csproj", "{22222222-0000-0000-0000-000000000081}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Search.Application", "src\Modules\Search\Marketplace.Modules.Search.Application\Marketplace.Modules.Search.Application.csproj", "{22222222-0000-0000-0000-000000000082}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Search.Infrastructure", "src\Modules\Search\Marketplace.Modules.Search.Infrastructure\Marketplace.Modules.Search.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000083}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Search.Contracts", "src\Modules\Search\Marketplace.Modules.Search.Contracts\Marketplace.Modules.Search.Contracts.csproj", "{22222222-0000-0000-0000-000000000084}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Search.UnitTests", "tests\Search.UnitTests\Search.UnitTests.csproj", "{22222222-0000-0000-0000-000000000085}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Notifications.Domain", "src\Modules\Notifications\Marketplace.Modules.Notifications.Domain\Marketplace.Modules.Notifications.Domain.csproj", "{22222222-0000-0000-0000-000000000091}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Notifications.Application", "src\Modules\Notifications\Marketplace.Modules.Notifications.Application\Marketplace.Modules.Notifications.Application.csproj", "{22222222-0000-0000-0000-000000000092}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Notifications.Infrastructure", "src\Modules\Notifications\Marketplace.Modules.Notifications.Infrastructure\Marketplace.Modules.Notifications.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000093}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Notifications.Contracts", "src\Modules\Notifications\Marketplace.Modules.Notifications.Contracts\Marketplace.Modules.Notifications.Contracts.csproj", "{22222222-0000-0000-0000-000000000094}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Notifications.UnitTests", "tests\Notifications.UnitTests\Notifications.UnitTests.csproj", "{22222222-0000-0000-0000-000000000095}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Billing", "Billing", "{11111111-0000-0000-0000-000000000013}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Settlement", "Settlement", "{11111111-0000-0000-0000-000000000014}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Billing.Domain", "src\Modules\Billing\Marketplace.Modules.Billing.Domain\Marketplace.Modules.Billing.Domain.csproj", "{22222222-0000-0000-0000-000000000101}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Billing.Application", "src\Modules\Billing\Marketplace.Modules.Billing.Application\Marketplace.Modules.Billing.Application.csproj", "{22222222-0000-0000-0000-000000000102}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Billing.Infrastructure", "src\Modules\Billing\Marketplace.Modules.Billing.Infrastructure\Marketplace.Modules.Billing.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000103}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Billing.Contracts", "src\Modules\Billing\Marketplace.Modules.Billing.Contracts\Marketplace.Modules.Billing.Contracts.csproj", "{22222222-0000-0000-0000-000000000104}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Billing.UnitTests", "tests\Billing.UnitTests\Billing.UnitTests.csproj", "{22222222-0000-0000-0000-000000000105}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Settlement.Domain", "src\Modules\Settlement\Marketplace.Modules.Settlement.Domain\Marketplace.Modules.Settlement.Domain.csproj", "{22222222-0000-0000-0000-000000000111}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Settlement.Application", "src\Modules\Settlement\Marketplace.Modules.Settlement.Application\Marketplace.Modules.Settlement.Application.csproj", "{22222222-0000-0000-0000-000000000112}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Settlement.Infrastructure", "src\Modules\Settlement\Marketplace.Modules.Settlement.Infrastructure\Marketplace.Modules.Settlement.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000113}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Settlement.Contracts", "src\Modules\Settlement\Marketplace.Modules.Settlement.Contracts\Marketplace.Modules.Settlement.Contracts.csproj", "{22222222-0000-0000-0000-000000000114}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Settlement.UnitTests", "tests\Settlement.UnitTests\Settlement.UnitTests.csproj", "{22222222-0000-0000-0000-000000000115}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Returns", "Returns", "{11111111-0000-0000-0000-000000000015}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Disputes", "Disputes", "{11111111-0000-0000-0000-000000000016}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Returns.Domain", "src\Modules\Returns\Marketplace.Modules.Returns.Domain\Marketplace.Modules.Returns.Domain.csproj", "{22222222-0000-0000-0000-000000000121}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Returns.Application", "src\Modules\Returns\Marketplace.Modules.Returns.Application\Marketplace.Modules.Returns.Application.csproj", "{22222222-0000-0000-0000-000000000122}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Returns.Infrastructure", "src\Modules\Returns\Marketplace.Modules.Returns.Infrastructure\Marketplace.Modules.Returns.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000123}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Returns.Contracts", "src\Modules\Returns\Marketplace.Modules.Returns.Contracts\Marketplace.Modules.Returns.Contracts.csproj", "{22222222-0000-0000-0000-000000000124}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Returns.UnitTests", "tests\Returns.UnitTests\Returns.UnitTests.csproj", "{22222222-0000-0000-0000-000000000125}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Disputes.Domain", "src\Modules\Disputes\Marketplace.Modules.Disputes.Domain\Marketplace.Modules.Disputes.Domain.csproj", "{22222222-0000-0000-0000-000000000131}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Disputes.Application", "src\Modules\Disputes\Marketplace.Modules.Disputes.Application\Marketplace.Modules.Disputes.Application.csproj", "{22222222-0000-0000-0000-000000000132}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Disputes.Infrastructure", "src\Modules\Disputes\Marketplace.Modules.Disputes.Infrastructure\Marketplace.Modules.Disputes.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000133}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Disputes.Contracts", "src\Modules\Disputes\Marketplace.Modules.Disputes.Contracts\Marketplace.Modules.Disputes.Contracts.csproj", "{22222222-0000-0000-0000-000000000134}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Disputes.UnitTests", "tests\Disputes.UnitTests\Disputes.UnitTests.csproj", "{22222222-0000-0000-0000-000000000135}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Messaging", "Messaging", "{11111111-0000-0000-0000-000000000017}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Wishlist", "Wishlist", "{11111111-0000-0000-0000-000000000018}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Loyalty", "Loyalty", "{11111111-0000-0000-0000-000000000019}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Messaging.Domain", "src\Modules\Messaging\Marketplace.Modules.Messaging.Domain\Marketplace.Modules.Messaging.Domain.csproj", "{22222222-0000-0000-0000-000000000141}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Messaging.Application", "src\Modules\Messaging\Marketplace.Modules.Messaging.Application\Marketplace.Modules.Messaging.Application.csproj", "{22222222-0000-0000-0000-000000000142}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Messaging.Infrastructure", "src\Modules\Messaging\Marketplace.Modules.Messaging.Infrastructure\Marketplace.Modules.Messaging.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000143}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Messaging.Contracts", "src\Modules\Messaging\Marketplace.Modules.Messaging.Contracts\Marketplace.Modules.Messaging.Contracts.csproj", "{22222222-0000-0000-0000-000000000144}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Messaging.UnitTests", "tests\Messaging.UnitTests\Messaging.UnitTests.csproj", "{22222222-0000-0000-0000-000000000145}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Wishlist.Domain", "src\Modules\Wishlist\Marketplace.Modules.Wishlist.Domain\Marketplace.Modules.Wishlist.Domain.csproj", "{22222222-0000-0000-0000-000000000151}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Wishlist.Application", "src\Modules\Wishlist\Marketplace.Modules.Wishlist.Application\Marketplace.Modules.Wishlist.Application.csproj", "{22222222-0000-0000-0000-000000000152}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Wishlist.Infrastructure", "src\Modules\Wishlist\Marketplace.Modules.Wishlist.Infrastructure\Marketplace.Modules.Wishlist.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000153}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Wishlist.Contracts", "src\Modules\Wishlist\Marketplace.Modules.Wishlist.Contracts\Marketplace.Modules.Wishlist.Contracts.csproj", "{22222222-0000-0000-0000-000000000154}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Wishlist.UnitTests", "tests\Wishlist.UnitTests\Wishlist.UnitTests.csproj", "{22222222-0000-0000-0000-000000000155}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Loyalty.Domain", "src\Modules\Loyalty\Marketplace.Modules.Loyalty.Domain\Marketplace.Modules.Loyalty.Domain.csproj", "{22222222-0000-0000-0000-000000000161}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Loyalty.Application", "src\Modules\Loyalty\Marketplace.Modules.Loyalty.Application\Marketplace.Modules.Loyalty.Application.csproj", "{22222222-0000-0000-0000-000000000162}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Loyalty.Infrastructure", "src\Modules\Loyalty\Marketplace.Modules.Loyalty.Infrastructure\Marketplace.Modules.Loyalty.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000163}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Loyalty.Contracts", "src\Modules\Loyalty\Marketplace.Modules.Loyalty.Contracts\Marketplace.Modules.Loyalty.Contracts.csproj", "{22222222-0000-0000-0000-000000000164}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Loyalty.UnitTests", "tests\Loyalty.UnitTests\Loyalty.UnitTests.csproj", "{22222222-0000-0000-0000-000000000165}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tax", "Tax", "{11111111-0000-0000-0000-00000000001A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Marketing", "Marketing", "{11111111-0000-0000-0000-00000000001B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Tax.Domain", "src\Modules\Tax\Marketplace.Modules.Tax.Domain\Marketplace.Modules.Tax.Domain.csproj", "{22222222-0000-0000-0000-000000000171}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Tax.Application", "src\Modules\Tax\Marketplace.Modules.Tax.Application\Marketplace.Modules.Tax.Application.csproj", "{22222222-0000-0000-0000-000000000172}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Tax.Infrastructure", "src\Modules\Tax\Marketplace.Modules.Tax.Infrastructure\Marketplace.Modules.Tax.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000173}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Tax.Contracts", "src\Modules\Tax\Marketplace.Modules.Tax.Contracts\Marketplace.Modules.Tax.Contracts.csproj", "{22222222-0000-0000-0000-000000000174}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tax.UnitTests", "tests\Tax.UnitTests\Tax.UnitTests.csproj", "{22222222-0000-0000-0000-000000000175}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Marketing.Domain", "src\Modules\Marketing\Marketplace.Modules.Marketing.Domain\Marketplace.Modules.Marketing.Domain.csproj", "{22222222-0000-0000-0000-000000000181}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Marketing.Application", "src\Modules\Marketing\Marketplace.Modules.Marketing.Application\Marketplace.Modules.Marketing.Application.csproj", "{22222222-0000-0000-0000-000000000182}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Marketing.Infrastructure", "src\Modules\Marketing\Marketplace.Modules.Marketing.Infrastructure\Marketplace.Modules.Marketing.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000183}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Marketing.Contracts", "src\Modules\Marketing\Marketplace.Modules.Marketing.Contracts\Marketplace.Modules.Marketing.Contracts.csproj", "{22222222-0000-0000-0000-000000000184}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketing.UnitTests", "tests\Marketing.UnitTests\Marketing.UnitTests.csproj", "{22222222-0000-0000-0000-000000000185}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Recommendations", "Recommendations", "{11111111-0000-0000-0000-00000000001C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Analytics", "Analytics", "{11111111-0000-0000-0000-00000000001D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Fraud", "Fraud", "{11111111-0000-0000-0000-00000000001E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Recommendations.Domain", "src\Modules\Recommendations\Marketplace.Modules.Recommendations.Domain\Marketplace.Modules.Recommendations.Domain.csproj", "{22222222-0000-0000-0000-000000000191}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Recommendations.Application", "src\Modules\Recommendations\Marketplace.Modules.Recommendations.Application\Marketplace.Modules.Recommendations.Application.csproj", "{22222222-0000-0000-0000-000000000192}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Recommendations.Infrastructure", "src\Modules\Recommendations\Marketplace.Modules.Recommendations.Infrastructure\Marketplace.Modules.Recommendations.Infrastructure.csproj", "{22222222-0000-0000-0000-000000000193}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Recommendations.Contracts", "src\Modules\Recommendations\Marketplace.Modules.Recommendations.Contracts\Marketplace.Modules.Recommendations.Contracts.csproj", "{22222222-0000-0000-0000-000000000194}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Recommendations.UnitTests", "tests\Recommendations.UnitTests\Recommendations.UnitTests.csproj", "{22222222-0000-0000-0000-000000000195}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Analytics.Domain", "src\Modules\Analytics\Marketplace.Modules.Analytics.Domain\Marketplace.Modules.Analytics.Domain.csproj", "{22222222-0000-0000-0000-0000000001A1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Analytics.Application", "src\Modules\Analytics\Marketplace.Modules.Analytics.Application\Marketplace.Modules.Analytics.Application.csproj", "{22222222-0000-0000-0000-0000000001A2}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Analytics.Infrastructure", "src\Modules\Analytics\Marketplace.Modules.Analytics.Infrastructure\Marketplace.Modules.Analytics.Infrastructure.csproj", "{22222222-0000-0000-0000-0000000001A3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Analytics.Contracts", "src\Modules\Analytics\Marketplace.Modules.Analytics.Contracts\Marketplace.Modules.Analytics.Contracts.csproj", "{22222222-0000-0000-0000-0000000001A4}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Analytics.UnitTests", "tests\Analytics.UnitTests\Analytics.UnitTests.csproj", "{22222222-0000-0000-0000-0000000001A5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Fraud.Domain", "src\Modules\Fraud\Marketplace.Modules.Fraud.Domain\Marketplace.Modules.Fraud.Domain.csproj", "{22222222-0000-0000-0000-0000000001B1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Fraud.Application", "src\Modules\Fraud\Marketplace.Modules.Fraud.Application\Marketplace.Modules.Fraud.Application.csproj", "{22222222-0000-0000-0000-0000000001B2}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Fraud.Infrastructure", "src\Modules\Fraud\Marketplace.Modules.Fraud.Infrastructure\Marketplace.Modules.Fraud.Infrastructure.csproj", "{22222222-0000-0000-0000-0000000001B3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Fraud.Contracts", "src\Modules\Fraud\Marketplace.Modules.Fraud.Contracts\Marketplace.Modules.Fraud.Contracts.csproj", "{22222222-0000-0000-0000-0000000001B4}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Fraud.UnitTests", "tests\Fraud.UnitTests\Fraud.UnitTests.csproj", "{22222222-0000-0000-0000-0000000001B5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Saga.IntegrationTests", "tests\Saga.IntegrationTests\Saga.IntegrationTests.csproj", "{22222222-0000-0000-0000-0000000001C1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Bff", "Bff", "{11111111-0000-0000-0000-00000000001F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Mobile", "src\Bff\Marketplace.Bff.Mobile\Marketplace.Bff.Mobile.csproj", "{22222222-0000-0000-0000-0000000001D1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Web", "src\Bff\Marketplace.Bff.Web\Marketplace.Bff.Web.csproj", "{22222222-0000-0000-0000-0000000001D2}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Seller", "src\Bff\Marketplace.Bff.Seller\Marketplace.Bff.Seller.csproj", "{22222222-0000-0000-0000-0000000001D3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Admin", "src\Bff\Marketplace.Bff.Admin\Marketplace.Bff.Admin.csproj", "{22222222-0000-0000-0000-0000000001D4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{22222222-0000-0000-0000-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000004}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000006}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000007}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000007}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000008}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000009}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000009}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000009}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000009}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000000F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000000F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000010}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000010}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000010}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000011}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000011}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000011}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000011}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000012}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000013}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000013}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000013}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000013}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000014}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000014}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000014}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000014}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000015}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000015}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000015}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000015}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000016}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000016}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000016}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000016}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000017}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000017}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000017}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000017}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000018}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000018}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000018}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000018}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000019}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000019}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000019}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000019}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-00000000001F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-00000000001F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000020}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000020}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000020}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000021}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000021}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000021}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000021}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000022}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000022}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000022}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000022}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000023}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000023}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000023}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000023}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000024}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000024}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000024}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000024}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000025}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000025}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000025}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000025}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000031}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000031}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000031}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000031}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000032}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000032}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000032}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000032}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000033}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000033}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000033}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000033}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000034}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000034}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000034}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000034}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000035}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000035}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000035}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000035}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000041}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000041}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000041}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000041}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000042}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000042}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000042}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000042}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000043}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000043}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000043}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000043}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000044}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000044}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000044}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000044}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000045}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000045}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000045}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000045}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000051}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000051}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000051}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000051}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000052}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000052}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000052}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000052}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000053}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000053}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000053}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000053}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000054}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000054}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000054}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000054}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000055}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000055}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000055}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000055}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000061}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000061}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000061}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000061}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000062}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000062}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000062}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000062}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000063}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000063}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000063}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000063}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000064}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000064}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000064}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000064}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000065}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000065}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000065}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000065}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000071}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000071}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000071}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000071}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000072}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000072}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000072}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000072}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000073}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000073}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000073}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000073}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000074}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000074}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000074}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000074}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000075}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000075}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000075}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000075}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000081}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000081}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000081}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000081}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000082}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000082}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000082}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000082}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000083}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000083}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000083}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000083}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000084}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000084}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000084}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000084}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000085}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000085}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000085}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000085}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000091}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000091}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000091}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000091}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000092}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000092}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000092}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000092}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000093}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000093}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000093}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000093}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000094}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000094}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000094}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000094}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000095}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000095}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000095}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000095}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000101}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000101}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000101}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000101}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000102}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000102}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000102}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000103}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000103}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000103}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000103}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000104}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000104}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000104}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000104}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000105}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000105}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000105}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000105}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000111}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000111}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000111}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000112}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000112}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000112}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000112}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000113}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000113}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000113}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000113}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000114}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000114}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000114}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000114}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000115}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000115}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000115}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000115}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000121}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000121}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000121}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000121}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000122}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000122}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000122}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000122}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000123}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000123}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000123}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000123}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000124}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000124}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000124}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000124}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000125}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000125}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000125}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000125}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000131}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000131}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000131}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000131}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000132}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000132}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000132}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000132}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000133}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000133}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000133}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000133}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000134}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000134}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000134}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000134}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000135}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000135}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000135}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000135}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000141}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000141}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000141}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000141}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000142}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000142}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000142}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000142}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000143}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000143}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000143}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000143}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000144}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000144}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000144}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000144}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000145}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000145}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000145}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000145}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000151}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000151}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000151}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000151}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000152}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000152}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000152}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000152}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000153}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000153}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000153}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000153}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000154}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000154}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000154}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000154}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000155}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000155}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000155}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000155}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000161}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000161}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000161}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000161}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000162}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000162}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000162}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000162}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000163}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000163}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000163}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000163}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000164}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000164}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000164}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000164}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000165}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000165}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000165}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000165}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000171}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000171}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000171}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000171}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000172}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000172}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000172}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000172}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000173}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000173}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000173}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000173}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000174}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000174}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000174}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000174}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000175}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000175}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000175}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000175}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000181}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000181}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000181}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000181}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000182}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000182}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000182}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000182}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000183}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000183}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000183}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000183}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000184}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000184}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000184}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000184}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000185}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000185}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000185}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000185}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000191}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000191}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000191}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000191}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000192}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000192}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000192}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000192}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000193}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000193}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000193}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000193}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000194}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000194}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000194}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000194}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-000000000195}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000195}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-000000000195}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-000000000195}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001A5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001A5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001B5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22222222-0000-0000-0000-0000000001D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22222222-0000-0000-0000-0000000001D4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{11111111-0000-0000-0000-000000000002} = {11111111-0000-0000-0000-000000000001}
+		{11111111-0000-0000-0000-000000000003} = {11111111-0000-0000-0000-000000000001}
+		{11111111-0000-0000-0000-000000000004} = {11111111-0000-0000-0000-000000000001}
+		{11111111-0000-0000-0000-000000000005} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000001} = {11111111-0000-0000-0000-000000000002}
+		{22222222-0000-0000-0000-000000000002} = {11111111-0000-0000-0000-000000000003}
+		{22222222-0000-0000-0000-000000000003} = {11111111-0000-0000-0000-000000000003}
+		{22222222-0000-0000-0000-000000000004} = {11111111-0000-0000-0000-000000000003}
+		{22222222-0000-0000-0000-000000000005} = {11111111-0000-0000-0000-000000000003}
+		{22222222-0000-0000-0000-000000000006} = {11111111-0000-0000-0000-000000000005}
+		{22222222-0000-0000-0000-000000000007} = {11111111-0000-0000-0000-000000000005}
+		{22222222-0000-0000-0000-000000000008} = {11111111-0000-0000-0000-000000000005}
+		{22222222-0000-0000-0000-000000000009} = {11111111-0000-0000-0000-000000000005}
+		{22222222-0000-0000-0000-00000000000A} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-00000000000B} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-00000000000C} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000007} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-00000000000D} = {11111111-0000-0000-0000-000000000007}
+		{22222222-0000-0000-0000-00000000000E} = {11111111-0000-0000-0000-000000000007}
+		{22222222-0000-0000-0000-00000000000F} = {11111111-0000-0000-0000-000000000007}
+		{22222222-0000-0000-0000-000000000010} = {11111111-0000-0000-0000-000000000007}
+		{22222222-0000-0000-0000-000000000011} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000008} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000012} = {11111111-0000-0000-0000-000000000008}
+		{22222222-0000-0000-0000-000000000013} = {11111111-0000-0000-0000-000000000008}
+		{22222222-0000-0000-0000-000000000014} = {11111111-0000-0000-0000-000000000008}
+		{22222222-0000-0000-0000-000000000015} = {11111111-0000-0000-0000-000000000008}
+		{22222222-0000-0000-0000-000000000016} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000009} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000000A} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000017} = {11111111-0000-0000-0000-000000000009}
+		{22222222-0000-0000-0000-000000000018} = {11111111-0000-0000-0000-000000000009}
+		{22222222-0000-0000-0000-000000000019} = {11111111-0000-0000-0000-000000000009}
+		{22222222-0000-0000-0000-00000000001A} = {11111111-0000-0000-0000-000000000009}
+		{22222222-0000-0000-0000-00000000001B} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-00000000001C} = {11111111-0000-0000-0000-00000000000A}
+		{22222222-0000-0000-0000-00000000001D} = {11111111-0000-0000-0000-00000000000A}
+		{22222222-0000-0000-0000-00000000001E} = {11111111-0000-0000-0000-00000000000A}
+		{22222222-0000-0000-0000-00000000001F} = {11111111-0000-0000-0000-00000000000A}
+		{22222222-0000-0000-0000-000000000020} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-00000000000B} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000021} = {11111111-0000-0000-0000-00000000000B}
+		{22222222-0000-0000-0000-000000000022} = {11111111-0000-0000-0000-00000000000B}
+		{22222222-0000-0000-0000-000000000023} = {11111111-0000-0000-0000-00000000000B}
+		{22222222-0000-0000-0000-000000000024} = {11111111-0000-0000-0000-00000000000B}
+		{22222222-0000-0000-0000-000000000025} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-00000000000C} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000000D} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000031} = {11111111-0000-0000-0000-00000000000C}
+		{22222222-0000-0000-0000-000000000032} = {11111111-0000-0000-0000-00000000000C}
+		{22222222-0000-0000-0000-000000000033} = {11111111-0000-0000-0000-00000000000C}
+		{22222222-0000-0000-0000-000000000034} = {11111111-0000-0000-0000-00000000000C}
+		{22222222-0000-0000-0000-000000000035} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000041} = {11111111-0000-0000-0000-00000000000D}
+		{22222222-0000-0000-0000-000000000042} = {11111111-0000-0000-0000-00000000000D}
+		{22222222-0000-0000-0000-000000000043} = {11111111-0000-0000-0000-00000000000D}
+		{22222222-0000-0000-0000-000000000044} = {11111111-0000-0000-0000-00000000000D}
+		{22222222-0000-0000-0000-000000000045} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-00000000000E} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000000F} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000051} = {11111111-0000-0000-0000-00000000000E}
+		{22222222-0000-0000-0000-000000000052} = {11111111-0000-0000-0000-00000000000E}
+		{22222222-0000-0000-0000-000000000053} = {11111111-0000-0000-0000-00000000000E}
+		{22222222-0000-0000-0000-000000000054} = {11111111-0000-0000-0000-00000000000E}
+		{22222222-0000-0000-0000-000000000055} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000061} = {11111111-0000-0000-0000-00000000000F}
+		{22222222-0000-0000-0000-000000000062} = {11111111-0000-0000-0000-00000000000F}
+		{22222222-0000-0000-0000-000000000063} = {11111111-0000-0000-0000-00000000000F}
+		{22222222-0000-0000-0000-000000000064} = {11111111-0000-0000-0000-00000000000F}
+		{22222222-0000-0000-0000-000000000065} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000010} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000011} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000012} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000071} = {11111111-0000-0000-0000-000000000010}
+		{22222222-0000-0000-0000-000000000072} = {11111111-0000-0000-0000-000000000010}
+		{22222222-0000-0000-0000-000000000073} = {11111111-0000-0000-0000-000000000010}
+		{22222222-0000-0000-0000-000000000074} = {11111111-0000-0000-0000-000000000010}
+		{22222222-0000-0000-0000-000000000075} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000081} = {11111111-0000-0000-0000-000000000011}
+		{22222222-0000-0000-0000-000000000082} = {11111111-0000-0000-0000-000000000011}
+		{22222222-0000-0000-0000-000000000083} = {11111111-0000-0000-0000-000000000011}
+		{22222222-0000-0000-0000-000000000084} = {11111111-0000-0000-0000-000000000011}
+		{22222222-0000-0000-0000-000000000085} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000091} = {11111111-0000-0000-0000-000000000012}
+		{22222222-0000-0000-0000-000000000092} = {11111111-0000-0000-0000-000000000012}
+		{22222222-0000-0000-0000-000000000093} = {11111111-0000-0000-0000-000000000012}
+		{22222222-0000-0000-0000-000000000094} = {11111111-0000-0000-0000-000000000012}
+		{22222222-0000-0000-0000-000000000095} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000013} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000014} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000101} = {11111111-0000-0000-0000-000000000013}
+		{22222222-0000-0000-0000-000000000102} = {11111111-0000-0000-0000-000000000013}
+		{22222222-0000-0000-0000-000000000103} = {11111111-0000-0000-0000-000000000013}
+		{22222222-0000-0000-0000-000000000104} = {11111111-0000-0000-0000-000000000013}
+		{22222222-0000-0000-0000-000000000105} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000111} = {11111111-0000-0000-0000-000000000014}
+		{22222222-0000-0000-0000-000000000112} = {11111111-0000-0000-0000-000000000014}
+		{22222222-0000-0000-0000-000000000113} = {11111111-0000-0000-0000-000000000014}
+		{22222222-0000-0000-0000-000000000114} = {11111111-0000-0000-0000-000000000014}
+		{22222222-0000-0000-0000-000000000115} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000015} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000016} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000121} = {11111111-0000-0000-0000-000000000015}
+		{22222222-0000-0000-0000-000000000122} = {11111111-0000-0000-0000-000000000015}
+		{22222222-0000-0000-0000-000000000123} = {11111111-0000-0000-0000-000000000015}
+		{22222222-0000-0000-0000-000000000124} = {11111111-0000-0000-0000-000000000015}
+		{22222222-0000-0000-0000-000000000125} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000131} = {11111111-0000-0000-0000-000000000016}
+		{22222222-0000-0000-0000-000000000132} = {11111111-0000-0000-0000-000000000016}
+		{22222222-0000-0000-0000-000000000133} = {11111111-0000-0000-0000-000000000016}
+		{22222222-0000-0000-0000-000000000134} = {11111111-0000-0000-0000-000000000016}
+		{22222222-0000-0000-0000-000000000135} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-000000000017} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000018} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-000000000019} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000141} = {11111111-0000-0000-0000-000000000017}
+		{22222222-0000-0000-0000-000000000142} = {11111111-0000-0000-0000-000000000017}
+		{22222222-0000-0000-0000-000000000143} = {11111111-0000-0000-0000-000000000017}
+		{22222222-0000-0000-0000-000000000144} = {11111111-0000-0000-0000-000000000017}
+		{22222222-0000-0000-0000-000000000145} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000151} = {11111111-0000-0000-0000-000000000018}
+		{22222222-0000-0000-0000-000000000152} = {11111111-0000-0000-0000-000000000018}
+		{22222222-0000-0000-0000-000000000153} = {11111111-0000-0000-0000-000000000018}
+		{22222222-0000-0000-0000-000000000154} = {11111111-0000-0000-0000-000000000018}
+		{22222222-0000-0000-0000-000000000155} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000161} = {11111111-0000-0000-0000-000000000019}
+		{22222222-0000-0000-0000-000000000162} = {11111111-0000-0000-0000-000000000019}
+		{22222222-0000-0000-0000-000000000163} = {11111111-0000-0000-0000-000000000019}
+		{22222222-0000-0000-0000-000000000164} = {11111111-0000-0000-0000-000000000019}
+		{22222222-0000-0000-0000-000000000165} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-00000000001A} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000001B} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000171} = {11111111-0000-0000-0000-00000000001A}
+		{22222222-0000-0000-0000-000000000172} = {11111111-0000-0000-0000-00000000001A}
+		{22222222-0000-0000-0000-000000000173} = {11111111-0000-0000-0000-00000000001A}
+		{22222222-0000-0000-0000-000000000174} = {11111111-0000-0000-0000-00000000001A}
+		{22222222-0000-0000-0000-000000000175} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-000000000181} = {11111111-0000-0000-0000-00000000001B}
+		{22222222-0000-0000-0000-000000000182} = {11111111-0000-0000-0000-00000000001B}
+		{22222222-0000-0000-0000-000000000183} = {11111111-0000-0000-0000-00000000001B}
+		{22222222-0000-0000-0000-000000000184} = {11111111-0000-0000-0000-00000000001B}
+		{22222222-0000-0000-0000-000000000185} = {11111111-0000-0000-0000-000000000006}
+		{11111111-0000-0000-0000-00000000001C} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000001D} = {11111111-0000-0000-0000-000000000004}
+		{11111111-0000-0000-0000-00000000001E} = {11111111-0000-0000-0000-000000000004}
+		{22222222-0000-0000-0000-000000000191} = {11111111-0000-0000-0000-00000000001C}
+		{22222222-0000-0000-0000-000000000192} = {11111111-0000-0000-0000-00000000001C}
+		{22222222-0000-0000-0000-000000000193} = {11111111-0000-0000-0000-00000000001C}
+		{22222222-0000-0000-0000-000000000194} = {11111111-0000-0000-0000-00000000001C}
+		{22222222-0000-0000-0000-000000000195} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-0000000001A1} = {11111111-0000-0000-0000-00000000001D}
+		{22222222-0000-0000-0000-0000000001A2} = {11111111-0000-0000-0000-00000000001D}
+		{22222222-0000-0000-0000-0000000001A3} = {11111111-0000-0000-0000-00000000001D}
+		{22222222-0000-0000-0000-0000000001A4} = {11111111-0000-0000-0000-00000000001D}
+		{22222222-0000-0000-0000-0000000001A5} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-0000000001B1} = {11111111-0000-0000-0000-00000000001E}
+		{22222222-0000-0000-0000-0000000001B2} = {11111111-0000-0000-0000-00000000001E}
+		{22222222-0000-0000-0000-0000000001B3} = {11111111-0000-0000-0000-00000000001E}
+		{22222222-0000-0000-0000-0000000001B4} = {11111111-0000-0000-0000-00000000001E}
+		{22222222-0000-0000-0000-0000000001B5} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-0000000001C1} = {11111111-0000-0000-0000-000000000006}
+		{22222222-0000-0000-0000-0000000001D1} = {11111111-0000-0000-0000-00000000001F}
+		{22222222-0000-0000-0000-0000000001D2} = {11111111-0000-0000-0000-00000000001F}
+		{22222222-0000-0000-0000-0000000001D3} = {11111111-0000-0000-0000-00000000001F}
+		{22222222-0000-0000-0000-0000000001D4} = {11111111-0000-0000-0000-00000000001F}
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

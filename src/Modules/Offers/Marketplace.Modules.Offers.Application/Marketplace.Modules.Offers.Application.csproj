@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Marketplace.Modules.Offers.Domain\Marketplace.Modules.Offers.Domain.csproj" />
+    <ProjectReference Include="..\Marketplace.Modules.Offers.Contracts\Marketplace.Modules.Offers.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Offers.UnitTests" />
+  </ItemGroup>
+</Project>
