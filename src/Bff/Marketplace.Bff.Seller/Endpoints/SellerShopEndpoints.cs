@@ -1,11 +1,13 @@
 using MediatR;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.AddKybDocument;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetPayoutAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.UpdateSellerProfile;
+using Marketplace.Modules.Sellers.Application.Abstractions;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -25,6 +27,8 @@ public static class SellerShopEndpoints
         shop.MapPut("/profile", UpdateProfileAsync);
         shop.MapPut("/payout-account", SetPayoutAccountAsync);
         shop.MapPost("/kyb-documents", AddKybDocumentAsync);
+        // Upload d'une pièce KYB (fichier) : envoyé au service média puis rattaché.
+        shop.MapPost("/kyb-documents/upload", UploadKybDocumentAsync).DisableAntiforgery();
 
         return app;
     }
@@ -67,6 +71,30 @@ public static class SellerShopEndpoints
         return seller is null
             ? SellerBff.NotASeller()
             : (await sender.Send(new AddKybDocumentCommand(seller.Id, request.Type, request.FileUrl), ct)).Match(id => Results.Ok(new { documentId = id }));
+    }
+
+    /// <summary>Téléverse une pièce KYB (multipart, champ « file ») vers le service média puis la rattache.</summary>
+    private static async Task<IResult> UploadKybDocumentAsync(
+        ClaimsPrincipal user, IFormFile file, [FromForm] string type,
+        ISender sender, IKybDocumentStorage kybStorage, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        // Stockage sécurisé sur Cloudflare R2 (pièces KYB sensibles).
+        var upload = await kybStorage.UploadAsync(new KybFileUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+        if (upload.IsFailure)
+        {
+            return Results.BadRequest(new { error = upload.Error.Message });
+        }
+
+        return (await sender.Send(new AddKybDocumentCommand(seller.Id, type, upload.Value.Url), ct))
+            .Match(id => Results.Ok(new { documentId = id, url = upload.Value.Url }));
     }
 
     public sealed record OnboardRequest(string ShopName);

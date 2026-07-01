@@ -14,6 +14,22 @@ public sealed record ListDisputesByOrderQuery(Guid OrderId) : IQuery<IReadOnlyLi
 /// <summary>Liste les litiges où l'utilisateur est partie.</summary>
 public sealed record ListMyDisputesQuery(Guid UserId) : IQuery<IReadOnlyList<DisputeSummary>>;
 
+/// <summary>Liste tous les litiges de la plateforme (back-office admin).</summary>
+public sealed record ListAllDisputesQuery : IQuery<IReadOnlyList<DisputeSummary>>;
+
+internal sealed class ListAllDisputesQueryHandler : IQueryHandler<ListAllDisputesQuery, IReadOnlyList<DisputeSummary>>
+{
+    private readonly IDisputeRepository _repository;
+    public ListAllDisputesQueryHandler(IDisputeRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<DisputeSummary>>> Handle(ListAllDisputesQuery query, CancellationToken cancellationToken)
+    {
+        var disputes = await _repository.ListAllAsync(cancellationToken: cancellationToken);
+        IReadOnlyList<DisputeSummary> summaries = disputes.Select(DisputeMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
+
 internal static class DisputeMapper
 {
     public static DisputeSummary ToSummary(Dispute d) => new(

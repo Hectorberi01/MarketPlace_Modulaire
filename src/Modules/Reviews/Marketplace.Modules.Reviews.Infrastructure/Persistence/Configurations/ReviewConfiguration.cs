@@ -31,6 +31,8 @@ internal sealed class ReviewConfiguration : IEntityTypeConfiguration<Review>
         builder.Property(r => r.IsVerifiedPurchase).IsRequired();
         builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(r => r.CreatedAtUtc).IsRequired();
+        builder.Property(r => r.SellerReply).HasMaxLength(2000);
+        builder.Property(r => r.SellerRepliedAtUtc);
 
         builder.HasIndex(r => r.ProductId);
         builder.HasIndex(r => new { r.BuyerId, r.ProductId, r.OrderId }).IsUnique();

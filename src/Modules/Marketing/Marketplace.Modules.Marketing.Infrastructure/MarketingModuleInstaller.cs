@@ -36,6 +36,6 @@ public sealed class MarketingModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<MarketingDbContext>>();
+        services.AddOutboxProcessor<MarketingDbContext>();
     }
 }

@@ -21,6 +21,24 @@ internal sealed class ProductRepository : IProductRepository
             .Include(p => p.Media)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Product>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
+        => await _dbContext.Products
+            .AsNoTracking()
+            .Include(p => p.Variants)
+            .Include(p => p.Media)
+            .Where(p => p.SellerId == sellerId)
+            .OrderBy(p => p.Name)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.Products
+            .AsNoTracking()
+            .Include(p => p.Variants)
+            .Include(p => p.Media)
+            .OrderByDescending(p => p.CreatedOnUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
     {
         var slugResult = Slug.Create(slug);

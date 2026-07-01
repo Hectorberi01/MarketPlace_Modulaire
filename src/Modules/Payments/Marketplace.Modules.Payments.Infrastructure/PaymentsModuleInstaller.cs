@@ -51,10 +51,12 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         var paypalOptions = BindPayPalOptions(configuration);
         var mtnOptions = BindMtnMomoOptions(configuration);
         var moovOptions = BindMoovOptions(configuration);
+        var fedapayOptions = BindFedaPayOptions(configuration);
         services.AddSingleton(stripeOptions);
         services.AddSingleton(paypalOptions);
         services.AddSingleton(mtnOptions);
         services.AddSingleton(moovOptions);
+        services.AddSingleton(fedapayOptions);
 
         // Chaque PSP : adaptateur HTTP réel si configuré, sinon stub sandbox
         // (build/run fonctionnels sans compte PSP).
@@ -102,6 +104,21 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
             services.AddSingleton<IPaymentGateway, MoovPaymentGateway>();
         }
 
+        if (fedapayOptions.IsConfigured)
+        {
+            services.AddHttpClient(FedaPayHttpGateway.ClientName, client =>
+                client.BaseAddress = new Uri(EnsureTrailingSlash(fedapayOptions.BaseUrl)));
+            services.AddSingleton<IPaymentGateway, FedaPayHttpGateway>();
+            services.AddSingleton<IPayoutGateway, FedaPayPayoutGateway>();
+        }
+        else
+        {
+            services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>();
+            services.AddSingleton<IPayoutGateway, SimulatedPayoutGateway>();
+        }
+
+        services.AddScoped<IPayoutModuleApi, PayoutModuleApi>();
+
         services.AddSingleton<IPaymentGatewayResolver, PaymentGatewayResolver>();
 
         services.AddScoped<IDomainEventHandler<PaymentCapturedDomainEvent>, PaymentCapturedDomainEventHandler>();
@@ -113,7 +130,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<PaymentsDbContext>>();
+        services.AddOutboxProcessor<PaymentsDbContext>();
     }
 
     private static StripeOptions BindStripeOptions(IConfiguration configuration)
@@ -182,6 +199,26 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         if (!string.IsNullOrWhiteSpace(section["TargetEnvironment"]))
         {
             options.TargetEnvironment = section["TargetEnvironment"]!;
+        }
+        return options;
+    }
+
+    private static FedaPayOptions BindFedaPayOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Payments:FedaPay");
+        var options = new FedaPayOptions
+        {
+            ApiKey = section["ApiKey"] ?? string.Empty,
+            WebhookSecret = section["WebhookSecret"] ?? string.Empty,
+            CallbackUrl = section["CallbackUrl"] ?? string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(section["BaseUrl"]))
+        {
+            options.BaseUrl = section["BaseUrl"]!;
+        }
+        if (!string.IsNullOrWhiteSpace(section["Currency"]))
+        {
+            options.Currency = section["Currency"]!;
         }
         return options;
     }

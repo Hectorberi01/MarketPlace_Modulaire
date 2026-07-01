@@ -13,6 +13,8 @@ internal sealed class CommissionRuleRepository : ICommissionRuleRepository
     public async Task AddAsync(CommissionRule rule, CancellationToken cancellationToken = default)
         => await _dbContext.CommissionRules.AddAsync(rule, cancellationToken);
 
+    public void Remove(CommissionRule rule) => _dbContext.CommissionRules.Remove(rule);
+
     public async Task<CommissionRule?> GetByIdAsync(CommissionRuleId id, CancellationToken cancellationToken = default)
         => await _dbContext.CommissionRules.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 

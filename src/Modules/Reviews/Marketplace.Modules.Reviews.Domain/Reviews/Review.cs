@@ -45,6 +45,10 @@ public sealed class Review : AggregateRoot<ReviewId>
     public ReviewStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
+    /// <summary>Réponse publique du vendeur à l'avis (null tant qu'il n'a pas répondu).</summary>
+    public string? SellerReply { get; private set; }
+    public DateTime? SellerRepliedAtUtc { get; private set; }
+
     public static Result<Review> Create(
         Guid productId, Guid sellerId, Guid buyerId, Guid orderId,
         Rating rating, string title, string body, bool isVerifiedPurchase)
@@ -99,6 +103,19 @@ public sealed class Review : AggregateRoot<ReviewId>
 
         Status = ReviewStatus.Published;
         Raise(new ReviewPublishedDomainEvent(Id.Value, ProductId, Rating.Value));
+        return Result.Success();
+    }
+
+    /// <summary>Réponse publique du vendeur à l'avis (remplace une réponse existante).</summary>
+    public Result Reply(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return Result.Failure(Error.Validation("reviews.reply_required", "La réponse ne peut pas être vide."));
+        }
+
+        SellerReply = body.Trim();
+        SellerRepliedAtUtc = DateTime.UtcNow;
         return Result.Success();
     }
 }

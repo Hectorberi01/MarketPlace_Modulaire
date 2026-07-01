@@ -15,6 +15,7 @@ using Marketplace.Modules.Sellers.Domain.Sellers;
 using Marketplace.Modules.Sellers.Domain.Sellers.Events;
 using Marketplace.Modules.Sellers.Infrastructure.Persistence;
 using Marketplace.Modules.Sellers.Infrastructure.Public;
+using Marketplace.Modules.Sellers.Infrastructure.Storage;
 
 namespace Marketplace.Modules.Sellers.Infrastructure;
 
@@ -42,11 +43,42 @@ public sealed class SellersModuleInstaller : IModuleInstaller
         services.AddScoped<ISellerRepository, SellerRepository>();
         services.AddScoped<ISellerModuleApi, SellerModuleApi>();
 
+        // Stockage des pièces KYB : Cloudflare R2 (S3) si configuré, sinon stub hors-ligne.
+        var r2Options = BindCloudflareR2Options(configuration);
+        services.AddSingleton(r2Options);
+        if (r2Options.IsConfigured)
+        {
+            services.AddHttpClient(CloudflareR2KybStorage.ClientName);
+            services.AddScoped<IKybDocumentStorage, CloudflareR2KybStorage>();
+        }
+        else
+        {
+            services.AddScoped<IKybDocumentStorage, SimulatedKybStorage>();
+        }
+
         services.AddScoped<IDomainEventHandler<SellerRegisteredDomainEvent>, SellerRegisteredDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerActivatedDomainEvent>, SellerActivatedDomainEventHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<SellersDbContext>>();
+        services.AddOutboxProcessor<SellersDbContext>();
+    }
+
+    private static CloudflareR2Options BindCloudflareR2Options(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Storage:CloudflareR2");
+        var options = new CloudflareR2Options
+        {
+            AccountId = section["AccountId"] ?? string.Empty,
+            AccessKeyId = section["AccessKeyId"] ?? string.Empty,
+            SecretAccessKey = section["SecretAccessKey"] ?? string.Empty,
+            BucketName = section["BucketName"] ?? string.Empty,
+            PublicBaseUrl = section["PublicBaseUrl"] ?? string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(section["Region"]))
+        {
+            options.Region = section["Region"]!;
+        }
+        return options;
     }
 }

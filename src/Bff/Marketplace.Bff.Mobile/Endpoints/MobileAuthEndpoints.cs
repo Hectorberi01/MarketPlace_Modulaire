@@ -2,6 +2,7 @@ using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Identity.Application.Users.Commands.Login;
 using Marketplace.Modules.Identity.Application.Users.Commands.Logout;
+using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 using Marketplace.Modules.Identity.Application.Users.Commands.RefreshToken;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 
@@ -19,15 +20,38 @@ public static class MobileAuthEndpoints
         auth.MapPost("/refresh", RefreshAsync).AllowAnonymous();
         auth.MapPost("/logout", LogoutAsync).RequireAuthorization();
 
-        // OTP par SMS et réinitialisation de mot de passe : nécessitent une capacité
-        // Identity dédiée (envoi SMS / jeton de reset) non encore implémentée.
+        // Réinitialisation de mot de passe (jeton à usage unique, 1h).
+        auth.MapPost("/password/forgot", ForgotPasswordAsync).AllowAnonymous();
+        auth.MapPost("/password/reset", ResetPasswordAsync).AllowAnonymous();
+
+        // OTP par SMS : nécessite un fournisseur SMS (non encore branché).
         auth.MapPost("/otp/request", () => MobileBff.NotImplemented("identity.sms_otp")).AllowAnonymous();
         auth.MapPost("/otp/verify", () => MobileBff.NotImplemented("identity.sms_otp")).AllowAnonymous();
-        auth.MapPost("/password/forgot", () => MobileBff.NotImplemented("identity.password_reset")).AllowAnonymous();
-        auth.MapPost("/password/reset", () => MobileBff.NotImplemented("identity.password_reset")).AllowAnonymous();
 
         return app;
     }
+
+    /// <summary>
+    /// Demande de réinitialisation. Renvoie toujours 200 (pas d'énumération de
+    /// comptes). En l'absence d'e-mailing, le jeton est renvoyé dans la réponse
+    /// (à câbler sur un envoi e-mail/SMS en production).
+    /// </summary>
+    private static async Task<IResult> ForgotPasswordAsync(ForgotRequest request, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
+        if (result.IsFailure)
+        {
+            return Results.Ok(new { sent = true });
+        }
+
+        // TODO production : envoyer result.Value par e-mail/SMS et ne pas l'exposer ici.
+        return Results.Ok(new { sent = true, token = result.Value });
+    }
+
+    /// <summary>Réinitialise le mot de passe à partir du jeton reçu.</summary>
+    private static async Task<IResult> ResetPasswordAsync(ResetRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ResetPasswordCommand(request.Email, request.Token, request.NewPassword), ct))
+            .Match(() => Results.Ok(new { reset = true }));
 
     /// <summary>Création de compte (email/téléphone + mot de passe).</summary>
     private static async Task<IResult> RegisterAsync(RegisterRequest request, ISender sender, CancellationToken ct)
@@ -60,4 +84,6 @@ public static class MobileAuthEndpoints
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);
+    public sealed record ForgotRequest(string Email);
+    public sealed record ResetRequest(string Email, string Token, string NewPassword);
 }

@@ -106,4 +106,18 @@ public sealed class Dispute : AggregateRoot<DisputeId>
         Status = DisputeStatus.Escalated;
         return Result.Success();
     }
+
+    /// <summary>Rouvre un litige tranché ou escaladé (arbitrage admin) ; repasse en examen.</summary>
+    public Result Reopen()
+    {
+        if (Status is DisputeStatus.Open or DisputeStatus.UnderReview)
+        {
+            return Result.Failure(Error.Conflict("disputes.not_closed", "Le litige est déjà ouvert."));
+        }
+
+        Status = DisputeStatus.UnderReview;
+        Resolution = null;
+        ResolvedAtUtc = null;
+        return Result.Success();
+    }
 }

@@ -3,6 +3,8 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Identity.Application.Abstractions;
+using Marketplace.Modules.Identity.Domain.Addresses;
+using Marketplace.Modules.Identity.Domain.PaymentMethods;
 using Marketplace.Modules.Identity.Domain.Roles;
 using Marketplace.Modules.Identity.Domain.Users;
 
@@ -27,6 +29,8 @@ public sealed class IdentityDbContext : ModuleDbContext, IIdentityUnitOfWork
 
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Address> Addresses => Set<Address>();
+    public DbSet<PaymentMethod> PaymentMethods => Set<PaymentMethod>();
 
     protected override string Schema => SchemaName;
 

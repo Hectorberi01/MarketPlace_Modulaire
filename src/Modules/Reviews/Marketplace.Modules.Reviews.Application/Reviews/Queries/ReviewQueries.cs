@@ -14,6 +14,23 @@ public sealed record ListReviewsByProductQuery(Guid ProductId) : IQuery<IReadOnl
 /// <summary>Note agrégée d'un produit (moyenne + nombre d'avis publiés).</summary>
 public sealed record GetProductRatingQuery(Guid ProductId) : IQuery<ProductRatingSummary>;
 
+/// <summary>Liste tous les avis ciblant les produits d'un vendeur (back-office vendeur).</summary>
+public sealed record ListReviewsBySellerQuery(Guid SellerId) : IQuery<IReadOnlyList<ReviewSummary>>;
+
+internal sealed class ListReviewsBySellerQueryHandler : IQueryHandler<ListReviewsBySellerQuery, IReadOnlyList<ReviewSummary>>
+{
+    private readonly IReviewRepository _repository;
+
+    public ListReviewsBySellerQueryHandler(IReviewRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<ReviewSummary>>> Handle(ListReviewsBySellerQuery query, CancellationToken cancellationToken)
+    {
+        var reviews = await _repository.ListBySellerAsync(query.SellerId, cancellationToken);
+        IReadOnlyList<ReviewSummary> summaries = reviews.Select(ReviewMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
+
 internal sealed class GetReviewQueryHandler : IQueryHandler<GetReviewQuery, ReviewSummary>
 {
     private readonly IReviewRepository _repository;

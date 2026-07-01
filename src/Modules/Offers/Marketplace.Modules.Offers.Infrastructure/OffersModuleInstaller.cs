@@ -40,9 +40,10 @@ public sealed class OffersModuleInstaller : IModuleInstaller
         services.AddScoped<IOfferModuleApi, OfferModuleApi>();
 
         services.AddScoped<IDomainEventHandler<OfferCreatedDomainEvent>, OfferCreatedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<OfferPriceChangedDomainEvent>, OfferPriceChangedDomainEventHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<OffersDbContext>>();
+        services.AddOutboxProcessor<OffersDbContext>();
     }
 }

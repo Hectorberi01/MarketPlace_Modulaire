@@ -11,6 +11,68 @@ public sealed record MarkNotificationReadCommand(Guid NotificationId, Guid Recip
 /// <summary>Marque toutes les notifications de l'utilisateur comme lues.</summary>
 public sealed record MarkAllNotificationsReadCommand(Guid RecipientUserId) : ICommand;
 
+/// <summary>Envoie une notification à un utilisateur (back-office admin).</summary>
+public sealed record SendNotificationCommand(Guid RecipientUserId, string? Channel, string Subject, string Body) : ICommand<Guid>;
+
+/// <summary>Supprime une notification (back-office admin).</summary>
+public sealed record DeleteNotificationCommand(Guid NotificationId) : ICommand;
+
+internal sealed class SendNotificationCommandHandler : ICommandHandler<SendNotificationCommand, Guid>
+{
+    private readonly INotificationRepository _repository;
+    private readonly INotificationsUnitOfWork _unitOfWork;
+
+    public SendNotificationCommandHandler(INotificationRepository repository, INotificationsUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result<Guid>> Handle(SendNotificationCommand command, CancellationToken cancellationToken)
+    {
+        var channel = Enum.TryParse<NotificationChannel>(command.Channel, ignoreCase: true, out var c)
+            ? c
+            : NotificationChannel.InApp;
+
+        var result = Notification.Create(command.RecipientUserId, channel, command.Subject, command.Body, "Admin", null);
+        if (result.IsFailure)
+        {
+            return Result.Failure<Guid>(result.Error);
+        }
+
+        var notification = result.Value;
+        notification.MarkSent();
+        await _repository.AddAsync(notification, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return notification.Id.Value;
+    }
+}
+
+internal sealed class DeleteNotificationCommandHandler : ICommandHandler<DeleteNotificationCommand>
+{
+    private readonly INotificationRepository _repository;
+    private readonly INotificationsUnitOfWork _unitOfWork;
+
+    public DeleteNotificationCommandHandler(INotificationRepository repository, INotificationsUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(DeleteNotificationCommand command, CancellationToken cancellationToken)
+    {
+        var notification = await _repository.GetByIdAsync(new NotificationId(command.NotificationId), cancellationToken);
+        if (notification is null)
+        {
+            return Result.Failure(Error.NotFound("notifications.not_found", "Notification introuvable."));
+        }
+
+        _repository.Remove(notification);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+}
+
 internal sealed class MarkNotificationReadCommandHandler : ICommandHandler<MarkNotificationReadCommand>
 {
     private readonly INotificationRepository _repository;

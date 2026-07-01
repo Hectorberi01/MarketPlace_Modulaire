@@ -11,11 +11,28 @@
 name: marketplace
 
 x-app-env: &app-env
-  ConnectionStrings__Marketplace: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-marketplace};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+  # Surchargeable : si MARKETPLACE_CONNECTION est défini (ex. Neon), il l'emporte ;
+  # sinon on garde le Postgres local du compose.
+  ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:-Host=postgres;Port=5432;Database=${POSTGRES_DB:-marketplace};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}}"
   Redis__ConnectionString: "redis:6379"
   Jwt__Issuer: "marketplace"
   Jwt__Audience: "marketplace"
   Jwt__SigningKey: "${JWT_SIGNING_KEY}"
+  # FedaPay : la clé secrète reste dans deploy/.env (gitignoré). Renseignée → l'adaptateur réel s'active ; vide → stub sandbox.
+  Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
+  Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
+  # Cloudflare R2 : stockage des pièces KYB. Renseigné → adaptateur R2 réel ; vide → stub hors-ligne.
+  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2__BucketName: "${R2_BUCKET_NAME:-}"
+  Storage__CloudflareR2__PublicBaseUrl: "${R2_PUBLIC_BASE_URL:-}"
+  # Cloudflare R2 (images produit) : bucket PUBLIC distinct du KYB. Renseigné → R2 réel.
+  Storage__CloudflareR2Media__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2Media__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2Media__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
+  Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
 
 x-app-depends: &app-depends
   postgres:
@@ -34,10 +51,16 @@ services:
   # ---------------- Infrastructure ----------------
   postgres:
     image: postgres:16-alpine
+    # Marge de connexions : plusieurs hôtes (API + 4 BFF) ouvrent des pools.
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-marketplace}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # Port hôte 5434 -> 5432 du conteneur (5434 pour ne pas heurter un Postgres
+      # local sur 5432/5433). Connexion client : localhost:5434.
+      - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -102,6 +125,8 @@ services:
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "false"
+      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
+      OUTBOX_ENABLED: "false"
     depends_on:
       api:
         condition: service_healthy
@@ -119,6 +144,8 @@ services:
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "false"
+      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
+      OUTBOX_ENABLED: "false"
     depends_on:
       api:
         condition: service_healthy
@@ -136,6 +163,8 @@ services:
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "false"
+      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
+      OUTBOX_ENABLED: "false"
     depends_on:
       api:
         condition: service_healthy
@@ -153,6 +182,8 @@ services:
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "false"
+      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
+      OUTBOX_ENABLED: "false"
     depends_on:
       api:
         condition: service_healthy

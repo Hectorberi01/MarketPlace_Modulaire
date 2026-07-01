@@ -14,9 +14,11 @@ using Marketplace.Modules.Settlement.Application.Abstractions;
 using Marketplace.Modules.Settlement.Application.Batches;
 using Marketplace.Modules.Settlement.Application.Batches.EventHandlers;
 using Marketplace.Modules.Settlement.Application.Earnings;
+using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Batches.Events;
 using Marketplace.Modules.Settlement.Domain.Earnings;
+using Marketplace.Modules.Settlement.Domain.Wallets;
 using Marketplace.Modules.Settlement.Infrastructure.Persistence;
 
 namespace Marketplace.Modules.Settlement.Infrastructure;
@@ -42,6 +44,13 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<ISellerEarningRepository, SellerEarningRepository>();
         services.AddScoped<ISettlementBatchRepository, SettlementBatchRepository>();
 
+        // Portefeuilles (wallet) : repositories + service de mutation partagé.
+        services.AddScoped<ISellerWalletRepository, SellerWalletRepository>();
+        services.AddScoped<IPlatformWalletRepository, PlatformWalletRepository>();
+        services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
+        services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();
+        services.AddScoped<WalletMutations>();
+
         services.AddScoped<IDomainEventHandler<PayoutPaidDomainEvent>, PayoutPaidDomainEventHandler>();
 
         // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
@@ -55,6 +64,6 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<SettlementDbContext>>();
+        services.AddOutboxProcessor<SettlementDbContext>();
     }
 }

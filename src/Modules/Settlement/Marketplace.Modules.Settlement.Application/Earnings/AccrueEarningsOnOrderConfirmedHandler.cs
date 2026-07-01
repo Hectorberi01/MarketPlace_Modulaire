@@ -4,6 +4,7 @@ using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Settlement.Application.Abstractions;
+using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Settlement.Domain.Earnings;
 
 namespace Marketplace.Modules.Settlement.Application.Earnings;
@@ -13,6 +14,10 @@ namespace Marketplace.Modules.Settlement.Application.Earnings;
 /// son vendeur : brut = (prix de base − réduction vendeur) × quantité ;
 /// commission résolue via Billing (par catégorie) ; net = brut − commission.
 /// Idempotent par commande. C'est l'alimentation du grand livre des reversements.
+///
+/// Alimente aussi les portefeuilles : le NET va au « solde à venir » de chaque
+/// vendeur, la commission au solde commission de la plateforme, et les frais de
+/// livraison au solde livraison de la plateforme.
 /// </summary>
 public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHandler<OrderConfirmedIntegrationEvent>
 {
@@ -20,6 +25,7 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
     private readonly IOrderingModuleApi _orderingModuleApi;
     private readonly ICatalogModuleApi _catalogModuleApi;
     private readonly ICommissionModuleApi _commissionModuleApi;
+    private readonly WalletMutations _wallets;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public AccrueEarningsOnOrderConfirmedHandler(
@@ -27,12 +33,14 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
         IOrderingModuleApi orderingModuleApi,
         ICatalogModuleApi catalogModuleApi,
         ICommissionModuleApi commissionModuleApi,
+        WalletMutations wallets,
         ISettlementUnitOfWork unitOfWork)
     {
         _earningRepository = earningRepository;
         _orderingModuleApi = orderingModuleApi;
         _catalogModuleApi = catalogModuleApi;
         _commissionModuleApi = commissionModuleApi;
+        _wallets = wallets;
         _unitOfWork = unitOfWork;
     }
 
@@ -48,6 +56,9 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
         {
             return;
         }
+
+        var netBySeller = new Dictionary<Guid, decimal>();
+        var totalCommission = 0m;
 
         foreach (var line in order.Lines)
         {
@@ -69,8 +80,21 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
             if (earning.IsSuccess)
             {
                 await _earningRepository.AddAsync(earning.Value, cancellationToken);
+
+                netBySeller[line.SellerId] = netBySeller.GetValueOrDefault(line.SellerId) + earning.Value.NetAmount;
+                totalCommission += earning.Value.CommissionAmount;
             }
         }
+
+        // Portefeuille vendeur : le net va au solde à venir (libéré à la livraison).
+        foreach (var (sellerId, net) in netBySeller)
+        {
+            await _wallets.CreditSellerPendingAsync(sellerId, net, order.Currency, order.Id, cancellationToken);
+        }
+
+        // Portefeuille plateforme : commission encaissée + frais de livraison encaissés.
+        await _wallets.CreditPlatformCommissionAsync(totalCommission, order.Currency, order.Id, cancellationToken);
+        await _wallets.CreditPlatformShippingAsync(order.ShippingFee, order.Currency, order.Id, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }

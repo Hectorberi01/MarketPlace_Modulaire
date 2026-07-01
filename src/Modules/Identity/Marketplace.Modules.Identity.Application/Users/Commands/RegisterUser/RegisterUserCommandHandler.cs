@@ -88,6 +88,12 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
 
         var user = userResult.Value;
 
+        // Dev/démo : aucun service d'e-mailing n'est branché, donc on confirme
+        // l'e-mail immédiatement pour que le compte soit Actif et puisse se
+        // connecter. En production : retirer cet appel et confirmer via le lien
+        // reçu par e-mail (event EmailVerificationRequested ci-dessous).
+        user.ConfirmEmail(tokenHash, DateTime.UtcNow);
+
         var buyerRole = await _roleRepository.GetByNameAsync(DefaultRoleName, cancellationToken);
         if (buyerRole is not null)
         {

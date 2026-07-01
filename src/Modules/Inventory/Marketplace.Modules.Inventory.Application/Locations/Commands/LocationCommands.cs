@@ -109,3 +109,34 @@ internal sealed class UpdateLocationAddressCommandHandler : ICommandHandler<Upda
         return Result.Success();
     }
 }
+
+// ---- Suppression d'un lieu -------------------------------------------------
+
+/// <summary>Supprime un lieu d'expédition (back-office admin).</summary>
+public sealed record DeleteFulfillmentLocationCommand(Guid LocationId) : ICommand;
+
+internal sealed class DeleteFulfillmentLocationCommandHandler : ICommandHandler<DeleteFulfillmentLocationCommand>
+{
+    private readonly IFulfillmentLocationRepository _repository;
+    private readonly IInventoryUnitOfWork _unitOfWork;
+
+    public DeleteFulfillmentLocationCommandHandler(IFulfillmentLocationRepository repository, IInventoryUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(DeleteFulfillmentLocationCommand command, CancellationToken cancellationToken)
+    {
+        var location = await _repository.GetByIdAsync(new FulfillmentLocationId(command.LocationId), cancellationToken);
+        if (location is null)
+        {
+            return Result.Failure(Error.NotFound("inventory.location.not_found", "Lieu d'expédition introuvable."));
+        }
+
+        _repository.Remove(location);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
+    }
+}

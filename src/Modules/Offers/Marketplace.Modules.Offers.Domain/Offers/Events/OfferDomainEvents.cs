@@ -11,5 +11,5 @@ public sealed record OfferCreatedDomainEvent(
     decimal BasePriceAmount,
     string Currency) : DomainEvent;
 
-/// <summary>Le prix de base d'une offre a changé.</summary>
-public sealed record OfferPriceChangedDomainEvent(Guid OfferId, decimal Amount, string Currency) : DomainEvent;
+/// <summary>Le prix de base (montant et/ou devise) d'une offre a changé.</summary>
+public sealed record OfferPriceChangedDomainEvent(Guid OfferId, Guid ProductId, decimal Amount, string Currency) : DomainEvent;

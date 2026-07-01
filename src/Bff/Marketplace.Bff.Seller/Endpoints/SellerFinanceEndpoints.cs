@@ -17,11 +17,7 @@ public static class SellerFinanceEndpoints
         var finance = app.MapGroup("/seller/finance").WithTags("Vendeur · Finances").RequireAuthorization();
 
         finance.MapGet("/statement", StatementAsync);
-
-        // Détail des reversements (payouts) du vendeur : nécessite une query
-        // Settlement filtrée par vendeur (aujourd'hui seuls les lots globaux et le
-        // relevé agrégé sont exposés).
-        finance.MapGet("/payouts", () => SellerBff.NotImplemented("settlement.seller_payouts"));
+        finance.MapGet("/payouts", PayoutsAsync);
 
         return app;
     }
@@ -47,5 +43,14 @@ public static class SellerFinanceEndpoints
         }
 
         return (await sender.Send(new GetSellerStatementQuery(seller.Id, start, end), ct)).Match(s => Results.Ok(s));
+    }
+
+    /// <summary>Détail des reversements (payouts) de la boutique du jeton, tous lots confondus.</summary>
+    private static async Task<IResult> PayoutsAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        return seller is null
+            ? SellerBff.NotASeller()
+            : (await sender.Send(new ListSellerPayoutsQuery(seller.Id), ct)).Match(p => Results.Ok(p));
     }
 }

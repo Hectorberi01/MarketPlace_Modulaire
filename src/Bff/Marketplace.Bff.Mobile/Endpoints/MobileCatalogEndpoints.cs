@@ -30,9 +30,9 @@ public static class MobileCatalogEndpoints
         return app;
     }
 
-    /// <summary>Fiche produit agrégée : prix/offres + avis résumés (1 appel).</summary>
+    /// <summary>Fiche produit agrégée : prix/offres (+ nom boutique) + avis résumés (1 appel).</summary>
     private static async Task<IResult> ProductDetailAsync(
-        Guid id, ICatalogModuleApi catalog, IOfferModuleApi offers, ISender sender, CancellationToken ct)
+        Guid id, ICatalogModuleApi catalog, IOfferModuleApi offers, ISellerModuleApi sellers, ISender sender, CancellationToken ct)
     {
         var product = await catalog.GetProductAsync(id, ct);
         if (product is null)
@@ -43,8 +43,34 @@ public static class MobileCatalogEndpoints
         var productOffers = await offers.GetOffersByProductAsync(id, ct);
         var rating = await sender.Send(new GetProductRatingQuery(id), ct);
 
-        return Results.Ok(new MobileProductDetail(
-            product, productOffers, rating.IsSuccess ? rating.Value : null));
+        // Résout le nom de boutique de chaque vendeur (séquentiel : DbContext scoped).
+        var sellerNames = new Dictionary<Guid, string>();
+        foreach (var sid in productOffers.Select(o => o.SellerId).Distinct())
+        {
+            var s = await sellers.GetSellerAsync(sid, ct);
+            sellerNames[sid] = s?.ShopName ?? "Vendeur";
+        }
+
+        var enrichedOffers = productOffers.Select(o => new
+        {
+            id = o.Id,
+            offerId = o.Id,
+            productId = o.ProductId,
+            sellerId = o.SellerId,
+            sellerName = sellerNames.TryGetValue(o.SellerId, out var n) ? n : "Vendeur",
+            sku = o.Sku,
+            basePriceAmount = o.BasePriceAmount,
+            currency = o.Currency,
+            condition = o.Condition,
+            status = o.Status,
+        });
+
+        return Results.Ok(new
+        {
+            product,
+            offers = enrichedOffers,
+            rating = rating.IsSuccess ? rating.Value : null,
+        });
     }
 
     /// <summary>Avis paginés du produit.</summary>
@@ -57,8 +83,18 @@ public static class MobileCatalogEndpoints
 
     /// <summary>Recherche compacte (vignettes) — ?q=&category=&sort=&page=&size=.</summary>
     private static async Task<IResult> SearchAsync(
-        string? q, Guid? category, string? sort, int? page, int? size, ISender sender, CancellationToken ct)
-        => (await sender.Send(new SearchProductsQuery(q, category, sort, page ?? 1, size ?? 20), ct)).Match(r => Results.Ok(r));
+        string? q, Guid? category, string? sort, int? page, int? size, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+    {
+        var result = await sender.Send(new SearchProductsQuery(q, category, sort, page ?? 1, size ?? 20), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(r => Results.Ok(r));
+        }
+
+        // Enrichit chaque vignette avec l'image principale du produit.
+        var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, ct);
+        return Results.Ok(enriched);
+    }
 
     /// <summary>Autocomplétion : top résultats compacts pour ?q=.</summary>
     private static async Task<IResult> SuggestAsync(string? q, ISender sender, CancellationToken ct)
@@ -69,15 +105,24 @@ public static class MobileCatalogEndpoints
             : Results.Ok(Array.Empty<object>());
     }
 
-    /// <summary>Vitrine vendeur : profil + note. (Liste produits du vendeur : query Search par vendeur à ajouter.)</summary>
-    private static async Task<IResult> ShopAsync(Guid sellerId, ISellerModuleApi sellers, CancellationToken ct)
+    /// <summary>Vitrine vendeur : profil + note + produits du vendeur (vignettes avec image).</summary>
+    private static async Task<IResult> ShopAsync(
+        Guid sellerId, ISellerModuleApi sellers, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
     {
         var seller = await sellers.GetSellerAsync(sellerId, ct);
-        return seller is null
-            ? Results.NotFound(new { error = "shop_not_found" })
-            : Results.Ok(new MobileShop(seller, Array.Empty<object>()));
-    }
+        if (seller is null)
+        {
+            return Results.NotFound(new { error = "shop_not_found" });
+        }
 
-    public sealed record MobileProductDetail(ProductSummary Product, IReadOnlyList<OfferSummary> Offers, ProductRatingSummary? Rating);
-    public sealed record MobileShop(SellerSummary Seller, IReadOnlyList<object> Products);
+        object products = Array.Empty<object>();
+        var result = await sender.Send(new SearchProductsQuery(null, null, null, 1, 50, sellerId), ct);
+        if (result.IsSuccess)
+        {
+            var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, ct);
+            products = enriched.Items;
+        }
+
+        return Results.Ok(new { seller, products });
+    }
 }

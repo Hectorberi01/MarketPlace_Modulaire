@@ -1,6 +1,8 @@
 using MediatR;
+using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Ordering.Application.Orders.Commands;
 using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Ordering.Contracts;
@@ -28,23 +30,85 @@ public static class MobileOrderEndpoints
         return app;
     }
 
-    /// <summary>Liste des commandes de l'utilisateur.</summary>
+    /// <summary>
+    /// Liste des commandes de l'utilisateur.
+    /// </summary>
     private static async Task<IResult> ListAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
         => MobileBff.CurrentUserId(user) is not { } buyerId
             ? Results.Unauthorized()
             : (await sender.Send(new ListMyOrdersQuery(buyerId), ct)).Match(o => Results.Ok(o));
 
-    /// <summary>Détail commande + expéditions + tracking (1 appel).</summary>
-    private static async Task<IResult> DetailAsync(Guid id, ISender sender, IShippingModuleApi shipping, CancellationToken ct)
+    /// <summary>
+    /// Détail commande + expéditions + tracking (1 appel), avec chaque ligne
+    /// enrichie du nom et de l'image principale du produit (le résumé commande
+    /// ne porte que le SKU).
+    /// </summary>
+    private static async Task<IResult> DetailAsync(Guid id, ISender sender, IShippingModuleApi shipping, ICatalogModuleApi catalog, CancellationToken ct)
     {
-        var order = await sender.Send(new GetOrderQuery(id), ct);
-        if (order.IsFailure)
+        var orderResult = await sender.Send(new GetOrderQuery(id), ct);
+        if (orderResult.IsFailure)
         {
-            return order.Match(o => Results.Ok(o));
+            return orderResult.Match(o => Results.Ok(o));
+        }
+
+        var o = orderResult.Value;
+
+        // Séquentiel : le DbContext (scoped) de Catalog n'est pas thread-safe.
+        var lines = new List<object>(o.Lines.Count);
+        foreach (var l in o.Lines)
+        {
+            string? name = null;
+            string? imageUrl = null;
+            var product = await catalog.GetProductAsync(l.ProductId, ct);
+            if (product is not null)
+            {
+                name = product.Name;
+                var primary = product.Media.FirstOrDefault(m => m.IsPrimary) ?? product.Media.FirstOrDefault();
+                imageUrl = primary?.Url;
+            }
+
+            lines.Add(new
+            {
+                offerId = l.OfferId,
+                productId = l.ProductId,
+                sku = l.Sku,
+                productName = name ?? l.Sku,
+                imageUrl,
+                quantity = l.Quantity,
+                finalUnitPrice = l.FinalUnitPrice,
+                lineTotal = l.LineTotal,
+            });
         }
 
         var shipments = await shipping.GetShipmentsByOrderAsync(id, ct);
-        return Results.Ok(new MobileOrderDetail(order.Value, shipments));
+
+        return Results.Ok(new
+        {
+            order = new
+            {
+                id = o.Id,
+                buyerId = o.BuyerId,
+                currency = o.Currency,
+                status = o.Status,
+                createdAtUtc = o.CreatedAtUtc,
+                subtotal = o.Subtotal,
+                totalSellerDiscount = o.TotalSellerDiscount,
+                totalPlatformDiscount = o.TotalPlatformDiscount,
+                grandTotal = o.GrandTotal,
+                shippingAddress = o.ShippingAddress is null ? null : new
+                {
+                    label = o.ShippingAddress.Label,
+                    recipient = o.ShippingAddress.Recipient,
+                    line1 = o.ShippingAddress.Line1,
+                    line2 = o.ShippingAddress.Line2,
+                    city = o.ShippingAddress.City,
+                    country = o.ShippingAddress.Country,
+                    phone = o.ShippingAddress.Phone,
+                },
+                lines,
+            },
+            shipments,
+        });
     }
 
     /// <summary>Demande d'annulation (si éligible).</summary>

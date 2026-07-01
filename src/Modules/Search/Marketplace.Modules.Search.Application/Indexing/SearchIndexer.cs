@@ -1,3 +1,4 @@
+using System.Linq;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Reviews.Contracts;
 using Marketplace.Modules.Search.Application.Abstractions;
@@ -53,6 +54,57 @@ public sealed class SearchIndexer
         }
 
         doc.ApplyOfferPrice(price, currency);
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Force le prix/devise du document (changement de prix d'une offre) : met à jour
+    /// même sans baisse de prix — nécessaire pour répercuter un changement de devise.
+    /// </summary>
+    public async Task SetOfferPriceAsync(Guid productId, decimal price, string currency, CancellationToken ct)
+    {
+        var doc = await EnsureAsync(productId, ct);
+        if (doc is null)
+        {
+            return;
+        }
+
+        doc.SetOfferPrice(price, currency);
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Affiche (validation admin → Active) ou masque (Draft / Archived) le produit en vitrine.</summary>
+    public async Task SetVisibilityAsync(Guid productId, bool visible, CancellationToken ct)
+    {
+        var doc = await EnsureAsync(productId, ct);
+        if (doc is null)
+        {
+            return;
+        }
+
+        // Rafraîchit la vignette au moment de la mise en vitrine : le produit a
+        // alors ses images (ajoutées après création).
+        var product = await _catalogModuleApi.GetProductAsync(productId, ct);
+        if (product is not null)
+        {
+            var primary = product.Media.FirstOrDefault(m => m.IsPrimary) ?? product.Media.FirstOrDefault();
+            doc.SetImage(primary?.Url);
+        }
+
+        doc.SetVisible(visible);
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Retire le produit de l'index (suppression côté Catalog) — évite les orphelins en vitrine.</summary>
+    public async Task RemoveAsync(Guid productId, CancellationToken ct)
+    {
+        var doc = await _repository.GetByProductAsync(productId, ct);
+        if (doc is null)
+        {
+            return;
+        }
+
+        _repository.Remove(doc);
         await _unitOfWork.SaveChangesAsync(ct);
     }
 

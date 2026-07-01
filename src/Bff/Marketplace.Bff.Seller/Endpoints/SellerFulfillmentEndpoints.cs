@@ -1,16 +1,18 @@
 using MediatR;
+using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Shipping.Application.Shipments.Commands;
 using Marketplace.Modules.Shipping.Application.Shipments.Queries;
+using Marketplace.Modules.Shipping.Contracts;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
 /// <summary>
-/// BFF Vendeur — exécution des commandes. La file d'exécution du vendeur est sa
-/// liste d'expéditions (scopée à la boutique du jeton) ; chaque expédition suit
-/// le cycle préparation → expédiée (transporteur + suivi) → livrée.
+/// BFF Vendeur — exécution. La file est la liste d'expéditions de la boutique du
+/// jeton ; chaque accès/mutation par id vérifie l'appartenance (anti-IDOR).
 /// </summary>
 public static class SellerFulfillmentEndpoints
 {
@@ -29,38 +31,129 @@ public static class SellerFulfillmentEndpoints
         return app;
     }
 
-    /// <summary>File d'exécution : toutes les expéditions de la boutique du jeton.</summary>
-    private static async Task<IResult> QueueAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    /// <summary>
+    /// File d'exécution : toutes les expéditions de la boutique du jeton, enrichies
+    /// pour le dashboard (référence commande, nom du client, nombre d'articles).
+    /// </summary>
+    private static async Task<IResult> QueueAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, IIdentityModuleApi identity, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        return seller is null
-            ? SellerBff.NotASeller()
-            : (await sender.Send(new ListShipmentsBySellerQuery(seller.Id), ct)).Match(s => Results.Ok(s));
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var result = await sender.Send(new ListShipmentsBySellerQuery(seller.Id), ct);
+        return result.IsFailure
+            ? result.Match(s => Results.Ok(s))
+            : Results.Ok(await EnrichAsync(result.Value, identity, ct));
     }
 
-    /// <summary>Expéditions rattachées à une commande.</summary>
-    private static async Task<IResult> ByOrderAsync(Guid orderId, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListShipmentsByOrderQuery(orderId), ct)).Match(s => Results.Ok(s));
+    /// <summary>Expéditions d'une commande, filtrées sur la boutique du jeton (enrichies).</summary>
+    private static async Task<IResult> ByOrderAsync(ClaimsPrincipal user, Guid orderId, ISender sender, ISellerModuleApi sellers, IIdentityModuleApi identity, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
 
-    /// <summary>Détail d'une expédition.</summary>
-    private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetShipmentQuery(id), ct)).Match(s => Results.Ok(s));
+        var result = await sender.Send(new ListShipmentsByOrderQuery(orderId), ct);
+        return result.IsFailure
+            ? result.Match(s => Results.Ok(s))
+            : Results.Ok(await EnrichAsync(result.Value.Where(s => s.SellerId == seller.Id), identity, ct));
+    }
 
-    /// <summary>Marque « en préparation ».</summary>
-    private static async Task<IResult> PrepareAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new MarkShipmentPreparingCommand(id), ct)).Match(() => Results.NoContent());
+    /// <summary>
+    /// Projette des expéditions vers la forme attendue par le dashboard : référence
+    /// commande lisible, nom du client (résolu via Identity), nombre d'articles, et
+    /// statut renommé (« Preparing » côté domaine → « Prepared » côté dashboard).
+    /// </summary>
+    private static async Task<List<object>> EnrichAsync(IEnumerable<ShipmentSummary> shipments, IIdentityModuleApi identity, CancellationToken ct)
+    {
+        var rows = new List<object>();
+        foreach (var s in shipments)
+        {
+            var customer = "Client";
+            var u = await identity.GetUserAsync(s.BuyerId, ct);
+            if (u is not null)
+            {
+                var name = $"{u.FirstName} {u.LastName}".Trim();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    customer = name;
+                }
+            }
 
-    /// <summary>Marque « expédiée » (transporteur + numéro de suivi).</summary>
-    private static async Task<IResult> ShipAsync(Guid id, ShipRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new MarkShipmentShippedCommand(id, request.Carrier, request.TrackingNumber), ct)).Match(() => Results.NoContent());
+            rows.Add(new
+            {
+                id = s.Id,
+                orderId = s.OrderId,
+                orderReference = OrderReference(s.OrderId),
+                customer,
+                status = DashboardStatus(s.Status),
+                carrier = s.Carrier,
+                trackingNumber = s.TrackingNumber,
+                itemCount = s.Items.Sum(i => i.Quantity),
+                createdAt = s.CreatedAtUtc,
+            });
+        }
 
-    /// <summary>Marque « livrée » (déclenche la levée d'escrow + reversement en aval).</summary>
-    private static async Task<IResult> DeliverAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new MarkShipmentDeliveredCommand(id), ct)).Match(() => Results.NoContent());
+        return rows;
+    }
 
-    /// <summary>Annule l'expédition.</summary>
-    private static async Task<IResult> CancelAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new CancelShipmentCommand(id), ct)).Match(() => Results.NoContent());
+    private static string OrderReference(Guid orderId)
+    {
+        var hex = orderId.ToString("N").ToUpperInvariant();
+        return $"CMD-{hex[..8]}";
+    }
+
+    /// <summary>Le dashboard nomme le statut « Prepared » là où le domaine dit « Preparing ».</summary>
+    private static string DashboardStatus(string backendStatus)
+        => string.Equals(backendStatus, "Preparing", StringComparison.OrdinalIgnoreCase) ? "Prepared" : backendStatus;
+
+    private static async Task<IResult> GetAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        return await SellerBff.OwnsShipmentAsync(sender, seller.Id, id, ct)
+            ? (await sender.Send(new GetShipmentQuery(id), ct)).Match(s => Results.Ok(s))
+            : SellerBff.NotFoundOrForbidden("shipment");
+    }
+
+    private static async Task<IResult> PrepareAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentPreparingCommand(id), ct));
+
+    private static async Task<IResult> ShipAsync(ClaimsPrincipal user, Guid id, ShipRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentShippedCommand(id, request.Carrier, request.TrackingNumber), ct));
+
+    private static async Task<IResult> DeliverAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentDeliveredCommand(id), ct));
+
+    private static async Task<IResult> CancelAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new CancelShipmentCommand(id), ct));
+
+    /// <summary>Résout le vendeur, vérifie la propriété de l'expédition, puis exécute la commande.</summary>
+    private static async Task<IResult> GuardAsync(
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid shipmentId, CancellationToken ct,
+        Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+        if (!await SellerBff.OwnsShipmentAsync(sender, seller.Id, shipmentId, ct))
+        {
+            return SellerBff.NotFoundOrForbidden("shipment");
+        }
+
+        return (await action()).Match(() => Results.NoContent());
+    }
 
     public sealed record ShipRequest(string Carrier, string TrackingNumber);
 }

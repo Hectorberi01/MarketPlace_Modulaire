@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Marketplace.Api.Modules;
+using Marketplace.Api.RealTime;
 using Marketplace.Bff.Mobile.Endpoints;
 using Marketplace.BuildingBlocks.Application;
 using Marketplace.BuildingBlocks.Infrastructure;
@@ -40,6 +41,14 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     });
 }
 
+// 3ter. SignalR (messagerie temps réel). Backplane Redis si configuré, pour que
+// les pushs traversent les processus (bff-mobile ↔ bff-seller).
+var signalr = builder.Services.AddSignalR();
+if (!string.IsNullOrWhiteSpace(redisConnection))
+{
+    signalr.AddStackExchangeRedis(redisConnection);
+}
+
 // 4. Auth JWT — le BFF valide le jeton et propage l'identité ; l'autorisation fine
 //    vit dans les modules.
 var jwtSection = builder.Configuration.GetSection("Jwt");
@@ -61,6 +70,23 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             ClockSkew = TimeSpan.FromSeconds(30)
         };
+
+        // SignalR passe le jeton via la query string (?access_token=) sur le
+        // handshake WebSocket : on le récupère pour authentifier la connexion au hub.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/mobile/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -70,6 +96,31 @@ builder.Services.AddSwaggerGen(c =>
     // schemaIds qualifiés par le nom complet : évite toute collision si deux
     // groupes exposent des DTO imbriqués de même nom court.
     c.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace("+", ".").Replace("`", "_"));
+
+    // Authentification Bearer (JWT) dans la doc : ajoute le bouton « Authorize ».
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Coller le token JWT (obtenu via /mobile/auth/login), sans le préfixe « Bearer »."
+    });
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
 });
 
 // Types de DbContext (un par module) pour la migration optionnelle au démarrage.
@@ -110,5 +161,10 @@ app.MapMobileCheckoutEndpoints();
 app.MapMobileOrderEndpoints();
 app.MapMobileAccountEndpoints();
 app.MapMobileMessagingEndpoints();
+app.MapMobileContentEndpoints();
+app.MapMobileEngagementEndpoints();
+
+// Hub temps réel (messagerie). Sous /mobile pour être routé par Traefik.
+app.MapHub<ChatHub>("/mobile/hubs/chat");
 
 await app.RunAsync();

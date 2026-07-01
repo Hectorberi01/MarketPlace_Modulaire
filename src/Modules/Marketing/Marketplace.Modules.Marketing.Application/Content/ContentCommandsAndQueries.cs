@@ -16,8 +16,31 @@ public sealed record PublishContentBlockCommand(Guid ContentBlockId) : ICommand;
 /// <summary>Archive un bloc de contenu.</summary>
 public sealed record ArchiveContentBlockCommand(Guid ContentBlockId) : ICommand;
 
+/// <summary>Modifie un bloc de contenu existant.</summary>
+public sealed record UpdateContentBlockCommand(Guid ContentBlockId, string Type, string Slot, int Position, string Content, DateTime? StartUtc, DateTime? EndUtc) : ICommand;
+
+/// <summary>Supprime un bloc de contenu.</summary>
+public sealed record DeleteContentBlockCommand(Guid ContentBlockId) : ICommand;
+
 /// <summary>Liste les blocs publiés d'un slot (rendu vitrine).</summary>
 public sealed record ListContentBySlotQuery(string Slot) : IQuery<IReadOnlyList<ContentBlockSummary>>;
+
+/// <summary>Liste tous les blocs de contenu (back-office admin / CMS).</summary>
+public sealed record ListAllContentQuery : IQuery<IReadOnlyList<ContentBlockSummary>>;
+
+internal sealed class ListAllContentQueryHandler : IQueryHandler<ListAllContentQuery, IReadOnlyList<ContentBlockSummary>>
+{
+    private readonly IContentBlockRepository _repository;
+
+    public ListAllContentQueryHandler(IContentBlockRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<ContentBlockSummary>>> Handle(ListAllContentQuery query, CancellationToken cancellationToken)
+    {
+        var blocks = await _repository.ListAllAsync(cancellationToken);
+        IReadOnlyList<ContentBlockSummary> summaries = blocks.Select(ContentMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
 
 public sealed class CreateContentBlockCommandValidator : AbstractValidator<CreateContentBlockCommand>
 {
@@ -105,6 +128,45 @@ internal sealed class ArchiveContentBlockCommandHandler : ContentMutationHandler
 {
     public ArchiveContentBlockCommandHandler(IContentBlockRepository r, IMarketingUnitOfWork u) : base(r, u) { }
     public Task<Result> Handle(ArchiveContentBlockCommand c, CancellationToken ct) => MutateAsync(c.ContentBlockId, b => b.Archive(), ct);
+}
+
+internal sealed class UpdateContentBlockCommandHandler : ContentMutationHandlerBase, ICommandHandler<UpdateContentBlockCommand>
+{
+    public UpdateContentBlockCommandHandler(IContentBlockRepository r, IMarketingUnitOfWork u) : base(r, u) { }
+    public Task<Result> Handle(UpdateContentBlockCommand c, CancellationToken ct)
+    {
+        if (!Enum.TryParse<ContentBlockType>(c.Type, ignoreCase: true, out var type))
+        {
+            return Task.FromResult(Result.Failure(Error.Validation("marketing.content.type_invalid", "Type de bloc inconnu.")));
+        }
+
+        return MutateAsync(c.ContentBlockId, b => b.Update(type, c.Slot, c.Position, c.Content, c.StartUtc, c.EndUtc), ct);
+    }
+}
+
+internal sealed class DeleteContentBlockCommandHandler : ICommandHandler<DeleteContentBlockCommand>
+{
+    private readonly IContentBlockRepository _repository;
+    private readonly IMarketingUnitOfWork _unitOfWork;
+
+    public DeleteContentBlockCommandHandler(IContentBlockRepository repository, IMarketingUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(DeleteContentBlockCommand command, CancellationToken cancellationToken)
+    {
+        var block = await _repository.GetByIdAsync(new ContentBlockId(command.ContentBlockId), cancellationToken);
+        if (block is null)
+        {
+            return Result.Failure(Error.NotFound("marketing.content.not_found", "Bloc de contenu introuvable."));
+        }
+
+        _repository.Remove(block);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
 }
 
 internal sealed class ListContentBySlotQueryHandler : IQueryHandler<ListContentBySlotQuery, IReadOnlyList<ContentBlockSummary>>

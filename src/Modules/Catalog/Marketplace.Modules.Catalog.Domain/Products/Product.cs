@@ -180,6 +180,57 @@ public sealed class Product : AggregateRoot<ProductId>
         return variant;
     }
 
+    /// <summary>Met à jour une variante existante (SKU, attributs, code-barres, poids).</summary>
+    public Result UpdateVariant(
+        Guid variantId,
+        string sku,
+        IReadOnlyDictionary<string, string>? variantAttributes,
+        string? barcode,
+        int weightGrams)
+    {
+        var variant = _variants.FirstOrDefault(v => v.Id == variantId);
+        if (variant is null)
+        {
+            return Result.Failure(Error.NotFound("catalog.variant.not_found", $"Variante {variantId} introuvable sur ce produit."));
+        }
+
+        if (weightGrams < 0)
+        {
+            return Result.Failure(Error.Validation("catalog.variant.weight_negative", "Le poids ne peut pas être négatif."));
+        }
+
+        var skuResult = Sku.Create(sku);
+        if (skuResult.IsFailure)
+        {
+            return Result.Failure(skuResult.Error);
+        }
+
+        if (_variants.Any(v => v.Id != variantId && v.Sku == skuResult.Value))
+        {
+            return Result.Failure(Error.Conflict("catalog.variant.sku_duplicate", $"Le SKU « {skuResult.Value.Value} » existe déjà sur ce produit."));
+        }
+
+        var attributes = variantAttributes is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(variantAttributes);
+
+        variant.Update(skuResult.Value, attributes, Clean(barcode), weightGrams);
+        return Result.Success();
+    }
+
+    /// <summary>Retire une variante du produit.</summary>
+    public Result RemoveVariant(Guid variantId)
+    {
+        var variant = _variants.FirstOrDefault(v => v.Id == variantId);
+        if (variant is null)
+        {
+            return Result.Failure(Error.NotFound("catalog.variant.not_found", $"Variante {variantId} introuvable sur ce produit."));
+        }
+
+        _variants.Remove(variant);
+        return Result.Success();
+    }
+
     /// <summary>Ajoute un média (la première image devient principale).</summary>
     public Result<ProductMedia> AddMedia(
         string url,
@@ -216,22 +267,104 @@ public sealed class Product : AggregateRoot<ProductId>
         return media;
     }
 
+    /// <summary>
+    /// Retire un média du produit et renvoie l'entité retirée (pour permettre la
+    /// suppression côté service média via son ExternalId). Recompacte les positions
+    /// et promeut un nouveau média principal si nécessaire.
+    /// </summary>
+    public Result<ProductMedia> RemoveMedia(Guid mediaId)
+    {
+        var media = _media.FirstOrDefault(m => m.Id == mediaId);
+        if (media is null)
+        {
+            return Error.NotFound("catalog.media.not_found", $"Média {mediaId} introuvable sur ce produit.");
+        }
+
+        _media.Remove(media);
+
+        // Recompacte les positions (0..n-1).
+        var ordered = _media.OrderBy(m => m.Position).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ordered[i].SetPosition(i);
+        }
+
+        // Si on a retiré l'image principale, le premier média restant la devient.
+        if (media.IsPrimary && ordered.Count > 0)
+        {
+            ordered[0].MakePrimary();
+        }
+
+        return media;
+    }
+
+    /// <summary>Définit le média principal (les autres perdent le statut principal).</summary>
+    public Result SetPrimaryMedia(Guid mediaId)
+    {
+        var target = _media.FirstOrDefault(m => m.Id == mediaId);
+        if (target is null)
+        {
+            return Result.Failure(Error.NotFound("catalog.media.not_found", $"Média {mediaId} introuvable sur ce produit."));
+        }
+
+        foreach (var m in _media)
+        {
+            m.UnsetPrimary();
+        }
+        target.MakePrimary();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Réordonne les médias selon la liste d'identifiants fournie (positions 0..n-1).
+    /// Les ids inconnus sont ignorés ; les médias non listés sont placés à la fin
+    /// dans leur ordre courant. Le premier média devient l'image principale.
+    /// </summary>
+    public Result ReorderMedia(IReadOnlyList<Guid> orderedMediaIds)
+    {
+        if (_media.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        var ordered = orderedMediaIds
+            .Select(id => _media.FirstOrDefault(m => m.Id == id))
+            .Where(m => m is not null)
+            .Cast<ProductMedia>()
+            .ToList();
+
+        // Ajoute les médias non mentionnés à la fin (ordre courant).
+        foreach (var m in _media.OrderBy(m => m.Position))
+        {
+            if (!ordered.Contains(m))
+            {
+                ordered.Add(m);
+            }
+        }
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ordered[i].SetPosition(i);
+            ordered[i].UnsetPrimary();
+        }
+        ordered[0].MakePrimary();
+        return Result.Success();
+    }
+
     public void AssignBrand(Guid? brandId) => BrandId = brandId == Guid.Empty ? null : brandId;
 
     /// <summary>Publie le produit (Draft -> Active).</summary>
     public Result Activate()
     {
-        if (Status == ProductStatus.Active)
-        {
-            return Result.Success();
-        }
-
         if (Status == ProductStatus.Archived)
         {
             return Result.Failure(Error.Conflict("catalog.product.archived", "Un produit archivé ne peut pas être réactivé."));
         }
 
+        // Idempotent mais émet toujours l'event : re-valider rafraîchit la
+        // visibilité et la vignette en vitrine (utile pour réindexer).
         Status = ProductStatus.Active;
+        Raise(new ProductStatusChangedDomainEvent(Id.Value, Status.ToString()));
         return Result.Success();
     }
 
@@ -239,6 +372,7 @@ public sealed class Product : AggregateRoot<ProductId>
     public Result Archive()
     {
         Status = ProductStatus.Archived;
+        Raise(new ProductStatusChangedDomainEvent(Id.Value, Status.ToString()));
         return Result.Success();
     }
 
@@ -246,6 +380,7 @@ public sealed class Product : AggregateRoot<ProductId>
     public Result Unarchive()
     {
         Status = ProductStatus.Draft;
+        Raise(new ProductStatusChangedDomainEvent(Id.Value, Status.ToString()));
         return Result.Success();
     }
 

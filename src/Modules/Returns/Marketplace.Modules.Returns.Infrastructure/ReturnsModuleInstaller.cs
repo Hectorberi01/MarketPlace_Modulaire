@@ -40,6 +40,6 @@ public sealed class ReturnsModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<ReturnsDbContext>>();
+        services.AddOutboxProcessor<ReturnsDbContext>();
     }
 }

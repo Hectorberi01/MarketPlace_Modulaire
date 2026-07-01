@@ -16,8 +16,12 @@ WORKDIR /src
 # Copie de toute la solution (gestion centralisée des packages + graphe de projets).
 COPY . .
 
-RUN dotnet restore "${PROJECT}"
-RUN dotnet publish "${PROJECT}" -c Release -o /app --no-restore /p:UseAppHost=false
+# Cache NuGet partagé (BuildKit) : les 5 images et les rebuilds réutilisent les
+# packages déjà téléchargés → restores quasi instantanés après la 1re fois.
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore "${PROJECT}"
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish "${PROJECT}" -c Release -o /app --no-restore /p:UseAppHost=false
 
 # ---------- runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS final

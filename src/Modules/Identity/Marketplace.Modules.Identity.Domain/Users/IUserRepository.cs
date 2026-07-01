@@ -15,4 +15,7 @@ public interface IUserRepository
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
 
     Task<bool> PhoneExistsAsync(string phoneNumber, CancellationToken cancellationToken = default);
+
+    /// <summary>Liste tous les comptes de la plateforme (back-office admin).</summary>
+    Task<IReadOnlyList<User>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
 }

@@ -46,6 +46,6 @@ public sealed class InventoryModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<InventoryDbContext>>();
+        services.AddOutboxProcessor<InventoryDbContext>();
     }
 }

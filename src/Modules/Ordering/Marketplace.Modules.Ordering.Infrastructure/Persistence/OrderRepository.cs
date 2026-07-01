@@ -23,4 +23,20 @@ internal sealed class OrderRepository : IOrderRepository
             .Where(o => o.BuyerId == buyerId)
             .OrderByDescending(o => o.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Order>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
+        => await _dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Lines)
+            .Where(o => o.Lines.Any(l => l.SellerId == sellerId))
+            .OrderByDescending(o => o.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Order>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Lines)
+            .OrderByDescending(o => o.CreatedAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 }

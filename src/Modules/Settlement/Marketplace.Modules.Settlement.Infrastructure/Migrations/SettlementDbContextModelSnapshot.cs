@@ -101,6 +101,65 @@ partial class SettlementDbContextModelSnapshot : ModelSnapshot
         {
             b.Navigation("Payouts");
         });
+
+        modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.SellerWallet", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<decimal>("AvailableBalance").HasColumnType("numeric(18,2)");
+            b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("Currency").IsRequired().HasMaxLength(3).HasColumnType("character varying(3)");
+            b.Property<decimal>("PendingBalance").HasColumnType("numeric(18,2)");
+            b.Property<Guid>("SellerId").HasColumnType("uuid");
+            b.Property<DateTime>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.HasIndex("SellerId").IsUnique();
+            b.ToTable("seller_wallets", "settlement");
+        });
+
+        modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.PlatformWallet", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<decimal>("CommissionBalance").HasColumnType("numeric(18,2)");
+            b.Property<string>("Currency").IsRequired().HasMaxLength(3).HasColumnType("character varying(3)");
+            b.Property<decimal>("ShippingBalance").HasColumnType("numeric(18,2)");
+            b.Property<DateTime>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("platform_wallet", "settlement");
+        });
+
+        modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.Withdrawal", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<decimal>("Amount").HasColumnType("numeric(18,2)");
+            b.Property<DateTime?>("CompletedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("Currency").IsRequired().HasMaxLength(3).HasColumnType("character varying(3)");
+            b.Property<string>("FailureReason").HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<string>("ProviderRef").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<Guid>("SellerId").HasColumnType("uuid");
+            b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+            b.HasKey("Id");
+            b.HasIndex("SellerId");
+            b.ToTable("withdrawals", "settlement");
+        });
+
+        modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.WalletTransaction", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<string>("Account").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+            b.Property<decimal>("Amount").HasColumnType("numeric(18,2)");
+            b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("Currency").IsRequired().HasMaxLength(3).HasColumnType("character varying(3)");
+            b.Property<string>("Direction").IsRequired().HasMaxLength(10).HasColumnType("character varying(10)");
+            b.Property<Guid>("OwnerId").HasColumnType("uuid");
+            b.Property<string>("OwnerType").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+            b.Property<string>("Reason").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
+            b.Property<Guid?>("ReferenceId").HasColumnType("uuid");
+            b.Property<string>("ReferenceType").HasMaxLength(30).HasColumnType("character varying(30)");
+            b.HasKey("Id");
+            b.HasIndex("OwnerId", "CreatedAtUtc");
+            b.ToTable("wallet_transactions", "settlement");
+        });
 #pragma warning restore 612, 618
     }
 }

@@ -109,14 +109,13 @@ public sealed class Seller : AggregateRoot<SellerId>
             return Error.Validation("sellers.kyb.file_required", "Le fichier de la pièce KYB est obligatoire.");
         }
 
-        if (KybStatus is KybStatus.Verified)
-        {
-            return Error.Conflict("sellers.kyb.already_verified", "Le KYB est déjà validé.");
-        }
-
         var document = new KybDocument(Guid.NewGuid(), type, fileUrl.Trim());
         _kybDocuments.Add(document);
 
+        // Première soumission ou nouvelle tentative après un refus : la boutique
+        // passe en revue. Une pièce ajoutée à une boutique DÉJÀ vérifiée (mise à
+        // jour / renouvellement) est enregistrée sans dé-vérifier la boutique :
+        // l'admin peut la revalider s'il le souhaite, sans interrompre l'activité.
         if (KybStatus is KybStatus.NotStarted or KybStatus.Rejected)
         {
             KybStatus = KybStatus.InReview;

@@ -16,6 +16,34 @@ public sealed class ProductCreatedSearchHandler : IIntegrationEventHandler<Produ
         => _indexer.UpsertProductAsync(e.ProductId, e.SellerId, e.CategoryId, e.Name, e.Slug, cancellationToken);
 }
 
+/// <summary>
+/// Gère la visibilité publique selon le statut validé par l'admin : « Active »
+/// rend le produit visible en vitrine, « Draft » / « Archived » le masque.
+/// </summary>
+public sealed class ProductStatusChangedSearchHandler : IIntegrationEventHandler<ProductStatusChangedIntegrationEvent>
+{
+    private readonly SearchIndexer _indexer;
+
+    public ProductStatusChangedSearchHandler(SearchIndexer indexer) => _indexer = indexer;
+
+    public Task HandleAsync(ProductStatusChangedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _indexer.SetVisibilityAsync(
+            e.ProductId,
+            string.Equals(e.Status, "Active", StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+}
+
+/// <summary>Retire le produit de l'index quand il est supprimé du catalogue (Catalog).</summary>
+public sealed class ProductDeletedSearchHandler : IIntegrationEventHandler<ProductDeletedIntegrationEvent>
+{
+    private readonly SearchIndexer _indexer;
+
+    public ProductDeletedSearchHandler(SearchIndexer indexer) => _indexer = indexer;
+
+    public Task HandleAsync(ProductDeletedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _indexer.RemoveAsync(e.ProductId, cancellationToken);
+}
+
 /// <summary>Met à jour le prix « à partir de » d'un produit (Offers).</summary>
 public sealed class OfferCreatedSearchHandler : IIntegrationEventHandler<OfferCreatedIntegrationEvent>
 {
@@ -25,6 +53,17 @@ public sealed class OfferCreatedSearchHandler : IIntegrationEventHandler<OfferCr
 
     public Task HandleAsync(OfferCreatedIntegrationEvent e, CancellationToken cancellationToken = default)
         => _indexer.ApplyOfferPriceAsync(e.ProductId, e.BasePriceAmount, e.Currency, cancellationToken);
+}
+
+/// <summary>Met à jour le prix/devise « à partir de » quand une offre change de prix (Offers).</summary>
+public sealed class OfferPriceChangedSearchHandler : IIntegrationEventHandler<OfferPriceChangedIntegrationEvent>
+{
+    private readonly SearchIndexer _indexer;
+
+    public OfferPriceChangedSearchHandler(SearchIndexer indexer) => _indexer = indexer;
+
+    public Task HandleAsync(OfferPriceChangedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _indexer.SetOfferPriceAsync(e.ProductId, e.BasePriceAmount, e.Currency, cancellationToken);
 }
 
 /// <summary>Rafraîchit la note d'un produit après publication d'un avis (Reviews).</summary>

@@ -49,10 +49,13 @@ internal sealed class CatalogModuleApi : ICatalogModuleApi
             product.CategoryId,
             product.BrandId,
             product.Name,
+            product.Description,
             product.Slug.Value,
             product.Status.ToString(),
             product.Gtin,
             product.Ean,
+            product.ProductGroupId,
+            product.Attributes,
             product.Tags.ToList(),
             variants,
             media);

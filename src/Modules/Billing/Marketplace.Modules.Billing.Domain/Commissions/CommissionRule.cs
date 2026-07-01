@@ -109,4 +109,33 @@ public sealed class CommissionRule : AggregateRoot<CommissionRuleId>
     public bool IsApplicableAt(DateTime nowUtc) => IsActive && EffectiveFromUtc <= nowUtc;
 
     public void Deactivate() => IsActive = false;
+
+    public void Reactivate() => IsActive = true;
+
+    /// <summary>Modifie la règle (taux, frais, devise, bornes, prise d'effet) avec revalidation. Le périmètre n'est pas modifiable.</summary>
+    public Result Update(decimal rate, decimal fixedFee, string currency, decimal? minFee, decimal? maxFee, DateTime effectiveFromUtc)
+    {
+        if (rate is < 0m or > 1m)
+        {
+            return Result.Failure( Error.Validation("billing.rate_invalid", "Le taux de commission doit être compris entre 0 et 1."));
+        }
+
+        if (fixedFee < 0m)
+        {
+            return  Result.Failure( Error.Validation("billing.fixed_fee_invalid", "Le frais fixe ne peut pas être négatif."));
+        }
+
+        if (minFee is { } min && maxFee is { } max && max < min)
+        {
+            return  Result.Failure( Error.Validation("billing.bounds_invalid", "MaxFee doit être supérieur ou égal à MinFee."));
+        }
+
+        Rate = rate;
+        FixedFee = fixedFee;
+        Currency = currency.Trim().ToUpperInvariant();
+        MinFee = minFee;
+        MaxFee = maxFee;
+        EffectiveFromUtc = effectiveFromUtc;
+        return Result.Success();
+    }
 }

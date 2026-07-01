@@ -74,6 +74,18 @@ public sealed class Brand : AggregateRoot<BrandId>
         return Result.Success();
     }
 
+    /// <summary>Dépublie la marque (Active -> Pending) ; elle pourra être republiée.</summary>
+    public Result Unpublish()
+    {
+        if (Status == BrandStatus.Archived)
+        {
+            return Result.Failure(Error.Conflict("catalog.brand.archived", "Une marque archivée ne peut pas être dépubliée."));
+        }
+
+        Status = BrandStatus.Pending;
+        return Result.Success();
+    }
+
     /// <summary>Archive la marque (la retire du catalogue actif).</summary>
     public Result Archive()
     {

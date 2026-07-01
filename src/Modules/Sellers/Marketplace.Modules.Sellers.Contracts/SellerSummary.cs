@@ -11,6 +11,7 @@ public sealed record SellerSummary(
     decimal CommissionRate,
     decimal Rating,
     int SalesCount,
+    PayoutAccountSummary? Payout,
     IReadOnlyList<KybDocumentSummary> KybDocuments);
 
 public sealed record KybDocumentSummary(
@@ -18,3 +19,8 @@ public sealed record KybDocumentSummary(
     string Type,
     string FileUrl,
     DateTime? VerifiedAtUtc);
+
+public sealed record PayoutAccountSummary(
+    string Provider,
+    string AccountNumber,
+    string AccountName);

@@ -1,6 +1,7 @@
 using MediatR;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Identity.Application.PaymentMethods;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Notifications.Application.Notifications.Commands;
@@ -25,6 +26,12 @@ public static class MobileAccountEndpoints
 
         mobile.MapGet("/notifications", NotificationsAsync);
         mobile.MapPatch("/notifications/{id:guid}/read", MarkReadAsync);
+
+        // Moyens de paiement enregistrés (Mobile Money + cartes masquées).
+        mobile.MapGet("/account/payment-methods", ListPaymentMethodsAsync);
+        mobile.MapPost("/account/payment-methods", AddPaymentMethodAsync);
+        mobile.MapDelete("/account/payment-methods/{id:guid}", DeletePaymentMethodAsync);
+        mobile.MapPut("/account/payment-methods/{id:guid}/default", SetDefaultPaymentMethodAsync);
 
         // Préférences de notification et enregistrement de token push (FCM/APNs) :
         // capacités Notifications à exposer (NotificationPreference + device tokens).
@@ -76,6 +83,50 @@ public static class MobileAccountEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new MarkNotificationReadCommand(id, userId), ct)).Match(() => Results.NoContent());
 
+    /// <summary>Liste les moyens de paiement de l'utilisateur (défaut en tête).</summary>
+    private static async Task<IResult> ListPaymentMethodsAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new ListPaymentMethodsQuery(userId), ct)).Match(r => Results.Ok(r));
+
+    /// <summary>Enregistre un moyen de paiement (Mobile Money ou carte).</summary>
+    private static async Task<IResult> AddPaymentMethodAsync(ClaimsPrincipal user, PaymentMethodRequest request, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new AddPaymentMethodCommand(
+            userId, request.Type, request.Label, request.Provider, request.Msisdn,
+            request.CardNumber, request.ExpiryMonth, request.ExpiryYear, request.HolderName,
+            request.MakeDefault), ct);
+        return result.Match(id => Results.Ok(new { id }));
+    }
+
+    /// <summary>Supprime un moyen de paiement.</summary>
+    private static async Task<IResult> DeletePaymentMethodAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new DeletePaymentMethodCommand(userId, id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Définit le moyen de paiement par défaut.</summary>
+    private static async Task<IResult> SetDefaultPaymentMethodAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new SetDefaultPaymentMethodCommand(userId, id), ct)).Match(() => Results.NoContent());
+
     public sealed record ProfileRequest(string FirstName, string LastName, string PhoneNumber);
     public sealed record WishlistRequest(Guid ProductId, Guid? OfferId, bool PriceAlert, bool StockAlert);
+
+    public sealed record PaymentMethodRequest(
+        string Type,
+        string? Label,
+        string Provider,
+        string? Msisdn,
+        string? CardNumber,
+        int? ExpiryMonth,
+        int? ExpiryYear,
+        string? HolderName,
+        bool MakeDefault);
 }

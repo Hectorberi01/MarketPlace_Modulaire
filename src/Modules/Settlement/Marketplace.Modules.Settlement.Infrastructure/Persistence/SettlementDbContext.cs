@@ -5,6 +5,7 @@ using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Settlement.Application.Abstractions;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Earnings;
+using Marketplace.Modules.Settlement.Domain.Wallets;
 
 namespace Marketplace.Modules.Settlement.Infrastructure.Persistence;
 
@@ -23,6 +24,10 @@ public sealed class SettlementDbContext : ModuleDbContext, ISettlementUnitOfWork
 
     public DbSet<SellerEarning> Earnings => Set<SellerEarning>();
     public DbSet<SettlementBatch> Batches => Set<SettlementBatch>();
+    public DbSet<SellerWallet> SellerWallets => Set<SellerWallet>();
+    public DbSet<PlatformWallet> PlatformWallets => Set<PlatformWallet>();
+    public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+    public DbSet<WalletTransaction> WalletTransactions => Set<WalletTransaction>();
 
     protected override string Schema => SchemaName;
 

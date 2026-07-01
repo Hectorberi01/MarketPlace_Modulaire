@@ -15,6 +15,29 @@ public sealed record GetAvailabilityQuery(string Sku) : IQuery<AvailabilitySumma
 /// <summary>Liste les articles sous le seuil de réapprovisionnement.</summary>
 public sealed record ListLowStockQuery : IQuery<IReadOnlyList<InventoryItemSummary>>;
 
+/// <summary>Liste les articles de stock d'un SKU (toutes localisations).</summary>
+public sealed record ListInventoryBySkuQuery(string Sku) : IQuery<IReadOnlyList<InventoryItemSummary>>;
+
+internal sealed class ListInventoryBySkuQueryHandler : IQueryHandler<ListInventoryBySkuQuery, IReadOnlyList<InventoryItemSummary>>
+{
+    private readonly IInventoryItemRepository _repository;
+
+    public ListInventoryBySkuQueryHandler(IInventoryItemRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<InventoryItemSummary>>> Handle(ListInventoryBySkuQuery query, CancellationToken cancellationToken)
+    {
+        var skuResult = Sku.Create(query.Sku);
+        if (skuResult.IsFailure)
+        {
+            return Result.Failure<IReadOnlyList<InventoryItemSummary>>(skuResult.Error);
+        }
+
+        var items = await _repository.ListBySkuAsync(skuResult.Value.Value, cancellationToken);
+        IReadOnlyList<InventoryItemSummary> summaries = items.Select(InventoryMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
+
 internal sealed class GetInventoryItemQueryHandler : IQueryHandler<GetInventoryItemQuery, InventoryItemSummary>
 {
     private readonly IInventoryItemRepository _repository;

@@ -66,4 +66,15 @@ internal sealed class SettlementBatchRepository : ISettlementBatchRepository
             .Include(b => b.Payouts)
             .OrderByDescending(b => b.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Payout>> ListPayoutsBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
+    {
+        var batches = await _dbContext.Batches
+            .AsNoTracking()
+            .Include(b => b.Payouts)
+            .OrderByDescending(b => b.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        return batches.SelectMany(b => b.Payouts).Where(p => p.SellerId == sellerId).ToList();
+    }
 }

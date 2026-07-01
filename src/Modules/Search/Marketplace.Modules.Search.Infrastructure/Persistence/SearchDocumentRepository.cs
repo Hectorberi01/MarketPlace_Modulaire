@@ -15,9 +15,13 @@ internal sealed class SearchDocumentRepository : ISearchDocumentRepository
     public async Task<SearchDocument?> GetByProductAsync(Guid productId, CancellationToken cancellationToken = default)
         => await _dbContext.Documents.FirstOrDefaultAsync(d => d.ProductId == productId, cancellationToken);
 
+    public void Remove(SearchDocument document)
+        => _dbContext.Documents.Remove(document);
+
     public async Task<SearchPage> SearchAsync(SearchCriteria criteria, CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.Documents.AsNoTracking().AsQueryable();
+        // Vitrine publique : uniquement les produits validés (Active).
+        var query = _dbContext.Documents.AsNoTracking().Where(d => d.IsVisible);
 
         if (!string.IsNullOrWhiteSpace(criteria.Text))
         {
@@ -28,6 +32,11 @@ internal sealed class SearchDocumentRepository : ISearchDocumentRepository
         if (criteria.CategoryId is { } categoryId)
         {
             query = query.Where(d => d.CategoryId == categoryId);
+        }
+
+        if (criteria.SellerId is { } sellerId)
+        {
+            query = query.Where(d => d.SellerId == sellerId);
         }
 
         var total = await query.CountAsync(cancellationToken);

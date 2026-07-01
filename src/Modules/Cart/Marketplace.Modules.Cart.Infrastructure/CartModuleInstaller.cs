@@ -48,6 +48,6 @@ public sealed class CartModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<CartDbContext>>();
+        services.AddOutboxProcessor<CartDbContext>();
     }
 }

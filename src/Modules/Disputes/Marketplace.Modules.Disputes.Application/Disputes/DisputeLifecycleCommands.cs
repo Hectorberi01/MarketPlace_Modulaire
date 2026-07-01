@@ -17,6 +17,9 @@ public sealed record ResolveDisputeCommand(Guid DisputeId, string Resolution) : 
 /// <summary>Escalade le litige.</summary>
 public sealed record EscalateDisputeCommand(Guid DisputeId) : ICommand;
 
+/// <summary>Rouvre un litige tranché / escaladé (arbitrage admin).</summary>
+public sealed record ReopenDisputeCommand(Guid DisputeId) : ICommand;
+
 internal abstract class DisputeMutationHandlerBase
 {
     protected readonly IDisputeRepository Repository;
@@ -79,4 +82,10 @@ internal sealed class EscalateDisputeCommandHandler : DisputeMutationHandlerBase
 {
     public EscalateDisputeCommandHandler(IDisputeRepository r, IDisputesUnitOfWork u) : base(r, u) { }
     public Task<Result> Handle(EscalateDisputeCommand c, CancellationToken ct) => MutateAsync(c.DisputeId, d => d.Escalate(), ct);
+}
+
+internal sealed class ReopenDisputeCommandHandler : DisputeMutationHandlerBase, ICommandHandler<ReopenDisputeCommand>
+{
+    public ReopenDisputeCommandHandler(IDisputeRepository r, IDisputesUnitOfWork u) : base(r, u) { }
+    public Task<Result> Handle(ReopenDisputeCommand c, CancellationToken ct) => MutateAsync(c.DisputeId, d => d.Reopen(), ct);
 }

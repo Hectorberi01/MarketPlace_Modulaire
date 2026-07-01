@@ -75,4 +75,27 @@ public sealed class TaxRule : AggregateRoot<TaxRuleId>
     public bool IsApplicableAt(DateTime nowUtc) => IsActive && EffectiveFromUtc <= nowUtc;
 
     public void Deactivate() => IsActive = false;
+
+    public void Reactivate() => IsActive = true;
+
+    /// <summary>Modifie la règle (juridiction, catégorie, taux, type, prise d'effet) avec revalidation.</summary>
+    public Result Update(string jurisdiction, Guid? categoryId, decimal rate, TaxType type, DateTime effectiveFromUtc)
+    {
+        if (string.IsNullOrWhiteSpace(jurisdiction))
+        {
+            return  Result.Failure( Error.Validation("tax.jurisdiction_required", "La juridiction est obligatoire."));
+        }
+
+        if (type != TaxType.Exempt && rate is < 0m or > 1m)
+        {
+            return  Result.Failure( Error.Validation("tax.rate_invalid", "Le taux doit être compris entre 0 et 1."));
+        }
+
+        Jurisdiction = jurisdiction.Trim().ToUpperInvariant();
+        CategoryId = categoryId == Guid.Empty ? null : categoryId;
+        Rate = type == TaxType.Exempt ? 0m : rate;
+        Type = type;
+        EffectiveFromUtc = effectiveFromUtc;
+        return Result.Success();
+    }
 }

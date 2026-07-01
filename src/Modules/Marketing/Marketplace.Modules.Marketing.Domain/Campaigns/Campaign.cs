@@ -116,4 +116,32 @@ public sealed class Campaign : AggregateRoot<CampaignId>
         Status = CampaignStatus.Ended;
         return Result.Success();
     }
+
+    /// <summary>Modifie la campagne (nom, type, fenêtre, segment) avec revalidation.</summary>
+    public Result Update(string name, CampaignType type, DateTime startUtc, DateTime endUtc, string? targetSegment)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Result.Failure(Error.Validation("marketing.campaign.name_required", "Le nom de la campagne est obligatoire."));
+        }
+
+        if (endUtc <= startUtc)
+        {
+            return Result.Failure(Error.Validation("marketing.campaign.period_invalid", "La fenêtre d'activation est invalide."));
+        }
+
+        Name = name.Trim();
+        Type = type;
+        StartUtc = startUtc;
+        EndUtc = endUtc;
+        TargetSegment = targetSegment;
+        return Result.Success();
+    }
+
+    /// <summary>Retire une promotion de la campagne.</summary>
+    public Result RemovePromotion(Guid promotionId)
+    {
+        _promotionIds.Remove(promotionId);
+        return Result.Success();
+    }
 }

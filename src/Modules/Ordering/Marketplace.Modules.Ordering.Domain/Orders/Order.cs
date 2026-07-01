@@ -37,9 +37,26 @@ public sealed class Order : AggregateRoot<OrderId>
     public decimal Subtotal { get; private set; }
     public decimal TotalSellerDiscount { get; private set; }
     public decimal TotalPlatformDiscount { get; private set; }
+
+    /// <summary>Frais de livraison encaissés par la plateforme (forfait choisi au checkout).</summary>
+    public decimal ShippingFee { get; private set; }
+
     public decimal GrandTotal { get; private set; }
 
     public string? CancellationReason { get; private set; }
+
+    // Adresse de livraison figée au moment de la commande (snapshot, pas de FK
+    // vers Identity : on conserve une copie pour l'historique de la commande).
+    public string? ShipToLabel { get; private set; }
+    public string? ShipToRecipient { get; private set; }
+    public string? ShipToLine1 { get; private set; }
+    public string? ShipToLine2 { get; private set; }
+    public string? ShipToCity { get; private set; }
+    public string? ShipToCountry { get; private set; }
+    public string? ShipToPhone { get; private set; }
+
+    public bool HasShippingAddress =>
+        !string.IsNullOrWhiteSpace(ShipToLine1) || !string.IsNullOrWhiteSpace(ShipToCity);
 
     public IReadOnlyCollection<OrderLine> Lines => _lines.AsReadOnly();
 
@@ -72,12 +89,43 @@ public sealed class Order : AggregateRoot<OrderId>
         return order;
     }
 
+    /// <summary>Fige l'adresse de livraison choisie (snapshot copié dans la commande).</summary>
+    public void SetShippingAddress(
+        string? label, string? recipient, string? line1, string? line2, string? city, string? country, string? phone)
+    {
+        ShipToLabel = Trim(label, 60);
+        ShipToRecipient = Trim(recipient, 120);
+        ShipToLine1 = Trim(line1, 200);
+        ShipToLine2 = Trim(line2, 200);
+        ShipToCity = Trim(city, 120);
+        ShipToCountry = Trim(country, 80);
+        ShipToPhone = Trim(phone, 30);
+    }
+
+    private static string? Trim(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length > max ? trimmed[..max] : trimmed;
+    }
+
+    /// <summary>Fixe les frais de livraison (forfait choisi) et recalcule le total.</summary>
+    public void SetShippingFee(decimal fee)
+    {
+        ShippingFee = fee < 0m ? 0m : fee;
+        RecomputeTotals();
+    }
+
     private void RecomputeTotals()
     {
         Subtotal = _lines.Sum(l => l.UnitBasePrice * l.Quantity);
         TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount * l.Quantity);
         TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount * l.Quantity);
-        GrandTotal = _lines.Sum(l => l.LineTotal);
+        GrandTotal = _lines.Sum(l => l.LineTotal) + ShippingFee;
     }
 
     /// <summary>Stock réservé : la commande attend le paiement. Émet OrderPlaced.</summary>

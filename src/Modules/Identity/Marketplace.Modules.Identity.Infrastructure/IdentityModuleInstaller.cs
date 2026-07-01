@@ -12,6 +12,8 @@ using Marketplace.Modules.Identity.Application.Users;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 using Marketplace.Modules.Identity.Application.Users.EventHandlers;
 using Marketplace.Modules.Identity.Contracts;
+using Marketplace.Modules.Identity.Domain.Addresses;
+using Marketplace.Modules.Identity.Domain.PaymentMethods;
 using Marketplace.Modules.Identity.Domain.Roles;
 using Marketplace.Modules.Identity.Domain.Users;
 using Marketplace.Modules.Identity.Domain.Users.Events;
@@ -45,6 +47,8 @@ public sealed class IdentityModuleInstaller : IModuleInstaller
 
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
+        services.AddScoped<IAddressRepository, AddressRepository>();
+        services.AddScoped<IPaymentMethodRepository, PaymentMethodRepository>();
         services.AddScoped<IIdentityModuleApi, IdentityModuleApi>();
         services.AddScoped<AuthTokenIssuer>();
 
@@ -62,7 +66,7 @@ public sealed class IdentityModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<IdentityDbContext>>();
+        services.AddOutboxProcessor<IdentityDbContext>();
     }
 
     private static JwtOptions BuildJwtOptions(IConfiguration configuration)

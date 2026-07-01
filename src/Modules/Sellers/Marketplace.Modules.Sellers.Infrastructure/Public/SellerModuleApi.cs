@@ -55,6 +55,12 @@ internal sealed class SellerModuleApi : ISellerModuleApi
         seller.CommissionRate,
         seller.Rating,
         seller.SalesCount,
+        seller.PayoutAccount is null
+            ? null
+            : new PayoutAccountSummary(
+                seller.PayoutAccount.Provider.ToString(),
+                seller.PayoutAccount.AccountNumber,
+                seller.PayoutAccount.AccountName),
         seller.KybDocuments
             .Select(d => new KybDocumentSummary(d.Id, d.Type.ToString(), d.FileUrl, d.VerifiedAtUtc))
             .ToList());

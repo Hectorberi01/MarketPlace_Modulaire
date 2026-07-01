@@ -46,4 +46,8 @@ public sealed class ProductMedia : Entity<Guid>
     public string? ExternalId { get; private set; }
 
     internal void UnsetPrimary() => IsPrimary = false;
+
+    internal void MakePrimary() => IsPrimary = true;
+
+    internal void SetPosition(int position) => Position = position;
 }

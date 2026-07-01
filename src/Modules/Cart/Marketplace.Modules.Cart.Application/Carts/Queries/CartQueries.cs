@@ -42,7 +42,11 @@ internal sealed class GetActiveCartQueryHandler : IQueryHandler<GetActiveCartQue
         var cart = await _cartRepository.GetActiveByBuyerAsync(query.BuyerId, cancellationToken);
         if (cart is null)
         {
-            return Error.NotFound("cart.not_found", "Aucun panier actif.");
+            // Panier inexistant : on renvoie un panier vide (et non une erreur),
+            // pour que le client affiche un panier vide plutôt qu'un échec.
+            return new CartSummary(
+                Guid.Empty, query.BuyerId, "XOF", "Active",
+                Array.Empty<CartLineSummary>(), 0m, 0m, 0m, 0m);
         }
 
         var summary = await CartPricer.PriceAsync(cart, _pricing, cancellationToken);

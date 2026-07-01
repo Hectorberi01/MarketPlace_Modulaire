@@ -13,9 +13,18 @@ internal sealed class FulfillmentLocationRepository : IFulfillmentLocationReposi
     public async Task AddAsync(FulfillmentLocation location, CancellationToken cancellationToken = default)
         => await _dbContext.FulfillmentLocations.AddAsync(location, cancellationToken);
 
+    public void Remove(FulfillmentLocation location) => _dbContext.FulfillmentLocations.Remove(location);
+
     public async Task<FulfillmentLocation?> GetByIdAsync(FulfillmentLocationId id, CancellationToken cancellationToken = default)
         => await _dbContext.FulfillmentLocations.FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
 
     public async Task<IReadOnlyList<FulfillmentLocation>> ListByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
         => await _dbContext.FulfillmentLocations.Where(l => l.OwnerId == ownerId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<FulfillmentLocation>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.FulfillmentLocations
+            .AsNoTracking()
+            .OrderByDescending(l => l.CreatedOnUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 }

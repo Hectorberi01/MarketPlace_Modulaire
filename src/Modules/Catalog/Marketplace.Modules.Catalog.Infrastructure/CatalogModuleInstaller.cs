@@ -19,6 +19,7 @@ using Marketplace.Modules.Catalog.Domain.Categories;
 using Marketplace.Modules.Catalog.Domain.Categories.Events;
 using Marketplace.Modules.Catalog.Domain.Products;
 using Marketplace.Modules.Catalog.Domain.Products.Events;
+using Marketplace.Modules.Catalog.Infrastructure.Media;
 using Marketplace.Modules.Catalog.Infrastructure.Persistence;
 using Marketplace.Modules.Catalog.Infrastructure.Public;
 
@@ -54,8 +55,51 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ICatalogModuleApi, CatalogModuleApi>();
 
+        // Service média externe (https://hbamediacore.fr). Stub hors-ligne tant que
+        // « Media:ClientId » n'est pas renseigné ; adaptateur HTTP réel sinon.
+        // La config ne SURCHARGE que si elle fournit une valeur non vide : on
+        // conserve sinon les défauts de MediaServiceOptions (dont le ClientId réel),
+        // pour éviter qu'un « ClientId: "" » d'appsettings ne désactive l'upload.
+        var mediaOptions = new MediaServiceOptions();
+        if (!string.IsNullOrWhiteSpace(configuration["Media:BaseUrl"]))
+        {
+            mediaOptions.BaseUrl = configuration["Media:BaseUrl"]!;
+        }
+        if (!string.IsNullOrWhiteSpace(configuration["Media:ClientId"]))
+        {
+            mediaOptions.ClientId = configuration["Media:ClientId"]!;
+        }
+        if (!string.IsNullOrWhiteSpace(configuration["Media:DefaultVisibility"]))
+        {
+            mediaOptions.DefaultVisibility = configuration["Media:DefaultVisibility"]!;
+        }
+        services.AddSingleton(mediaOptions);
+
+        // Priorité au stockage Cloudflare R2 (S3) pour les images produit s'il est
+        // configuré : upload PUBLIC + suppression (retrait d'image / suppression de
+        // produit efface le fichier). Sinon HBA Media Core, sinon stub hors-ligne.
+        var r2Media = BindR2MediaOptions(configuration);
+        services.AddSingleton(r2Media);
+
+        if (r2Media.IsConfigured)
+        {
+            services.AddHttpClient(CloudflareR2MediaStorage.ClientName);
+            services.AddScoped<IMediaStorage, CloudflareR2MediaStorage>();
+        }
+        else if (mediaOptions.IsConfigured)
+        {
+            services.AddHttpClient(HbaMediaCoreStorage.ClientName, client =>
+                client.BaseAddress = new Uri(EnsureTrailingSlash(mediaOptions.BaseUrl)));
+            services.AddScoped<IMediaStorage, HbaMediaCoreStorage>();
+        }
+        else
+        {
+            services.AddScoped<IMediaStorage, SimulatedMediaStorage>();
+        }
+
         // Handlers de domain events (résolus par le DomainEventDispatcher).
         services.AddScoped<IDomainEventHandler<ProductCreatedDomainEvent>, ProductCreatedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<ProductStatusChangedDomainEvent>, ProductStatusChangedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<BrandCreatedDomainEvent>, BrandCreatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<CategoryCreatedDomainEvent>, CategoryCreatedDomainEventHandler>();
 
@@ -63,6 +107,27 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
         // Processeur d'outbox dédié au DbContext du module.
-        services.AddHostedService<OutboxProcessor<CatalogDbContext>>();
+        services.AddOutboxProcessor<CatalogDbContext>();
+    }
+
+    private static string EnsureTrailingSlash(string url)
+        => url.EndsWith('/') ? url : url + "/";
+
+    private static CloudflareR2MediaOptions BindR2MediaOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Storage:CloudflareR2Media");
+        var options = new CloudflareR2MediaOptions
+        {
+            AccountId = section["AccountId"] ?? string.Empty,
+            AccessKeyId = section["AccessKeyId"] ?? string.Empty,
+            SecretAccessKey = section["SecretAccessKey"] ?? string.Empty,
+            BucketName = section["BucketName"] ?? string.Empty,
+            PublicBaseUrl = section["PublicBaseUrl"] ?? string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(section["Region"]))
+        {
+            options.Region = section["Region"]!;
+        }
+        return options;
     }
 }

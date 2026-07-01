@@ -10,4 +10,7 @@ public interface IPaymentRepository
 
     /// <summary>Retrouve un paiement par sa référence PSP (corrélation webhook / retour).</summary>
     Task<Payment?> GetByProviderReferenceAsync(string providerReference, CancellationToken cancellationToken = default);
+
+    /// <summary>Liste tous les paiements de la plateforme (back-office admin).</summary>
+    Task<IReadOnlyList<Payment>> ListAllAsync(int take = 200, CancellationToken cancellationToken = default);
 }

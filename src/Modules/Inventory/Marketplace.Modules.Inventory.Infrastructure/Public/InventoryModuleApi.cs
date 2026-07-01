@@ -39,22 +39,77 @@ internal sealed class InventoryModuleApi : IInventoryModuleApi
 
     public async Task<bool> IsInStockAsync(string sku, int quantity, CancellationToken cancellationToken = default)
     {
-        var availability = await GetAvailabilityAsync(sku, cancellationToken);
-        return availability.TotalAvailable >= quantity;
+        var skuResult = Sku.Create(sku);
+        if (skuResult.IsFailure)
+        {
+            return false;
+        }
+
+        var value = skuResult.Value;
+        var items = await _dbContext.InventoryItems
+            .AsNoTracking()
+            .Include(i => i.Reservations)
+            .Where(i => i.Sku == value)
+            .ToListAsync(cancellationToken);
+
+        // SKU non suivi en stock (aucun enregistrement Inventory) : considéré
+        // disponible à la vente. Dès qu'un stock est défini, la disponibilité
+        // réelle est enforced.
+        if (items.Count == 0)
+        {
+            return true;
+        }
+
+        return items.Sum(i => i.Available) >= quantity;
     }
 
     public async Task<bool> TryReserveAsync(string sku, Guid locationId, Guid orderId, int quantity, CancellationToken cancellationToken = default)
     {
+        // Cohérent avec IsInStockAsync : un SKU sans enregistrement de stock à
+        // cette localisation n'est pas « suivi » → vendable sans réservation. On
+        // ne bloque la commande que lorsqu'un stock est réellement défini.
+        if (!await HasStockRecordAsync(sku, locationId, cancellationToken))
+        {
+            return true;
+        }
+
         var result = await _sender.Send(new ReserveStockCommand(sku, locationId, orderId, quantity), cancellationToken);
         return result.IsSuccess;
     }
 
     public async Task ReleaseReservationAsync(string sku, Guid locationId, Guid orderId, CancellationToken cancellationToken = default)
-        => await _sender.Send(new ReleaseReservationCommand(sku, locationId, orderId), cancellationToken);
+    {
+        if (!await HasStockRecordAsync(sku, locationId, cancellationToken))
+        {
+            return; // rien à libérer pour un SKU non suivi
+        }
+
+        await _sender.Send(new ReleaseReservationCommand(sku, locationId, orderId), cancellationToken);
+    }
 
     public async Task<bool> ConfirmReservationAsync(string sku, Guid locationId, Guid orderId, CancellationToken cancellationToken = default)
     {
+        if (!await HasStockRecordAsync(sku, locationId, cancellationToken))
+        {
+            return true; // SKU non suivi : confirmation sans décrément
+        }
+
         var result = await _sender.Send(new ConfirmReservationCommand(sku, locationId, orderId), cancellationToken);
         return result.IsSuccess;
+    }
+
+    /// <summary>Existe-t-il un enregistrement de stock pour ce SKU à cette localisation ?</summary>
+    private async Task<bool> HasStockRecordAsync(string sku, Guid locationId, CancellationToken cancellationToken)
+    {
+        var skuResult = Sku.Create(sku);
+        if (skuResult.IsFailure)
+        {
+            return false;
+        }
+
+        var value = skuResult.Value;
+        return await _dbContext.InventoryItems
+            .AsNoTracking()
+            .AnyAsync(i => i.Sku == value && i.LocationId == locationId, cancellationToken);
     }
 }

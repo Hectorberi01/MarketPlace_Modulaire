@@ -33,8 +33,28 @@ public sealed class SearchDocument
     public int ReviewCount { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
+    /// <summary>Visible en vitrine publique seulement si le produit est validé (Active).</summary>
+    public bool IsVisible { get; private set; }
+
+    /// <summary>URL de l'image principale, pour les vignettes (accueil / recherche).</summary>
+    public string? ImageUrl { get; private set; }
+
     public static SearchDocument FromProduct(Guid productId, Guid sellerId, Guid categoryId, string name, string slug)
         => new(productId, sellerId, categoryId, name, slug);
+
+    /// <summary>Affiche (validation admin) ou masque (brouillon / archivé) le produit en vitrine.</summary>
+    public void SetVisible(bool visible)
+    {
+        IsVisible = visible;
+        Touch();
+    }
+
+    /// <summary>Met à jour la vignette du produit.</summary>
+    public void SetImage(string? imageUrl)
+    {
+        ImageUrl = imageUrl;
+        Touch();
+    }
 
     public void UpdateProduct(Guid sellerId, Guid categoryId, string name, string slug)
     {
@@ -54,6 +74,18 @@ public sealed class SearchDocument
             Currency = currency;
         }
 
+        Touch();
+    }
+
+    /// <summary>
+    /// Force le prix/devise affichés (changement de prix d'une offre). Contrairement
+    /// à <see cref="ApplyOfferPrice"/>, met à jour même si le prix n'a pas baissé —
+    /// indispensable pour répercuter un changement de devise (ou une hausse).
+    /// </summary>
+    public void SetOfferPrice(decimal price, string currency)
+    {
+        MinPrice = price;
+        Currency = currency;
         Touch();
     }
 

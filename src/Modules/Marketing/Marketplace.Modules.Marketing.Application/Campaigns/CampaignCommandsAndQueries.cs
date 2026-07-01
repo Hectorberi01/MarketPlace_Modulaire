@@ -22,6 +22,15 @@ public sealed record ActivateCampaignCommand(Guid CampaignId) : ICommand;
 /// <summary>Termine une campagne.</summary>
 public sealed record EndCampaignCommand(Guid CampaignId) : ICommand;
 
+/// <summary>Modifie une campagne existante.</summary>
+public sealed record UpdateCampaignCommand(Guid CampaignId, string Name, string Type, DateTime StartUtc, DateTime EndUtc, string? TargetSegment) : ICommand;
+
+/// <summary>Retire une promotion d'une campagne.</summary>
+public sealed record RemovePromotionFromCampaignCommand(Guid CampaignId, Guid PromotionId) : ICommand;
+
+/// <summary>Supprime une campagne.</summary>
+public sealed record DeleteCampaignCommand(Guid CampaignId) : ICommand;
+
 /// <summary>Récupère une campagne.</summary>
 public sealed record GetCampaignQuery(Guid CampaignId) : IQuery<CampaignSummary>;
 
@@ -126,6 +135,51 @@ internal sealed class EndCampaignCommandHandler : CampaignMutationHandlerBase, I
 {
     public EndCampaignCommandHandler(ICampaignRepository r, IMarketingUnitOfWork u) : base(r, u) { }
     public Task<Result> Handle(EndCampaignCommand c, CancellationToken ct) => MutateAsync(c.CampaignId, x => x.End(), ct);
+}
+
+internal sealed class UpdateCampaignCommandHandler : CampaignMutationHandlerBase, ICommandHandler<UpdateCampaignCommand>
+{
+    public UpdateCampaignCommandHandler(ICampaignRepository r, IMarketingUnitOfWork u) : base(r, u) { }
+    public Task<Result> Handle(UpdateCampaignCommand c, CancellationToken ct)
+    {
+        if (!Enum.TryParse<CampaignType>(c.Type, ignoreCase: true, out var type))
+        {
+            return Task.FromResult(Result.Failure(Error.Validation("marketing.campaign.type_invalid", "Type de campagne inconnu.")));
+        }
+
+        return MutateAsync(c.CampaignId, x => x.Update(c.Name, type, c.StartUtc, c.EndUtc, c.TargetSegment), ct);
+    }
+}
+
+internal sealed class RemovePromotionFromCampaignCommandHandler : CampaignMutationHandlerBase, ICommandHandler<RemovePromotionFromCampaignCommand>
+{
+    public RemovePromotionFromCampaignCommandHandler(ICampaignRepository r, IMarketingUnitOfWork u) : base(r, u) { }
+    public Task<Result> Handle(RemovePromotionFromCampaignCommand c, CancellationToken ct) => MutateAsync(c.CampaignId, x => x.RemovePromotion(c.PromotionId), ct);
+}
+
+internal sealed class DeleteCampaignCommandHandler : ICommandHandler<DeleteCampaignCommand>
+{
+    private readonly ICampaignRepository _repository;
+    private readonly IMarketingUnitOfWork _unitOfWork;
+
+    public DeleteCampaignCommandHandler(ICampaignRepository repository, IMarketingUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(DeleteCampaignCommand command, CancellationToken cancellationToken)
+    {
+        var campaign = await _repository.GetByIdAsync(new CampaignId(command.CampaignId), cancellationToken);
+        if (campaign is null)
+        {
+            return Result.Failure(Error.NotFound("marketing.campaign.not_found", "Campagne introuvable."));
+        }
+
+        _repository.Remove(campaign);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
 }
 
 internal sealed class GetCampaignQueryHandler : IQueryHandler<GetCampaignQuery, CampaignSummary>

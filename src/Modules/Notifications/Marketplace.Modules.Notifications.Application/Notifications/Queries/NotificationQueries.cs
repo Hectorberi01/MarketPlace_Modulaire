@@ -11,6 +11,23 @@ public sealed record ListMyNotificationsQuery(Guid RecipientUserId, int Take = 5
 /// <summary>Nombre de notifications non lues de l'utilisateur.</summary>
 public sealed record GetUnreadCountQuery(Guid RecipientUserId) : IQuery<int>;
 
+/// <summary>Liste toutes les notifications de la plateforme (back-office admin).</summary>
+public sealed record ListAllNotificationsQuery : IQuery<IReadOnlyList<NotificationSummary>>;
+
+internal sealed class ListAllNotificationsQueryHandler : IQueryHandler<ListAllNotificationsQuery, IReadOnlyList<NotificationSummary>>
+{
+    private readonly INotificationRepository _repository;
+
+    public ListAllNotificationsQueryHandler(INotificationRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<NotificationSummary>>> Handle(ListAllNotificationsQuery query, CancellationToken cancellationToken)
+    {
+        var notifications = await _repository.ListAllAsync(cancellationToken: cancellationToken);
+        IReadOnlyList<NotificationSummary> summaries = notifications.Select(NotificationMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
+
 internal sealed class ListMyNotificationsQueryHandler : IQueryHandler<ListMyNotificationsQuery, IReadOnlyList<NotificationSummary>>
 {
     private readonly INotificationRepository _repository;

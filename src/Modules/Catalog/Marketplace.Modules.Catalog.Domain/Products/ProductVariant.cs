@@ -37,4 +37,12 @@ public sealed class ProductVariant : Entity<Guid>
     public string? Barcode { get; private set; }
     public int WeightGrams { get; private set; }
     public Dimensions? Dimensions { get; private set; }
+
+    internal void Update(Sku sku, Dictionary<string, string> variantAttributes, string? barcode, int weightGrams)
+    {
+        Sku = sku;
+        VariantAttributes = variantAttributes;
+        Barcode = barcode;
+        WeightGrams = weightGrams;
+    }
 }

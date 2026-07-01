@@ -21,9 +21,16 @@ internal sealed class CartConfiguration : IEntityTypeConfiguration<CartAggregate
         builder.Property(c => c.Currency).HasMaxLength(3).IsRequired();
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
 
+        // IsRequired() est indispensable : sans lui, EF considère la relation
+        // optionnelle et, à la suppression d'une ligne, tente un
+        // « UPDATE cart_items SET CartId = NULL » (sévérance) au lieu d'un DELETE.
+        // Comme la colonne CartId est NOT NULL, Postgres rejette → 500. Avec
+        // IsRequired(), EF supprime l'orphelin (DELETE), ce qui est le comportement
+        // attendu. Aligné sur le snapshot/migration (pas de nouvelle migration).
         builder.HasMany(c => c.Items)
             .WithOne()
             .HasForeignKey("CartId")
+            .IsRequired()
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Navigation(c => c.Items).UsePropertyAccessMode(PropertyAccessMode.Field);

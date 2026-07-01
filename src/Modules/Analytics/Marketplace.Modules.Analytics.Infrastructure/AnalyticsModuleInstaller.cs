@@ -35,6 +35,6 @@ public sealed class AnalyticsModuleInstaller : IModuleInstaller
         // Chorégraphie : accumulation des métriques à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueMetricsOnOrderConfirmedHandler>();
 
-        services.AddHostedService<OutboxProcessor<AnalyticsDbContext>>();
+        services.AddOutboxProcessor<AnalyticsDbContext>();
     }
 }

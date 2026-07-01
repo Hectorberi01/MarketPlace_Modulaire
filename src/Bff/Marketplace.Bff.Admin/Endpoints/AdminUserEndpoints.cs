@@ -11,6 +11,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.ReactivateUser;
 using Marketplace.Modules.Identity.Application.Users.Commands.RemoveRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.SuspendUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
+using Marketplace.Modules.Identity.Application.Users.Queries.ListUsers;
 
 namespace Marketplace.Bff.Admin.Endpoints;
 
@@ -20,6 +21,7 @@ public static class AdminUserEndpoints
     public static IEndpointRouteBuilder MapAdminUserEndpoints(this IEndpointRouteBuilder app)
     {
         var users = app.MapAdminGroup("/admin/users", "Admin · Comptes");
+        users.MapGet("/", ListUsersAsync);
         users.MapGet("/{id:guid}", GetUserAsync);
         users.MapPost("/{id:guid}/suspend", SuspendUserAsync);
         users.MapPost("/{id:guid}/reactivate", ReactivateUserAsync);
@@ -36,6 +38,10 @@ public static class AdminUserEndpoints
 
         return app;
     }
+
+    /// <summary>Liste de tous les comptes de la plateforme.</summary>
+    private static async Task<IResult> ListUsersAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListUsersQuery(), ct)).Match(u => Results.Ok(u));
 
     /// <summary>Détail d'un compte.</summary>
     private static async Task<IResult> GetUserAsync(Guid id, ISender sender, CancellationToken ct)

@@ -44,6 +44,6 @@ public sealed class ReviewsModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<ReviewsDbContext>>();
+        services.AddOutboxProcessor<ReviewsDbContext>();
     }
 }

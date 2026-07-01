@@ -17,12 +17,14 @@ public static class AdminOrderEndpoints
     public static IEndpointRouteBuilder MapAdminOrderEndpoints(this IEndpointRouteBuilder app)
     {
         var orders = app.MapAdminGroup("/admin/orders", "Admin · Commandes");
+        orders.MapGet("/", ListOrdersAsync);
         orders.MapGet("/{id:guid}", GetOrderAsync);
         orders.MapPost("/{id:guid}/confirm-payment", ConfirmPaymentAsync);
         orders.MapPost("/{id:guid}/cancel", CancelOrderAsync);
         orders.MapPost("/{id:guid}/deliver", DeliverAsync);
 
         var payments = app.MapAdminGroup("/admin/payments", "Admin · Paiements");
+        payments.MapGet("/", ListPaymentsAsync);
         payments.MapGet("/{id:guid}", GetPaymentAsync);
         payments.MapGet("/by-order/{orderId:guid}", GetPaymentByOrderAsync);
         payments.MapPost("/{id:guid}/fail", FailPaymentAsync);
@@ -30,6 +32,10 @@ public static class AdminOrderEndpoints
 
         return app;
     }
+
+    /// <summary>Toutes les commandes de la plateforme.</summary>
+    private static async Task<IResult> ListOrdersAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListAllOrdersQuery(), ct)).Match(o => Results.Ok(o));
 
     /// <summary>Détail d'une commande.</summary>
     private static async Task<IResult> GetOrderAsync(Guid id, ISender sender, CancellationToken ct)
@@ -46,6 +52,10 @@ public static class AdminOrderEndpoints
     /// <summary>Marque la commande livrée (déclenche escrow + payout en aval).</summary>
     private static async Task<IResult> DeliverAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new MarkOrderDeliveredCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Liste de tous les paiements de la plateforme.</summary>
+    private static async Task<IResult> ListPaymentsAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListPaymentsQuery(), ct)).Match(p => Results.Ok(p));
 
     /// <summary>Détail d'un paiement.</summary>
     private static async Task<IResult> GetPaymentAsync(Guid id, ISender sender, CancellationToken ct)

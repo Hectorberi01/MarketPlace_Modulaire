@@ -33,6 +33,6 @@ public sealed class RecommendationsModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<RecommendationsDbContext>>();
+        services.AddOutboxProcessor<RecommendationsDbContext>();
     }
 }

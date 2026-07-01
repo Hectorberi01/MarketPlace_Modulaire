@@ -1,0 +1,38 @@
+using Marketplace.BuildingBlocks.Application.Abstractions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
+using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Domain.Results;
+using Marketplace.Modules.Catalog.Domain.Categories;
+
+namespace Marketplace.Modules.Catalog.Application.Categories.Commands.UnpublishCategory;
+
+/// <summary>Charge la catégorie et applique la transition de dépublication du domaine.</summary>
+internal sealed class UnpublishCategoryCommandHandler : ICommandHandler<UnpublishCategoryCommand>
+{
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly ICatalogUnitOfWork _unitOfWork;
+
+    public UnpublishCategoryCommandHandler(ICategoryRepository categoryRepository, ICatalogUnitOfWork unitOfWork)
+    {
+        _categoryRepository = categoryRepository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(UnpublishCategoryCommand command, CancellationToken cancellationToken)
+    {
+        var category = await _categoryRepository.GetByIdAsync(new CategoryId(command.CategoryId), cancellationToken);
+        if (category is null)
+        {
+            return Result.Failure(Error.NotFound("catalog.category.not_found", $"Catégorie {command.CategoryId} introuvable."));
+        }
+
+        var result = category.Unpublish();
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+}

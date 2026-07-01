@@ -40,6 +40,6 @@ public sealed class MessagingModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<MessagingDbContext>>();
+        services.AddOutboxProcessor<MessagingDbContext>();
     }
 }

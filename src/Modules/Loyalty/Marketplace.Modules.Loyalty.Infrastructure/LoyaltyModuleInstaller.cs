@@ -40,6 +40,6 @@ public sealed class LoyaltyModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<LoyaltyDbContext>>();
+        services.AddOutboxProcessor<LoyaltyDbContext>();
     }
 }

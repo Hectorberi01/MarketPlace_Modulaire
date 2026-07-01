@@ -106,6 +106,18 @@ public sealed class Category : AggregateRoot<CategoryId>
         return Result.Success();
     }
 
+    /// <summary>Dépublie la catégorie (Published -> Draft) ; elle pourra être republiée.</summary>
+    public Result Unpublish()
+    {
+        if (Status == CategoryStatus.Archived)
+        {
+            return Result.Failure(Error.Conflict("catalog.category.archived", "Une catégorie archivée ne peut pas être dépubliée."));
+        }
+
+        Status = CategoryStatus.Draft;
+        return Result.Success();
+    }
+
     /// <summary>Archive la catégorie (la retire de l'arbre visible).</summary>
     public Result Archive()
     {

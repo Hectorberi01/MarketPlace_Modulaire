@@ -31,4 +31,10 @@ internal sealed class BrandRepository : IBrandRepository
         var slugValue = slugResult.Value;
         return await _dbContext.Brands.AnyAsync(b => b.Slug == slugValue, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Brand>> ListAllAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.Brands
+            .AsNoTracking()
+            .OrderBy(b => b.Name)
+            .ToListAsync(cancellationToken);
 }

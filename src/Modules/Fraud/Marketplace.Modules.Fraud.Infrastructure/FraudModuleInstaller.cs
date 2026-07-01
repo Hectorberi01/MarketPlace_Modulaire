@@ -36,6 +36,6 @@ public sealed class FraudModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<FraudDbContext>>();
+        services.AddOutboxProcessor<FraudDbContext>();
     }
 }

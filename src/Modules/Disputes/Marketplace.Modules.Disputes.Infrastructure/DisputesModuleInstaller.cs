@@ -41,6 +41,6 @@ public sealed class DisputesModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<DisputesDbContext>>();
+        services.AddOutboxProcessor<DisputesDbContext>();
     }
 }

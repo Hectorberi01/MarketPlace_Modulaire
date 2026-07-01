@@ -20,6 +20,12 @@ internal sealed class CategoryRepository : ICategoryRepository
     public async Task<Category?> GetByIdAsync(CategoryId id, CancellationToken cancellationToken = default)
         => await _dbContext.Categories.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Category>> ListAllAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.Categories
+            .AsNoTracking()
+            .OrderBy(c => c.Path)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
     {
         var slugResult = Slug.Create(slug);

@@ -35,6 +35,6 @@ public sealed class WishlistModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<WishlistDbContext>>();
+        services.AddOutboxProcessor<WishlistDbContext>();
     }
 }

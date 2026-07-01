@@ -14,6 +14,16 @@ public sealed record OrderLineSummary(
     decimal FinalUnitPrice,
     decimal LineTotal);
 
+/// <summary>Adresse de livraison figée sur la commande (snapshot).</summary>
+public sealed record OrderShippingAddressSummary(
+    string? Label,
+    string? Recipient,
+    string? Line1,
+    string? Line2,
+    string? City,
+    string? Country,
+    string? Phone);
+
 /// <summary>Vue publique d'une commande.</summary>
 public sealed record OrderSummary(
     Guid Id,
@@ -26,4 +36,6 @@ public sealed record OrderSummary(
     decimal TotalSellerDiscount,
     decimal TotalPlatformDiscount,
     decimal GrandTotal,
-    IReadOnlyList<OrderLineSummary> Lines);
+    IReadOnlyList<OrderLineSummary> Lines,
+    OrderShippingAddressSummary? ShippingAddress = null,
+    decimal ShippingFee = 0m);

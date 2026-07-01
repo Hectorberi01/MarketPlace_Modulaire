@@ -24,8 +24,18 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.Subtotal).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.TotalSellerDiscount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.TotalPlatformDiscount).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(o => o.ShippingFee).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(o => o.GrandTotal).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.CancellationReason).HasMaxLength(500);
+
+        // Adresse de livraison figée (snapshot, toutes colonnes nullables).
+        builder.Property(o => o.ShipToLabel).HasMaxLength(60);
+        builder.Property(o => o.ShipToRecipient).HasMaxLength(120);
+        builder.Property(o => o.ShipToLine1).HasMaxLength(200);
+        builder.Property(o => o.ShipToLine2).HasMaxLength(200);
+        builder.Property(o => o.ShipToCity).HasMaxLength(120);
+        builder.Property(o => o.ShipToCountry).HasMaxLength(80);
+        builder.Property(o => o.ShipToPhone).HasMaxLength(30);
 
         builder.HasMany(o => o.Lines)
             .WithOne()

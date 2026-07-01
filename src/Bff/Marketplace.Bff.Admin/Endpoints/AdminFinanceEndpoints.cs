@@ -23,7 +23,10 @@ public static class AdminFinanceEndpoints
         var commissions = app.MapAdminGroup("/admin/commission-rules", "Admin · Commissions");
         commissions.MapGet("/", ListCommissionRulesAsync);
         commissions.MapPost("/", CreateCommissionRuleAsync);
+        commissions.MapPut("/{id:guid}", UpdateCommissionRuleAsync);
         commissions.MapPost("/{id:guid}/deactivate", DeactivateCommissionRuleAsync);
+        commissions.MapPost("/{id:guid}/reactivate", ReactivateCommissionRuleAsync);
+        commissions.MapDelete("/{id:guid}", DeleteCommissionRuleAsync);
 
         var invoices = app.MapAdminGroup("/admin/invoices", "Admin · Facturation");
         invoices.MapGet("/{id:guid}", GetInvoiceAsync);
@@ -60,8 +63,20 @@ public static class AdminFinanceEndpoints
                 request.MinFee, request.MaxFee, request.EffectiveFromUtc ?? DateTime.UtcNow), ct))
             .Match(id => Results.Ok(new { ruleId = id }));
 
+    private static async Task<IResult> UpdateCommissionRuleAsync(Guid id, CommissionRuleRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new UpdateCommissionRuleCommand(
+                id, request.Rate, request.FixedFee, request.Currency,
+                request.MinFee, request.MaxFee, request.EffectiveFromUtc ?? DateTime.UtcNow), ct))
+            .Match(() => Results.NoContent());
+
     private static async Task<IResult> DeactivateCommissionRuleAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new DeactivateCommissionRuleCommand(id), ct)).Match(() => Results.NoContent());
+
+    private static async Task<IResult> ReactivateCommissionRuleAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ReactivateCommissionRuleCommand(id), ct)).Match(() => Results.NoContent());
+
+    private static async Task<IResult> DeleteCommissionRuleAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new DeleteCommissionRuleCommand(id), ct)).Match(() => Results.NoContent());
 
     private static async Task<IResult> GetInvoiceAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new GetInvoiceQuery(id), ct)).Match(i => Results.Ok(i));

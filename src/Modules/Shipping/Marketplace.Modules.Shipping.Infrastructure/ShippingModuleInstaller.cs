@@ -49,6 +49,6 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<ShippingDbContext>>();
+        services.AddOutboxProcessor<ShippingDbContext>();
     }
 }

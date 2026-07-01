@@ -22,8 +22,11 @@ internal sealed class SearchDocumentConfiguration : IEntityTypeConfiguration<Sea
         builder.Property(d => d.AverageRating).IsRequired();
         builder.Property(d => d.ReviewCount).IsRequired();
         builder.Property(d => d.UpdatedAtUtc).IsRequired();
+        builder.Property(d => d.IsVisible).IsRequired();
+        builder.Property(d => d.ImageUrl).HasMaxLength(1000);
 
         builder.HasIndex(d => d.CategoryId);
         builder.HasIndex(d => d.Name);
+        builder.HasIndex(d => d.IsVisible);
     }
 }

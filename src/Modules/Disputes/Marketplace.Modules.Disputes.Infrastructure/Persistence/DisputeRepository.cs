@@ -28,4 +28,12 @@ internal sealed class DisputeRepository : IDisputeRepository
             .Where(d => d.RaisedBy == userId)
             .OrderByDescending(d => d.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Dispute>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.Disputes
+            .AsNoTracking()
+            .Include(d => d.Messages)
+            .OrderByDescending(d => d.CreatedAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 }

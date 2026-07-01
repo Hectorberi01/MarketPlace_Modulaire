@@ -41,6 +41,8 @@ partial class SearchDbContextModelSnapshot : ModelSnapshot
             b.Property<double>("AverageRating").HasColumnType("double precision");
             b.Property<Guid>("CategoryId").HasColumnType("uuid");
             b.Property<string>("Currency").HasMaxLength(3).HasColumnType("character varying(3)");
+            b.Property<string>("ImageUrl").HasMaxLength(1000).HasColumnType("character varying(1000)");
+            b.Property<bool>("IsVisible").HasColumnType("boolean");
             b.Property<decimal?>("MinPrice").HasColumnType("numeric(18,2)");
             b.Property<string>("Name").IsRequired().HasMaxLength(300).HasColumnType("character varying(300)");
             b.Property<int>("ReviewCount").HasColumnType("integer");
@@ -49,6 +51,7 @@ partial class SearchDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTime>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
             b.HasKey("ProductId");
             b.HasIndex("CategoryId");
+            b.HasIndex("IsVisible");
             b.HasIndex("Name");
             b.ToTable("documents", "search");
         });

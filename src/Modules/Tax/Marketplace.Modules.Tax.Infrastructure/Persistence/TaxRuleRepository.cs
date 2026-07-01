@@ -12,6 +12,8 @@ internal sealed class TaxRuleRepository : ITaxRuleRepository
     public async Task AddAsync(TaxRule rule, CancellationToken cancellationToken = default)
         => await _dbContext.TaxRules.AddAsync(rule, cancellationToken);
 
+    public void Remove(TaxRule rule) => _dbContext.TaxRules.Remove(rule);
+
     public async Task<TaxRule?> GetByIdAsync(TaxRuleId id, CancellationToken cancellationToken = default)
         => await _dbContext.TaxRules.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 

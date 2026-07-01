@@ -70,14 +70,42 @@ public sealed class MtnMomoOptions
     /// <summary>URL de callback où MoMo notifie le statut (X-Callback-Url), optionnelle.</summary>
     public string CallbackUrl { get; set; } = string.Empty;
 
-    /// <summary>Devise envoyée au PSP (sandbox MoMo : souvent EUR ; prod UEMOA : XOF).</summary>
-    public string Currency { get; set; } = "EUR";
+    /// <summary>Devise envoyée au PSP (UEMOA : XOF ; le sandbox MoMo accepte aussi EUR).</summary>
+    public string Currency { get; set; } = "XOF";
 
     /// <summary>Vrai si les identifiants requis sont renseignés (sinon on reste en stub).</summary>
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(SubscriptionKey)
         && !string.IsNullOrWhiteSpace(ApiUser)
         && !string.IsNullOrWhiteSpace(ApiKey);
+}
+
+/// <summary>
+/// Réglages FedaPay (section « Payments:FedaPay »). FedaPay agrège Mobile Money
+/// (MTN, Moov…) et carte derrière une page de paiement hébergée : on crée une
+/// transaction puis on génère un lien (token) vers lequel rediriger l'acheteur.
+/// La confirmation arrive par webhook signé (x-fedapay-signature) ou par
+/// interrogation du statut. Placeholders en sandbox.
+/// </summary>
+public sealed class FedaPayOptions
+{
+    /// <summary>Clé secrète FedaPay (sk_sandbox_… / sk_live_…), envoyée en Bearer.</summary>
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Secret de signature des webhooks FedaPay (vérif. HMAC du corps brut).</summary>
+    public string WebhookSecret { get; set; } = string.Empty;
+
+    /// <summary>Base de l'API FedaPay (sandbox par défaut ; live : https://api.fedapay.com/v1).</summary>
+    public string BaseUrl { get; set; } = "https://sandbox-api.fedapay.com/v1";
+
+    /// <summary>URL de callback où FedaPay notifie / renvoie l'acheteur après paiement.</summary>
+    public string CallbackUrl { get; set; } = string.Empty;
+
+    /// <summary>Devise envoyée (UEMOA : XOF).</summary>
+    public string Currency { get; set; } = "XOF";
+
+    /// <summary>Vrai si la clé secrète est renseignée (sinon on reste en stub).</summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }
 
 /// <summary>

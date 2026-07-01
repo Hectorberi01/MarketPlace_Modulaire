@@ -11,7 +11,9 @@ public sealed record ReviewSummary(
     string Body,
     bool IsVerifiedPurchase,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? SellerReply,
+    DateTime? SellerRepliedAtUtc);
 
 /// <summary>Note agrégée d'un produit.</summary>
 public sealed record ProductRatingSummary(Guid ProductId, double Average, int Count);

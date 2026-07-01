@@ -1,4 +1,5 @@
 using MediatR;
+using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Disputes.Application.Disputes;
 using Marketplace.Modules.Reviews.Application.Reviews.Commands;
@@ -21,11 +22,14 @@ public static class AdminModerationEndpoints
         reviews.MapPost("/{id:guid}/restore", RestoreAsync);
 
         var disputes = app.MapModerationGroup("/admin/disputes", "Admin · Litiges");
+        disputes.MapGet("/", ListDisputesAsync);
         disputes.MapGet("/{id:guid}", GetDisputeAsync);
         disputes.MapGet("/by-order/{orderId:guid}", DisputesByOrderAsync);
         disputes.MapPost("/{id:guid}/review", StartReviewAsync);
         disputes.MapPost("/{id:guid}/resolve", ResolveAsync);
         disputes.MapPost("/{id:guid}/escalate", EscalateAsync);
+        disputes.MapPost("/{id:guid}/reopen", ReopenAsync);
+        disputes.MapPost("/{id:guid}/messages", AddMessageAsync);
 
         return app;
     }
@@ -45,6 +49,10 @@ public static class AdminModerationEndpoints
     /// <summary>Restaure un avis signalé / rejeté.</summary>
     private static async Task<IResult> RestoreAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new RestoreReviewCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Tous les litiges de la plateforme.</summary>
+    private static async Task<IResult> ListDisputesAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListAllDisputesQuery(), ct)).Match(d => Results.Ok(d));
 
     /// <summary>Détail d'un litige.</summary>
     private static async Task<IResult> GetDisputeAsync(Guid id, ISender sender, CancellationToken ct)
@@ -66,5 +74,21 @@ public static class AdminModerationEndpoints
     private static async Task<IResult> EscalateAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new EscalateDisputeCommand(id), ct)).Match(() => Results.NoContent());
 
+    /// <summary>Rouvre un litige tranché / escaladé.</summary>
+    private static async Task<IResult> ReopenAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ReopenDisputeCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Ajoute un message de l'administration au fil du litige.</summary>
+    private static async Task<IResult> AddMessageAsync(Guid id, MessageRequest request, ClaimsPrincipal user, ISender sender, CancellationToken ct)
+    {
+        if (AdminBff.CurrentUserId(user) is not { } authorId)
+        {
+            return Results.Unauthorized();
+        }
+
+        return (await sender.Send(new AddDisputeMessageCommand(id, authorId, request.Body, request.PhotoUrl), ct)).Match(() => Results.NoContent());
+    }
+
     public sealed record ResolveRequest(string Resolution);
+    public sealed record MessageRequest(string Body, string? PhotoUrl);
 }

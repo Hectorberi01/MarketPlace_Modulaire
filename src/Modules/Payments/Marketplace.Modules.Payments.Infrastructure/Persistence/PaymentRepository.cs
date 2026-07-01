@@ -24,4 +24,11 @@ internal sealed class PaymentRepository : IPaymentRepository
     public async Task<Payment?> GetByProviderReferenceAsync(string providerReference, CancellationToken cancellationToken = default)
         => await _dbContext.Payments
             .FirstOrDefaultAsync(p => p.ProviderReference == providerReference, cancellationToken);
+
+    public async Task<IReadOnlyList<Payment>> ListAllAsync(int take = 200, CancellationToken cancellationToken = default)
+        => await _dbContext.Payments
+            .AsNoTracking()
+            .OrderByDescending(p => p.CreatedAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 }

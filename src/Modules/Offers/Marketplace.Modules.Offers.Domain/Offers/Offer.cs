@@ -89,7 +89,7 @@ public sealed class Offer : AggregateRoot<OfferId>
     public Result ChangePrice(Money newPrice)
     {
         BasePrice = newPrice;
-        Raise(new OfferPriceChangedDomainEvent(Id.Value, newPrice.Amount, newPrice.Currency));
+        Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, newPrice.Amount, newPrice.Currency));
         return Result.Success();
     }
 

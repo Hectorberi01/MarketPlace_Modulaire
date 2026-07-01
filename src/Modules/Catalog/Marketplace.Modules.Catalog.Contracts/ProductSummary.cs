@@ -10,10 +10,13 @@ public sealed record ProductSummary(
     Guid CategoryId,
     Guid? BrandId,
     string Name,
+    string Description,
     string Slug,
     string Status,
     string? Gtin,
     string? Ean,
+    Guid? ProductGroupId,
+    IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<string> Tags,
     IReadOnlyList<ProductVariantSummary> Variants,
     IReadOnlyList<ProductMediaSummary> Media);

@@ -37,6 +37,9 @@
     <!-- API : Swagger / OpenAPI. -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.6.2" />
 
+    <!-- Temps réel : SignalR + backplane Redis (messagerie instantanée multi-BFF). -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="8.0.8" />
+
     <!-- Identity : hashing, JWT, MFA (TOTP). -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.0.1" />

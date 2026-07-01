@@ -89,4 +89,31 @@ public sealed class ContentBlock : AggregateRoot<ContentBlockId>
         Status = ContentStatus.Archived;
         return Result.Success();
     }
+
+    /// <summary>Modifie le bloc (type, slot, position, contenu, fenêtre d'affichage) avec revalidation.</summary>
+    public Result Update(ContentBlockType type, string slot, int position, string content, DateTime? startUtc, DateTime? endUtc)
+    {
+        if (string.IsNullOrWhiteSpace(slot))
+        {
+            return  Result.Failure( Error.Validation("marketing.content.slot_required", "L'emplacement (slot) est obligatoire."));
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return  Result.Failure( Error.Validation("marketing.content.content_required", "Le contenu est obligatoire."));
+        }
+
+        if (startUtc is { } s && endUtc is { } e && e <= s)
+        {
+            return  Result.Failure( Error.Validation("marketing.content.period_invalid", "La fenêtre d'affichage est invalide."));
+        }
+
+        Type = type;
+        Slot = slot.Trim();
+        Position = position;
+        Content = content;
+        StartUtc = startUtc;
+        EndUtc = endUtc;
+        return Result.Success();
+    }
 }

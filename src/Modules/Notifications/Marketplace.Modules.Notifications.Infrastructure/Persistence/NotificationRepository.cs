@@ -12,6 +12,8 @@ internal sealed class NotificationRepository : INotificationRepository
     public async Task AddAsync(Notification notification, CancellationToken cancellationToken = default)
         => await _dbContext.Notifications.AddAsync(notification, cancellationToken);
 
+    public void Remove(Notification notification) => _dbContext.Notifications.Remove(notification);
+
     public async Task<Notification?> GetByIdAsync(NotificationId id, CancellationToken cancellationToken = default)
         => await _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
 
@@ -29,5 +31,12 @@ internal sealed class NotificationRepository : INotificationRepository
     public async Task<IReadOnlyList<Notification>> ListUnreadAsync(Guid recipientUserId, CancellationToken cancellationToken = default)
         => await _dbContext.Notifications
             .Where(n => n.RecipientUserId == recipientUserId && n.Status != NotificationStatus.Read)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Notification>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications
+            .AsNoTracking()
+            .OrderByDescending(n => n.CreatedAtUtc)
+            .Take(take)
             .ToListAsync(cancellationToken);
 }

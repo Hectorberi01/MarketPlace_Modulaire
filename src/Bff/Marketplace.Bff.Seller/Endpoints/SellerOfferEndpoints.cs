@@ -11,9 +11,8 @@ using Marketplace.Modules.Offers.Application.Offers.Queries;
 namespace Marketplace.Bff.Seller.Endpoints;
 
 /// <summary>
-/// BFF Vendeur — offres : les listings du vendeur (prix, statut, délai de
-/// préparation) attachés à des produits existants. La liste est scopée à la
-/// boutique du jeton.
+/// BFF Vendeur — offres. Liste scopée à la boutique du jeton ; chaque mutation par
+/// id vérifie d'abord que l'offre appartient au vendeur (anti-IDOR).
 /// </summary>
 public static class SellerOfferEndpoints
 {
@@ -31,7 +30,6 @@ public static class SellerOfferEndpoints
         return app;
     }
 
-    /// <summary>Toutes les offres de la boutique du jeton.</summary>
     private static async Task<IResult> ListMineAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
@@ -40,11 +38,20 @@ public static class SellerOfferEndpoints
             : (await sender.Send(new ListOffersBySellerQuery(seller.Id), ct)).Match(o => Results.Ok(o));
     }
 
-    /// <summary>Détail d'une offre.</summary>
-    private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetOfferQuery(id), ct)).Match(o => Results.Ok(o));
+    /// <summary>Détail d'une offre du vendeur (scopé : 404 si elle ne lui appartient pas).</summary>
+    private static async Task<IResult> GetAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
 
-    /// <summary>Crée une offre (boutique du jeton × produit) sur une variante.</summary>
+        return await SellerBff.OwnsOfferAsync(sender, seller.Id, id, ct)
+            ? (await sender.Send(new GetOfferQuery(id), ct)).Match(o => Results.Ok(o))
+            : SellerBff.NotFoundOrForbidden("offer");
+    }
+
     private static async Task<IResult> CreateAsync(ClaimsPrincipal user, CreateOfferRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
@@ -60,17 +67,36 @@ public static class SellerOfferEndpoints
         return result.Match(id => Results.Ok(new { offerId = id }));
     }
 
-    /// <summary>Change le prix de base d'une offre.</summary>
-    private static async Task<IResult> ChangePriceAsync(Guid id, PriceRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ChangeOfferPriceCommand(id, request.Amount, request.Currency), ct)).Match(() => Results.NoContent());
+    private static async Task<IResult> ChangePriceAsync(ClaimsPrincipal user, Guid id, PriceRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new ChangeOfferPriceCommand(id, request.Amount, request.Currency), ct));
 
-    /// <summary>Change le statut d'une offre (Active, Paused, OutOfStock).</summary>
-    private static async Task<IResult> ChangeStatusAsync(Guid id, StatusRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ChangeOfferStatusCommand(id, request.Status), ct)).Match(() => Results.NoContent());
+    private static async Task<IResult> ChangeStatusAsync(ClaimsPrincipal user, Guid id, StatusRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new ChangeOfferStatusCommand(id, request.Status), ct));
 
-    /// <summary>Modifie le délai de préparation (jours).</summary>
-    private static async Task<IResult> SetHandlingTimeAsync(Guid id, HandlingTimeRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new SetHandlingTimeCommand(id, request.HandlingTime), ct)).Match(() => Results.NoContent());
+    private static async Task<IResult> SetHandlingTimeAsync(ClaimsPrincipal user, Guid id, HandlingTimeRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new SetHandlingTimeCommand(id, request.HandlingTime), ct));
+
+    /// <summary>Résout le vendeur, vérifie la propriété de l'offre, puis exécute la commande.</summary>
+    private static async Task<IResult> GuardAsync(
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid offerId, CancellationToken ct,
+        Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        if (!await SellerBff.OwnsOfferAsync(sender, seller.Id, offerId, ct))
+        {
+            return SellerBff.NotFoundOrForbidden("offer");
+        }
+
+        return (await action()).Match(() => Results.NoContent());
+    }
 
     public sealed record CreateOfferRequest(
         Guid ProductId, string Sku, decimal BasePriceAmount, string Currency, string Condition,

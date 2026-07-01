@@ -42,13 +42,27 @@ public sealed class OutboxProcessor<TDbContext> : BackgroundService
             try
             {
                 await ProcessBatchAsync(stoppingToken);
+                await Task.Delay(_pollingInterval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Arrêt normal de l'hôte : on sort proprement sans faire planter le host.
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erreur lors du traitement de l'outbox de {Context}", typeof(TDbContext).Name);
-            }
 
-            await Task.Delay(_pollingInterval, stoppingToken);
+                // Pause avant nouvel essai, elle aussi protégée contre l'annulation.
+                try
+                {
+                    await Task.Delay(_pollingInterval, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
         }
     }
 

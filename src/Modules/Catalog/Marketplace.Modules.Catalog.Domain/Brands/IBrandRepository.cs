@@ -9,4 +9,7 @@ public interface IBrandRepository
     Task<Brand?> GetByIdAsync(BrandId id, CancellationToken cancellationToken = default);
 
     Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default);
+
+    /// <summary>Toutes les marques de la plateforme (back-office admin).</summary>
+    Task<IReadOnlyList<Brand>> ListAllAsync(CancellationToken cancellationToken = default);
 }

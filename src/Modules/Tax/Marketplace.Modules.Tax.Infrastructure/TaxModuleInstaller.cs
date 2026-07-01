@@ -37,6 +37,6 @@ public sealed class TaxModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<TaxDbContext>>();
+        services.AddOutboxProcessor<TaxDbContext>();
     }
 }

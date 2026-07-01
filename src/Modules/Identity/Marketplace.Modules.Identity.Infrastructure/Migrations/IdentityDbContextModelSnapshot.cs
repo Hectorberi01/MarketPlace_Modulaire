@@ -36,6 +36,42 @@ partial class IdentityDbContextModelSnapshot : ModelSnapshot
             b.ToTable("outbox_messages", "identity");
         });
 
+        modelBuilder.Entity("Marketplace.Modules.Identity.Domain.Addresses.Address", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<string>("City").IsRequired().HasMaxLength(120).HasColumnType("character varying(120)");
+            b.Property<string>("Country").IsRequired().HasMaxLength(80).HasColumnType("character varying(80)");
+            b.Property<DateTime>("CreatedOnUtc").HasColumnType("timestamp with time zone");
+            b.Property<bool>("IsDefault").HasColumnType("boolean");
+            b.Property<string>("Label").IsRequired().HasMaxLength(60).HasColumnType("character varying(60)");
+            b.Property<string>("Line1").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("Line2").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("Phone").IsRequired().HasMaxLength(30).HasColumnType("character varying(30)");
+            b.Property<string>("Recipient").IsRequired().HasMaxLength(120).HasColumnType("character varying(120)");
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+            b.HasKey("Id");
+            b.HasIndex("UserId");
+            b.ToTable("addresses", "identity");
+        });
+
+        modelBuilder.Entity("Marketplace.Modules.Identity.Domain.PaymentMethods.PaymentMethod", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<string>("AccountRef").IsRequired().HasMaxLength(40).HasColumnType("character varying(40)");
+            b.Property<DateTime>("CreatedOnUtc").HasColumnType("timestamp with time zone");
+            b.Property<int?>("ExpiryMonth").HasColumnType("integer");
+            b.Property<int?>("ExpiryYear").HasColumnType("integer");
+            b.Property<string>("HolderName").HasMaxLength(120).HasColumnType("character varying(120)");
+            b.Property<bool>("IsDefault").HasColumnType("boolean");
+            b.Property<string>("Label").IsRequired().HasMaxLength(60).HasColumnType("character varying(60)");
+            b.Property<string>("Provider").IsRequired().HasMaxLength(40).HasColumnType("character varying(40)");
+            b.Property<string>("Type").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+            b.HasKey("Id");
+            b.HasIndex("UserId");
+            b.ToTable("payment_methods", "identity");
+        });
+
         modelBuilder.Entity("Marketplace.Modules.Identity.Domain.Roles.Role", b =>
         {
             b.Property<Guid>("Id").HasColumnType("uuid");
@@ -61,6 +97,8 @@ partial class IdentityDbContextModelSnapshot : ModelSnapshot
             b.Property<bool>("MfaEnabled").HasColumnType("boolean");
             b.Property<string>("MfaSecret").HasMaxLength(200).HasColumnType("character varying(200)");
             b.Property<string>("PasswordHash").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<DateTime?>("PasswordResetExpiresOnUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("PasswordResetTokenHash").HasMaxLength(200).HasColumnType("character varying(200)");
             b.Property<string>("PhoneNumber").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)").HasColumnName("phone_number");
             b.Property<Guid>("SecurityStamp").HasColumnType("uuid");
             b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");

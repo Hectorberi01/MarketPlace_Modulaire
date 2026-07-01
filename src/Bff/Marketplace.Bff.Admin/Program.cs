@@ -92,6 +92,31 @@ builder.Services.AddSwaggerGen(c =>
     // schemaIds qualifiés par le nom complet : évite toute collision si deux
     // groupes exposent des DTO imbriqués de même nom court.
     c.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace("+", ".").Replace("`", "_"));
+
+    // Authentification Bearer (JWT) dans la doc : ajoute le bouton « Authorize ».
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Coller le token JWT (rôle Admin requis), obtenu via /admin/auth/login, sans le préfixe « Bearer »."
+    });
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
 });
 
 // Types de DbContext (un par module) pour la migration optionnelle au démarrage.
@@ -131,7 +156,9 @@ app.MapAdminUserEndpoints();
 app.MapAdminModerationEndpoints();
 app.MapAdminOrderEndpoints();
 app.MapAdminFinanceEndpoints();
+app.MapAdminWalletEndpoints();
 app.MapAdminCatalogEndpoints();
+app.MapAdminProductEndpoints();
 app.MapAdminPlatformEndpoints();
 
 await app.RunAsync();

@@ -17,6 +17,7 @@ using Marketplace.Modules.Ordering.Domain.Orders.Events;
 using Marketplace.Modules.Ordering.Infrastructure.Persistence;
 using Marketplace.Modules.Ordering.Infrastructure.Public;
 using Marketplace.Modules.Payments.Contracts.IntegrationEvents;
+using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
 
 namespace Marketplace.Modules.Ordering.Infrastructure;
 
@@ -50,8 +51,12 @@ public sealed class OrderingModuleInstaller : IModuleInstaller
         services.AddScoped<IIntegrationEventHandler<PaymentCapturedIntegrationEvent>, ConfirmOrderOnPaymentCapturedHandler>();
         services.AddScoped<IIntegrationEventHandler<PaymentFailedIntegrationEvent>, CancelOrderOnPaymentFailedHandler>();
 
+        // Étape finale du Saga : marquer la commande livrée quand toutes ses
+        // expéditions le sont (déclenche escrow + payout vendeur).
+        services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, MarkOrderDeliveredOnAllShipmentsDeliveredHandler>();
+
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<OrderingDbContext>>();
+        services.AddOutboxProcessor<OrderingDbContext>();
     }
 }

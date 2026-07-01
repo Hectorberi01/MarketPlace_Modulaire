@@ -57,6 +57,8 @@ public sealed class User : AggregateRoot<UserId>
     public Guid SecurityStamp { get; private set; }
     public string? EmailVerificationTokenHash { get; private set; }
     public DateTime? EmailVerificationExpiresOnUtc { get; private set; }
+    public string? PasswordResetTokenHash { get; private set; }
+    public DateTime? PasswordResetExpiresOnUtc { get; private set; }
     public DateTime CreatedOnUtc { get; private set; }
 
     public IReadOnlyCollection<UserRoleAssignment> RoleAssignments => _roleAssignments.AsReadOnly();
@@ -170,6 +172,51 @@ public sealed class User : AggregateRoot<UserId>
         RegenerateSecurityStamp();
         RevokeAllRefreshTokens();
 
+        Raise(new UserPasswordChangedDomainEvent(Id.Value));
+        return Result.Success();
+    }
+
+    /// <summary>Initie une réinitialisation de mot de passe : stocke le hash du jeton + son expiration.</summary>
+    public Result BeginPasswordReset(string tokenHash, DateTime expiresOnUtc)
+    {
+        if (string.IsNullOrWhiteSpace(tokenHash))
+        {
+            return Result.Failure(Error.Validation("identity.user.reset_token_required", "Jeton de réinitialisation manquant."));
+        }
+
+        PasswordResetTokenHash = tokenHash;
+        PasswordResetExpiresOnUtc = expiresOnUtc;
+        return Result.Success();
+    }
+
+    /// <summary>Réinitialise le mot de passe à partir du hash du jeton fourni (usage unique).</summary>
+    public Result ResetPassword(string providedTokenHash, string newPasswordHash, DateTime nowUtc)
+    {
+        if (PasswordResetTokenHash is null || PasswordResetExpiresOnUtc is null)
+        {
+            return Result.Failure(Error.Conflict("identity.user.no_reset_pending", "Aucune réinitialisation en attente."));
+        }
+
+        if (PasswordResetExpiresOnUtc < nowUtc)
+        {
+            return Result.Failure(Error.Validation("identity.user.reset_expired", "Le lien de réinitialisation a expiré."));
+        }
+
+        if (!FixedTimeEquals(PasswordResetTokenHash, providedTokenHash))
+        {
+            return Result.Failure(Error.Validation("identity.user.reset_invalid", "Lien de réinitialisation invalide."));
+        }
+
+        if (string.IsNullOrWhiteSpace(newPasswordHash))
+        {
+            return Result.Failure(Error.Validation("identity.user.password_required", "Le mot de passe est obligatoire."));
+        }
+
+        PasswordHash = newPasswordHash;
+        PasswordResetTokenHash = null;
+        PasswordResetExpiresOnUtc = null;
+        RegenerateSecurityStamp();
+        RevokeAllRefreshTokens();
         Raise(new UserPasswordChangedDomainEvent(Id.Value));
         return Result.Success();
     }

@@ -5,6 +5,7 @@ using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetCommissionRate;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SuspendSeller;
+using Marketplace.Modules.Sellers.Application.Abstractions;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.ListSellers;
 
@@ -21,6 +22,8 @@ public static class AdminSellerEndpoints
         sellers.MapGet("/{id:guid}", GetAsync);
         sellers.MapPost("/{id:guid}/kyb/approve", ApproveKybAsync);
         sellers.MapPost("/{id:guid}/kyb/reject", RejectKybAsync);
+        // Lien de consultation temporaire (présigné) d'une pièce KYB stockée en privé sur R2.
+        sellers.MapGet("/kyb/document-url", KybDocumentUrlAsync);
         sellers.MapPost("/{id:guid}/activate", ActivateAsync);
         sellers.MapPost("/{id:guid}/suspend", SuspendAsync);
         sellers.MapPut("/{id:guid}/commission-rate", SetCommissionRateAsync);
@@ -43,6 +46,13 @@ public static class AdminSellerEndpoints
     /// <summary>Rejette le KYB.</summary>
     private static async Task<IResult> RejectKybAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new RejectKybCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Renvoie une URL de lecture temporaire (présignée, ~5 min) pour consulter une
+    /// pièce KYB privée sur Cloudflare R2, à partir de sa référence stockée.
+    /// </summary>
+    private static IResult KybDocumentUrlAsync(string fileRef, IKybDocumentStorage storage)
+        => storage.CreatePresignedGetUrl(fileRef).Match(url => Results.Ok(new { url }));
 
     /// <summary>Active le vendeur (KYB validé + compte de reversement requis).</summary>
     private static async Task<IResult> ActivateAsync(Guid id, ISender sender, CancellationToken ct)

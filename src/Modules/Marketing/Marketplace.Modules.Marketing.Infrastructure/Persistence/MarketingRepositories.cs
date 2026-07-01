@@ -13,6 +13,8 @@ internal sealed class CampaignRepository : ICampaignRepository
     public async Task AddAsync(Campaign campaign, CancellationToken cancellationToken = default)
         => await _dbContext.Campaigns.AddAsync(campaign, cancellationToken);
 
+    public void Remove(Campaign campaign) => _dbContext.Campaigns.Remove(campaign);
+
     public async Task<Campaign?> GetByIdAsync(CampaignId id, CancellationToken cancellationToken = default)
         => await _dbContext.Campaigns.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
@@ -29,6 +31,8 @@ internal sealed class ContentBlockRepository : IContentBlockRepository
     public async Task AddAsync(ContentBlock block, CancellationToken cancellationToken = default)
         => await _dbContext.ContentBlocks.AddAsync(block, cancellationToken);
 
+    public void Remove(ContentBlock block) => _dbContext.ContentBlocks.Remove(block);
+
     public async Task<ContentBlock?> GetByIdAsync(ContentBlockId id, CancellationToken cancellationToken = default)
         => await _dbContext.ContentBlocks.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
 
@@ -37,5 +41,11 @@ internal sealed class ContentBlockRepository : IContentBlockRepository
             .AsNoTracking()
             .Where(b => b.Slot == slot && b.Status == ContentStatus.Published)
             .OrderBy(b => b.Position)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ContentBlock>> ListAllAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.ContentBlocks
+            .AsNoTracking()
+            .OrderBy(b => b.Slot).ThenBy(b => b.Position)
             .ToListAsync(cancellationToken);
 }

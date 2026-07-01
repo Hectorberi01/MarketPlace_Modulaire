@@ -10,7 +10,8 @@ public sealed record SearchResultItem(
     decimal? MinPrice,
     string? Currency,
     double AverageRating,
-    int ReviewCount);
+    int ReviewCount,
+    string? ImageUrl);
 
 /// <summary>Page de résultats de recherche.</summary>
 public sealed record SearchResultPage(

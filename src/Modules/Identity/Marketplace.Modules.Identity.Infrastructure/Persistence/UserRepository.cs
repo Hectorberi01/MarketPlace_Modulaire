@@ -22,6 +22,14 @@ internal sealed class UserRepository : IUserRepository
             .Include(u => u.RefreshTokens)
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<User>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
+        => await _dbContext.Users
+            .AsNoTracking()
+            .Include(u => u.RoleAssignments)
+            .OrderByDescending(u => u.CreatedOnUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var emailResult = Email.Create(email);

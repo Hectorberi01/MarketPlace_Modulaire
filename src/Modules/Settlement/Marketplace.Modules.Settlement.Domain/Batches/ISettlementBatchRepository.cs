@@ -7,4 +7,7 @@ public interface ISettlementBatchRepository
     Task<SettlementBatch?> GetByIdAsync(SettlementBatchId id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SettlementBatch>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Liste les reversements (payouts) d'un vendeur, tous lots confondus.</summary>
+    Task<IReadOnlyList<Payout>> ListPayoutsBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default);
 }

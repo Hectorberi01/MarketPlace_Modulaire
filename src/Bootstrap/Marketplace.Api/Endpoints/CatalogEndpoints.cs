@@ -36,8 +36,7 @@ public static class CatalogEndpoints
         return app;
     }
 
-    // ---------------------------------------------------------------- Products
-
+    // Products
     private static void MapProducts(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/catalog/products").WithTags("Catalog · Products");

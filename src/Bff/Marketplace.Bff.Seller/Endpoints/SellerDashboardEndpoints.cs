@@ -1,0 +1,69 @@
+using MediatR;
+using System.Security.Claims;
+using Marketplace.Modules.Sellers.Contracts;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
+using Marketplace.Modules.Settlement.Application.Batches;
+using Marketplace.Modules.Reviews.Application.Reviews.Queries;
+
+namespace Marketplace.Bff.Seller.Endpoints;
+
+/// <summary>
+/// BFF Vendeur — tableau de bord. Agrège en un appel les indicateurs clés de la
+/// boutique (commandes, chiffre d'affaires sur 30 j, avis), pour l'écran d'accueil.
+/// </summary>
+public static class SellerDashboardEndpoints
+{
+    public static IEndpointRouteBuilder MapSellerDashboardEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapGet("/seller/dashboard", DashboardAsync)
+            .WithTags("Vendeur · Tableau de bord").RequireAuthorization();
+
+        return app;
+    }
+
+    private static async Task<IResult> DashboardAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var now = DateTime.UtcNow;
+
+        // Commandes du vendeur (toutes + à traiter).
+        var ordersResult = await sender.Send(new ListOrdersBySellerQuery(seller.Id), ct);
+        var orders = ordersResult.IsSuccess ? ordersResult.Value : Array.Empty<Marketplace.Modules.Ordering.Contracts.OrderSummary>();
+        var ordersTotal = orders.Count;
+        var ordersToProcess = orders.Count(o => o.Status is not ("Delivered" or "Cancelled"));
+
+        // Relevé financier sur 30 jours (brut, commissions, net).
+        decimal grossSales = 0, netPayout = 0;
+        string currency = "XOF";
+        var statement = await sender.Send(new GetSellerStatementQuery(seller.Id, now.AddDays(-30), now), ct);
+        if (statement.IsSuccess)
+        {
+            grossSales = statement.Value.GrossSales;
+            netPayout = statement.Value.NetPayout;
+            currency = statement.Value.Currency;
+        }
+
+        // Avis (nombre + note moyenne).
+        var reviewsResult = await sender.Send(new ListReviewsBySellerQuery(seller.Id), ct);
+        var reviews = reviewsResult.IsSuccess ? reviewsResult.Value : Array.Empty<Marketplace.Modules.Reviews.Contracts.ReviewSummary>();
+        var reviewsCount = reviews.Count;
+        var averageRating = reviewsCount > 0 ? Math.Round(reviews.Average(r => r.Rating), 2) : 0d;
+
+        return Results.Ok(new SellerDashboard(
+            ordersTotal, ordersToProcess, grossSales, netPayout, currency, reviewsCount, averageRating));
+    }
+
+    public sealed record SellerDashboard(
+        int OrdersTotal,
+        int OrdersToProcess,
+        decimal GrossSales30d,
+        decimal NetPayout30d,
+        string Currency,
+        int ReviewsCount,
+        double AverageRating);
+}

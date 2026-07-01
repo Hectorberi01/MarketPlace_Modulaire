@@ -94,7 +94,33 @@ builder.Services.AddAuthorization();
 
 // 5. API.
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    // Authentification Bearer (JWT) dans la doc : ajoute le bouton « Authorize ».
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Coller le token JWT (obtenu via /api/identity/auth/login), sans le préfixe « Bearer »."
+    });
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 var app = builder.Build();
 
@@ -110,8 +136,77 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     await identityDb.Database.MigrateAsync();
     await IdentityDataSeeder.SeedDefaultRolesAsync(identityDb);
 
+    // Compte administrateur de bootstrap (idempotent). Surchargeable via la
+    // section « AdminSeed » de la configuration ; défauts en dev uniquement.
+    var passwordHasher = scope.ServiceProvider.GetRequiredService<Marketplace.Modules.Identity.Application.Abstractions.IPasswordHasher>();
+    await IdentityDataSeeder.SeedAdminUserAsync(
+        identityDb,
+        passwordHasher,
+        app.Configuration["AdminSeed:Email"] ?? "admin@marketplace.com",
+        app.Configuration["AdminSeed:Password"] ?? "Hector01@",
+        app.Configuration["AdminSeed:FirstName"] ?? "Hector",
+        app.Configuration["AdminSeed:LastName"] ?? "Admin",
+        app.Configuration["AdminSeed:Phone"] ?? "+221770000000");
+
     var sellersDb = scope.ServiceProvider.GetRequiredService<SellersDbContext>();
     await sellersDb.Database.MigrateAsync();
+
+    // Compte vendeur de démonstration (idempotent) : utilisateur Identity vérifié
+    // + profil boutique rattaché. Surchargeable via la section « SellerSeed ».
+    var sellerUserId = await IdentityDataSeeder.SeedSellerUserAsync(
+        identityDb,
+        passwordHasher,
+        app.Configuration["SellerSeed:Email"] ?? "seller@marketplace.com",
+        app.Configuration["SellerSeed:Password"] ?? "Hector01@",
+        app.Configuration["SellerSeed:FirstName"] ?? "Demo",
+        app.Configuration["SellerSeed:LastName"] ?? "Vendeur",
+        app.Configuration["SellerSeed:Phone"] ?? "+221770000001");
+
+    if (sellerUserId is { } sid)
+    {
+        var sellerRepo = scope.ServiceProvider.GetRequiredService<Marketplace.Modules.Sellers.Domain.Sellers.ISellerRepository>();
+        var shopName = app.Configuration["SellerSeed:ShopName"] ?? "Boutique Démo";
+
+        // Boutique existante (suivie par EF) ou nouvelle.
+        var seedSeller = await sellerRepo.GetByUserIdAsync(sid);
+        var isNew = seedSeller is null;
+        if (seedSeller is null)
+        {
+            var sellerResult = Marketplace.Modules.Sellers.Domain.Sellers.Seller.Register(sid, shopName, 0.10m);
+            seedSeller = sellerResult.IsSuccess ? sellerResult.Value : null;
+        }
+
+        // Onboarding idempotent : on amène la boutique démo à l'état ACTIVE (peut
+        // publier des offres) — pièce KYB + validation + compte payout + activation.
+        if (seedSeller is not null && seedSeller.Status != Marketplace.Modules.Sellers.Domain.Sellers.SellerStatus.Active)
+        {
+            if (seedSeller.KybDocuments.Count == 0)
+            {
+                seedSeller.AddKybDocument(
+                    Marketplace.Modules.Sellers.Domain.Sellers.KybDocumentType.BusinessRegistry,
+                    "https://hbamediacore.fr/uploads/kyb/seed-registry.pdf");
+            }
+            seedSeller.ApproveKyb();
+
+            var payout = Marketplace.Modules.Sellers.Domain.Sellers.PayoutAccount.Create(
+                Marketplace.Modules.Sellers.Domain.Sellers.PayoutProvider.MtnMomo,
+                app.Configuration["SellerSeed:PayoutNumber"] ?? "+221770000001",
+                shopName);
+            if (payout.IsSuccess)
+            {
+                seedSeller.SetPayoutAccount(payout.Value);
+            }
+            seedSeller.Activate();
+
+            if (isNew)
+            {
+                await sellerRepo.AddAsync(seedSeller);
+            }
+            await scope.ServiceProvider
+                .GetRequiredService<Marketplace.Modules.Sellers.Application.Abstractions.ISellerUnitOfWork>()
+                .SaveChangesAsync();
+        }
+    }
 
     var offersDb = scope.ServiceProvider.GetRequiredService<OffersDbContext>();
     await offersDb.Database.MigrateAsync();
@@ -180,11 +275,10 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     await fraudDb.Database.MigrateAsync();
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Swagger activé sans condition (surface de test, y compris en conteneur où
+// l'environnement est Production). À restreindre avant un déploiement public.
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseAuthentication();
 app.UseAuthorization();

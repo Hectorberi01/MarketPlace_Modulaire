@@ -44,6 +44,14 @@ partial class OrderingDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("Currency").IsRequired().HasMaxLength(3).HasColumnType("character varying(3)");
             b.Property<decimal>("GrandTotal").HasColumnType("numeric(18,2)");
+            b.Property<string>("ShipToCity").HasMaxLength(120).HasColumnType("character varying(120)");
+            b.Property<string>("ShipToCountry").HasMaxLength(80).HasColumnType("character varying(80)");
+            b.Property<string>("ShipToLabel").HasMaxLength(60).HasColumnType("character varying(60)");
+            b.Property<string>("ShipToLine1").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("ShipToLine2").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("ShipToPhone").HasMaxLength(30).HasColumnType("character varying(30)");
+            b.Property<string>("ShipToRecipient").HasMaxLength(120).HasColumnType("character varying(120)");
+            b.Property<decimal>("ShippingFee").ValueGeneratedOnAdd().HasColumnType("numeric(18,2)").HasDefaultValue(0m);
             b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
             b.Property<decimal>("Subtotal").HasColumnType("numeric(18,2)");
             b.Property<decimal>("TotalPlatformDiscount").HasColumnType("numeric(18,2)");

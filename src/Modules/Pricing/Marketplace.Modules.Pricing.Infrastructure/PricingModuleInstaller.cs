@@ -43,6 +43,6 @@ public sealed class PricingModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<PricingDbContext>>();
+        services.AddOutboxProcessor<PricingDbContext>();
     }
 }

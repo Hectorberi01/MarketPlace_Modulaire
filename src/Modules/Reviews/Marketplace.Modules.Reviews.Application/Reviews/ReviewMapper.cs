@@ -15,5 +15,7 @@ internal static class ReviewMapper
         r.Body,
         r.IsVerifiedPurchase,
         r.Status.ToString(),
-        r.CreatedAtUtc);
+        r.CreatedAtUtc,
+        r.SellerReply,
+        r.SellerRepliedAtUtc);
 }

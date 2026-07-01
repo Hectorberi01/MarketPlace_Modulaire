@@ -11,6 +11,9 @@ public interface IReviewRepository
 
     Task<IReadOnlyList<Review>> ListByProductAsync(Guid productId, CancellationToken cancellationToken = default);
 
+    /// <summary>Liste tous les avis ciblant les produits d'un vendeur (back-office vendeur).</summary>
+    Task<IReadOnlyList<Review>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default);
+
     /// <summary>Un acheteur ne peut déposer qu'un avis par produit et par commande.</summary>
     Task<bool> ExistsAsync(Guid buyerId, Guid productId, Guid orderId, CancellationToken cancellationToken = default);
 

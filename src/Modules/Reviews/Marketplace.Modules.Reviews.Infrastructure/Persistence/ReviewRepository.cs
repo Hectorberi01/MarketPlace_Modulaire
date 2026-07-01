@@ -21,6 +21,13 @@ internal sealed class ReviewRepository : IReviewRepository
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Review>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
+        => await _dbContext.Reviews
+            .AsNoTracking()
+            .Where(r => r.SellerId == sellerId)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> ExistsAsync(Guid buyerId, Guid productId, Guid orderId, CancellationToken cancellationToken = default)
         => await _dbContext.Reviews.AnyAsync(
             r => r.BuyerId == buyerId && r.ProductId == productId && r.OrderId == orderId, cancellationToken);

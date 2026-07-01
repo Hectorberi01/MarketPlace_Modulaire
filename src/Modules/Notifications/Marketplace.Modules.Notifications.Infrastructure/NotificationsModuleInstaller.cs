@@ -45,6 +45,6 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         services.AddScoped<IIntegrationEventHandler<ShipmentShippedIntegrationEvent>, ShipmentShippedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, ShipmentDeliveredNotificationHandler>();
 
-        services.AddHostedService<OutboxProcessor<NotificationsDbContext>>();
+        services.AddOutboxProcessor<NotificationsDbContext>();
     }
 }

@@ -39,6 +39,8 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.SecurityStamp).IsRequired();
         builder.Property(u => u.EmailVerificationTokenHash).HasMaxLength(200);
         builder.Property(u => u.EmailVerificationExpiresOnUtc);
+        builder.Property(u => u.PasswordResetTokenHash).HasMaxLength(200);
+        builder.Property(u => u.PasswordResetExpiresOnUtc);
         builder.Property(u => u.CreatedOnUtc).IsRequired();
 
         builder.HasIndex(u => u.Email).IsUnique();

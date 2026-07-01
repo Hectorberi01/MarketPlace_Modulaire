@@ -28,6 +28,15 @@ http:
       entryPoints: [web]
       service: mobile
       middlewares: [edge-chain]
+    # Accès depuis un appareil physique (téléphone) via l'IP LAN de l'hôte :
+    # aucune règle d'hôte ne matche l'IP, donc on route le préfixe /mobile
+    # quel que soit l'hôte. /mobile est exclusif au BFF Mobile : pas de conflit.
+    mobile-lan:
+      rule: "PathPrefix(`/mobile`)"
+      entryPoints: [web]
+      service: mobile
+      middlewares: [edge-chain]
+      priority: 1
 
     # --- BFF Web ---
     web-host:

@@ -40,6 +40,6 @@ public sealed class BillingModuleInstaller : IModuleInstaller
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
-        services.AddHostedService<OutboxProcessor<BillingDbContext>>();
+        services.AddOutboxProcessor<BillingDbContext>();
     }
 }
