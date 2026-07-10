@@ -20,6 +20,7 @@ internal sealed class DisputeConfiguration : IEntityTypeConfiguration<Dispute>
         builder.Property(d => d.Type).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(d => d.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(d => d.Resolution).HasConversion<string>().HasMaxLength(20);
+        builder.Property(d => d.RefundAmount).HasPrecision(18, 2);
         builder.Property(d => d.CreatedAtUtc).IsRequired();
         builder.Property(d => d.ResolvedAtUtc);
 

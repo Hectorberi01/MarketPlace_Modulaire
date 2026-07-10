@@ -44,6 +44,17 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
             .Where(w => w.SellerId == sellerId)
             .OrderByDescending(w => w.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    // Suivi activé : l'entité est mutée puis persistée (validation/refus admin).
+    public async Task<Withdrawal?> GetByIdAsync(WithdrawalId id, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<Withdrawal>> ListByStatusAsync(WithdrawalStatus status, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals
+            .AsNoTracking()
+            .Where(w => w.Status == status)
+            .OrderBy(w => w.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
 }
 
 internal sealed class WalletTransactionRepository : IWalletTransactionRepository

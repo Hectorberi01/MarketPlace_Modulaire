@@ -18,6 +18,9 @@ public sealed class CloudflareR2MediaOptions
     /// <summary>Base URL publique de lecture des images (obligatoire pour l'affichage acheteur).</summary>
     public string PublicBaseUrl { get; set; } = string.Empty;
 
+    /// <summary>Préfixe de clé (dossier) où ranger les images dans le bucket. Vide = racine.</summary>
+    public string KeyPrefix { get; set; } = string.Empty;
+
     public string Region { get; set; } = "auto";
 
     public string Endpoint => $"https://{AccountId}.r2.cloudflarestorage.com";

@@ -1,0 +1,45 @@
+---
+# SECRETS de staging (GABARIT — aucune vraie valeur ici).
+# Copier vers group_vars/marketplace/vault.yml PUIS chiffrer :
+#   cp vault.example.yml group_vars/marketplace/vault.yml
+#   ansible-vault encrypt group_vars/marketplace/vault.yml
+# (édition ultérieure : ansible-vault edit group_vars/marketplace/vault.yml)
+
+# Base Neon de staging — endpoint DIRECT (sans -pooler), format Npgsql.
+marketplace_connection: "Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=CHANGE_ME;SSL Mode=VerifyFull;Channel Binding=Require"
+
+redis_password: "CHANGE_ME_STRONG_RANDOM"
+jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
+
+# FedaPay SANDBOX en staging.
+fedapay_api_key: "sk_sandbox_xxx"
+fedapay_webhook_secret: ""
+
+# Cloudflare R2 (identifiants S3).
+r2_account_id: "CHANGE_ME"
+r2_access_key_id: "CHANGE_ME"
+r2_secret_access_key: "CHANGE_ME"
+
+# Cloudinary (traitement image : détourage IA + fond blanc). Add-on
+# « AI Background Removal » requis. Depuis Dashboard Cloudinary > API Keys.
+cloudinary_cloud_name: "CHANGE_ME"
+cloudinary_api_key: "CHANGE_ME"
+cloudinary_api_secret: "CHANGE_ME"
+
+# Firebase Cloud Messaging (notifications push). COLLER ICI le contenu intégral
+# du JSON de compte de service Firebase (Console Firebase > Paramètres du projet >
+# Comptes de service > Générer une nouvelle clé privée). Conserver le bloc « | »
+# et l'indentation ; ne PAS retirer les « \n » dans "private_key".
+fcm_service_account_json: |
+  {
+    "type": "service_account",
+    "project_id": "CHANGE_ME",
+    "private_key_id": "CHANGE_ME",
+    "private_key": "-----BEGIN PRIVATE KEY-----\nCHANGE_ME\n-----END PRIVATE KEY-----\n",
+    "client_email": "firebase-adminsdk-xxxxx@CHANGE_ME.iam.gserviceaccount.com",
+    "client_id": "CHANGE_ME",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": "CHANGE_ME"
+  }

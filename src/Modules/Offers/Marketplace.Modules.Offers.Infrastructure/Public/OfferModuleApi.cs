@@ -41,5 +41,9 @@ internal sealed class OfferModuleApi : IOfferModuleApi
         offer.FulfillmentType.ToString(),
         offer.ShipFromLocationId,
         offer.HandlingTime,
-        offer.Status.ToString());
+        offer.Status.ToString(),
+        offer.SellerPrice,
+        offer.CommissionAmount,
+        offer.ProviderFeeAmount,
+        offer.BasePrice.Amount);
 }

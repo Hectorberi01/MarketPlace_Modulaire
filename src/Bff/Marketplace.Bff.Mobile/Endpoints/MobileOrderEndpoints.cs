@@ -43,15 +43,14 @@ public static class MobileOrderEndpoints
     /// enrichie du nom et de l'image principale du produit (le résumé commande
     /// ne porte que le SKU).
     /// </summary>
-    private static async Task<IResult> DetailAsync(Guid id, ISender sender, IShippingModuleApi shipping, ICatalogModuleApi catalog, CancellationToken ct)
+    private static async Task<IResult> DetailAsync(ClaimsPrincipal user, Guid id, ISender sender, IShippingModuleApi shipping, ICatalogModuleApi catalog, CancellationToken ct)
     {
-        var orderResult = await sender.Send(new GetOrderQuery(id), ct);
-        if (orderResult.IsFailure)
+        // Contrôle de propriété : la commande doit appartenir à l'acheteur du jeton.
+        var o = await LoadOwnedOrderAsync(user, id, sender, ct);
+        if (o is null)
         {
-            return orderResult.Match(o => Results.Ok(o));
+            return Results.NotFound();
         }
-
-        var o = orderResult.Value;
 
         // Séquentiel : le DbContext (scoped) de Catalog n'est pas thread-safe.
         var lines = new List<object>(o.Lines.Count);
@@ -111,9 +110,15 @@ public static class MobileOrderEndpoints
         });
     }
 
-    /// <summary>Demande d'annulation (si éligible).</summary>
-    private static async Task<IResult> CancelAsync(Guid id, CancelRequest? request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new CancelOrderCommand(id, request?.Reason ?? string.Empty), ct)).Match(() => Results.NoContent());
+    /// <summary>Demande d'annulation (si éligible). Réservée au propriétaire de la commande.</summary>
+    private static async Task<IResult> CancelAsync(ClaimsPrincipal user, Guid id, CancelRequest? request, ISender sender, CancellationToken ct)
+    {
+        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
+        {
+            return Results.NotFound();
+        }
+        return (await sender.Send(new CancelOrderCommand(id, request?.Reason ?? string.Empty), ct)).Match(() => Results.NoContent());
+    }
 
     /// <summary>Ouvre une demande de retour (RMA) sur une ligne de la commande.</summary>
     private static async Task<IResult> ReturnAsync(ClaimsPrincipal user, Guid id, ReturnRequest request, ISender sender, CancellationToken ct)
@@ -121,9 +126,35 @@ public static class MobileOrderEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new RequestReturnCommand(buyerId, id, request.OfferId, request.Reason), ct)).Match(rid => Results.Ok(new { returnRequestId = rid }));
 
-    /// <summary>Suivi d'expédition (expéditions de la commande + statuts).</summary>
-    private static async Task<IResult> TrackingAsync(Guid id, IShippingModuleApi shipping, CancellationToken ct)
-        => Results.Ok(await shipping.GetShipmentsByOrderAsync(id, ct));
+    /// <summary>Suivi d'expédition (expéditions de la commande + statuts). Réservé au propriétaire.</summary>
+    private static async Task<IResult> TrackingAsync(ClaimsPrincipal user, Guid id, ISender sender, IShippingModuleApi shipping, CancellationToken ct)
+    {
+        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
+        {
+            return Results.NotFound();
+        }
+        return Results.Ok(await shipping.GetShipmentsByOrderAsync(id, ct));
+    }
+
+    /// <summary>
+    /// Charge une commande en garantissant qu'elle appartient à l'acheteur du jeton.
+    /// Renvoie null si la commande est absente OU ne lui appartient pas (on ne
+    /// distingue pas les deux cas : pas de divulgation d'existence, anti-IDOR).
+    /// </summary>
+    private static async Task<OrderSummary?> LoadOwnedOrderAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return null;
+        }
+        var result = await sender.Send(new GetOrderQuery(id), ct);
+        if (result.IsFailure)
+        {
+            return null;
+        }
+        var order = result.Value;
+        return order.BuyerId == buyerId ? order : null;
+    }
 
     public sealed record MobileOrderDetail(OrderSummary Order, IReadOnlyList<ShipmentSummary> Shipments);
     public sealed record CancelRequest(string? Reason);

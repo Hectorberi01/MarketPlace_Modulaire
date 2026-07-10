@@ -6,6 +6,7 @@ namespace Marketplace.Modules.Settlement.Domain.Wallets;
 /// Portefeuille de la plateforme (admin). Agrégat singleton identifié par
 /// <see cref="SingletonId"/>. Deux soldes distincts :
 ///  • <see cref="CommissionBalance"/> : commissions encaissées sur chaque vente.
+///  • <see cref="ProviderFeeBalance"/> : frais provider encaissés sur chaque vente.
 ///  • <see cref="ShippingBalance"/> : frais de livraison encaissés par la plateforme.
 /// </summary>
 public sealed class PlatformWallet : AggregateRoot<Guid>
@@ -22,12 +23,14 @@ public sealed class PlatformWallet : AggregateRoot<Guid>
     {
         Currency = currency;
         CommissionBalance = 0m;
+        ProviderFeeBalance = 0m;
         ShippingBalance = 0m;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
     public string Currency { get; private set; } = default!;
     public decimal CommissionBalance { get; private set; }
+    public decimal ProviderFeeBalance { get; private set; }
     public decimal ShippingBalance { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
@@ -42,6 +45,17 @@ public sealed class PlatformWallet : AggregateRoot<Guid>
         }
 
         CommissionBalance += amount;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void CreditProviderFee(decimal amount)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        ProviderFeeBalance += amount;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

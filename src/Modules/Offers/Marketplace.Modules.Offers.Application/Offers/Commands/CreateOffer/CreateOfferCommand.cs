@@ -7,7 +7,7 @@ public sealed record CreateOfferCommand(
     Guid ProductId,
     Guid SellerId,
     string Sku,
-    decimal BasePriceAmount,
+    decimal SellerPrice,
     string Currency,
     string Condition,
     string FulfillmentType,

@@ -1,0 +1,4 @@
+# Ce dossier reçoit, au déploiement, le fichier service-account.json (compte de
+# service Firebase) écrit par Ansible depuis le vault. Le JSON lui-même n'est
+# JAMAIS commité (voir .gitignore). Ce .gitkeep garantit que le dossier existe
+# pour le montage read-only du docker-compose (./fcm -> /run/secrets/fcm).

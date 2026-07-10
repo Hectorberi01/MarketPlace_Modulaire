@@ -30,6 +30,7 @@ public static class MobileCheckoutEndpoints
         // Carnet d'adresses (scopé à l'acheteur du jeton).
         checkout.MapGet("/addresses", ListAddressesAsync);
         checkout.MapPost("/addresses", AddAddressAsync);
+        checkout.MapPut("/addresses/{id:guid}", UpdateAddressAsync);
         checkout.MapDelete("/addresses/{id:guid}", DeleteAddressAsync);
         checkout.MapPut("/addresses/{id:guid}/default", SetDefaultAddressAsync);
 
@@ -94,9 +95,19 @@ public static class MobileCheckoutEndpoints
         return payment.Match(result => Results.Ok(new { orderId, payment = result }));
     }
 
-    /// <summary>Statut courant du paiement (polling).</summary>
-    private static async Task<IResult> PaymentStatusAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetPaymentQuery(id), ct)).Match(p => Results.Ok(p));
+    /// <summary>Statut courant du paiement (polling). Réservé au propriétaire du paiement.</summary>
+    private static async Task<IResult> PaymentStatusAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+        var result = await sender.Send(new GetPaymentQuery(id), ct);
+        // 404 si absent OU non possédé (anti-IDOR, pas de divulgation).
+        return result.IsSuccess && result.Value.BuyerId == buyerId
+            ? Results.Ok(result.Value)
+            : Results.NotFound();
+    }
 
     // Tarifs de livraison (forfaits). À terme : calcul géolocalisé via le module Shipping.
     private static readonly (string Code, string Label, string Eta, decimal Amount)[] _rates =
@@ -160,6 +171,20 @@ public static class MobileCheckoutEndpoints
             userId, request.Label, request.Recipient, request.Line1, request.Line2,
             request.City, request.Country, request.Phone, request.MakeDefault), ct);
         return result.Match(id => Results.Ok(new { id }));
+    }
+
+    /// <summary>Met à jour une adresse du carnet (scopée à l'acheteur du jeton).</summary>
+    private static async Task<IResult> UpdateAddressAsync(ClaimsPrincipal user, Guid id, AddressRequest request, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new UpdateAddressCommand(
+            userId, id, request.Label, request.Recipient, request.Line1, request.Line2,
+            request.City, request.Country, request.Phone, request.MakeDefault), ct);
+        return result.Match(() => Results.NoContent());
     }
 
     /// <summary>Supprime une adresse du carnet.</summary>

@@ -104,6 +104,22 @@ public sealed class FedaPayOptions
     /// <summary>Devise envoyée (UEMOA : XOF).</summary>
     public string Currency { get; set; } = "XOF";
 
+    /// <summary>
+    /// Active les VERSEMENTS (payouts vendeur) réels via FedaPay. Désactivé par
+    /// défaut : en sandbox les payouts Mobile Money ne s'exécutent pas et font
+    /// échouer le retrait. Tant que ce flag est faux, on simule le versement
+    /// (le retrait aboutit) même si FedaPay est configuré pour l'encaissement.
+    /// </summary>
+    public bool EnablePayouts { get; set; }
+
+    /// <summary>
+    /// Méthode de transfert FedaPay pour les payouts (champ « mode »). Valeurs
+    /// valides : mtn_open (MTN Bénin), moov (Moov Bénin), mtn_ci, moov_tg,
+    /// togocel, sbin, moov_ci, wave_sn, orange_sn… Défaut : mtn_open (le compte
+    /// de versement de la boutique est un numéro MTN Mobile Money Bénin).
+    /// </summary>
+    public string PayoutMode { get; set; } = "mtn_open";
+
     /// <summary>Vrai si la clé secrète est renseignée (sinon on reste en stub).</summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }

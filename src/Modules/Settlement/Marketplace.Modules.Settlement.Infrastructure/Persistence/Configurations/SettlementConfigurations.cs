@@ -22,6 +22,7 @@ internal sealed class SellerEarningConfiguration : IEntityTypeConfiguration<Sell
         builder.Property(e => e.ProductId).IsRequired();
         builder.Property(e => e.GrossAmount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(e => e.CommissionAmount).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(e => e.ProviderFeeAmount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(e => e.NetAmount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(e => e.Currency).HasMaxLength(3).IsRequired();
         builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(20).IsRequired();

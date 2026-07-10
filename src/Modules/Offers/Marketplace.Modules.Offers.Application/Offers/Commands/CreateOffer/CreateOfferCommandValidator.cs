@@ -9,7 +9,7 @@ public sealed class CreateOfferCommandValidator : AbstractValidator<CreateOfferC
         RuleFor(c => c.ProductId).NotEmpty();
         RuleFor(c => c.SellerId).NotEmpty();
         RuleFor(c => c.Sku).NotEmpty().MaximumLength(64);
-        RuleFor(c => c.BasePriceAmount).GreaterThanOrEqualTo(0);
+        RuleFor(c => c.SellerPrice).GreaterThanOrEqualTo(0);
         RuleFor(c => c.ShipFromLocationId).NotEmpty();
         RuleFor(c => c.HandlingTime).GreaterThanOrEqualTo(0);
         RuleFor(c => c.Condition).Must(v => v is "New" or "Used" or "Refurbished")

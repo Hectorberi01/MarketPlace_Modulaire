@@ -33,6 +33,11 @@ internal sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         });
         builder.Navigation(o => o.BasePrice).IsRequired();
 
+        // Détail du modèle de prix « prix vendeur net + majoration plateforme ».
+        builder.Property(o => o.SellerPrice).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(o => o.CommissionAmount).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(o => o.ProviderFeeAmount).HasColumnType("numeric(18,2)").IsRequired();
+
         builder.Property(o => o.Condition).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(o => o.FulfillmentType).HasConversion<string>().HasMaxLength(10).IsRequired();
         builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(20).IsRequired();

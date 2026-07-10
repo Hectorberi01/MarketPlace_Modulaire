@@ -1,7 +1,11 @@
 namespace Marketplace.Modules.Payments.Application.Abstractions.Gateways;
 
-/// <summary>Bénéficiaire d'un reversement (vendeur) : nom + numéro Mobile Money.</summary>
-public sealed record PayoutBeneficiary(string Name, string Msisdn, string CountryCode);
+/// <summary>
+/// Bénéficiaire d'un reversement (vendeur) : nom + numéro Mobile Money + opérateur.
+/// <paramref name="Provider"/> = opérateur du vendeur (ex. « MtnMomo », « MoovMoney »,
+/// « Celtis »), traduit par le gateway en « mode » FedaPay (mtn_open/moov/sbin).
+/// </summary>
+public sealed record PayoutBeneficiary(string Name, string Msisdn, string CountryCode, string Provider);
 
 /// <summary>Instruction de reversement (dépôt) vers un bénéficiaire.</summary>
 public sealed record PayoutInstruction(decimal Amount, string Currency, PayoutBeneficiary Beneficiary, string Reference);

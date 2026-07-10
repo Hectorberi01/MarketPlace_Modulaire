@@ -15,6 +15,7 @@ using Marketplace.Modules.Catalog.Application.Products.Commands.RemoveProductMed
 using Marketplace.Modules.Catalog.Application.Products.Commands.SetPrimaryProductMedia;
 using Marketplace.Modules.Catalog.Application.Products.Commands.ReorderProductMedia;
 using Marketplace.Modules.Catalog.Application.Products.Commands.UploadProductImage;
+using Marketplace.Modules.Catalog.Application.Products.Commands.ProcessImage;
 using Marketplace.Modules.Catalog.Application.Products.Commands.UpdateProduct;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListProductsBySeller;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
@@ -36,6 +37,9 @@ public static class SellerCatalogEndpoints
         products.MapGet("/{id:guid}", GetAsync);
         // Création produit AVEC upload d'images (multipart/form-data).
         products.MapPost("/", CreateWithImagesAsync).DisableAntiforgery();
+        // Traitement d'une image (détourage IA + fond blanc) AVANT création, pour
+        // que le vendeur valide le rendu. Renvoie l'image traitée (JPEG).
+        products.MapPost("/media/process", ProcessMediaAsync).DisableAntiforgery();
         products.MapPut("/{id:guid}", UpdateAsync);
         products.MapPatch("/{id:guid}/status", ChangeStatusAsync);
         products.MapPost("/{id:guid}/media", AddMediaAsync);
@@ -120,9 +124,18 @@ public static class SellerCatalogEndpoints
             return SellerBff.NotASeller();
         }
 
+        if (images.Count == 0)
+        {
+            return Results.BadRequest(new { error = "Au moins une image est requise." });
+        }
+
         var uploads = new List<ProductImageUpload>(images.Count);
         foreach (var file in images)
         {
+            if (UploadValidation.ValidateImage(file) is { } invalid)
+            {
+                return invalid;
+            }
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
             uploads.Add(new ProductImageUpload(file.FileName, file.ContentType, ms.ToArray()));
@@ -150,6 +163,38 @@ public static class SellerCatalogEndpoints
             uploads), ct);
 
         return result.Match(r => Results.Ok(r));
+    }
+
+    /// <summary>
+    /// Traite une image (détourage IA + fond blanc) via Cloudinary et renvoie
+    /// l'image traitée (JPEG), SANS créer de produit. Sert au récap « avant/après »
+    /// côté app. Scopé vendeur. Champ multipart « image ».
+    /// </summary>
+    private static async Task<IResult> ProcessMediaAsync(
+        ClaimsPrincipal user,
+        IFormFile image,
+        ISender sender,
+        ISellerModuleApi sellers,
+        CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        if (UploadValidation.ValidateImage(image) is { } invalid)
+        {
+            return invalid;
+        }
+
+        using var ms = new MemoryStream();
+        await image.CopyToAsync(ms, ct);
+
+        var result = await sender.Send(
+            new ProcessImageCommand(image.FileName, image.ContentType, ms.ToArray()), ct);
+
+        return result.Match(r => Results.File(r.Content, r.ContentType));
     }
 
     private static async Task<IResult> UpdateAsync(ClaimsPrincipal user, Guid id, UpdateProductRequest request, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
@@ -205,6 +250,11 @@ public static class SellerCatalogEndpoints
         if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, id, ct))
         {
             return SellerBff.NotFoundOrForbidden("product");
+        }
+
+        if (UploadValidation.ValidateImage(file) is { } invalid)
+        {
+            return invalid;
         }
 
         using var ms = new MemoryStream();

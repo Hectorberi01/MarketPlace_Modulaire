@@ -7,28 +7,39 @@ namespace Offers.UnitTests;
 
 public class OfferTests
 {
+    private const decimal CommRate = 0.10m;
+    private const decimal ProvRate = 0.05m;
+
     private static Offer NewOffer()
     {
         var sku = Sku.Create("SKU-001").Value;
-        var price = Money.Create(7000m, "XOF").Value;
-        return Offer.Create(Guid.NewGuid(), Guid.NewGuid(), sku, price, OfferCondition.New, FulfillmentType.Fbs, Guid.NewGuid(), 2).Value;
+        // Prix VENDEUR net = 7000 -> prix produit = 7000 + 700 (10%) + 350 (5%) = 8050.
+        return Offer.Create(Guid.NewGuid(), Guid.NewGuid(), sku, 7000m, CommRate, ProvRate, "XOF",
+            OfferCondition.New, FulfillmentType.Fbs, Guid.NewGuid(), 2).Value;
     }
 
     [Fact]
-    public void Create_demarre_active()
+    public void Create_demarre_active_et_empile_la_majoration()
     {
         var offer = NewOffer();
         offer.Status.Should().Be(OfferStatus.Active);
-        offer.BasePrice.Amount.Should().Be(7000m);
+        offer.SellerPrice.Should().Be(7000m);
+        offer.CommissionAmount.Should().Be(700m);
+        offer.ProviderFeeAmount.Should().Be(350m);
+        offer.BasePrice.Amount.Should().Be(8050m);
         offer.BasePrice.Currency.Should().Be("XOF");
     }
 
     [Fact]
-    public void ChangePrice_met_a_jour_le_prix()
+    public void ChangePrice_recalcule_le_prix_produit()
     {
         var offer = NewOffer();
-        offer.ChangePrice(Money.Create(5100m, "XOF").Value);
-        offer.BasePrice.Amount.Should().Be(5100m);
+        // Nouveau prix VENDEUR = 5000 -> produit = 5000 + 500 + 250 = 5750.
+        offer.ChangePrice(5000m, CommRate, ProvRate);
+        offer.SellerPrice.Should().Be(5000m);
+        offer.CommissionAmount.Should().Be(500m);
+        offer.ProviderFeeAmount.Should().Be(250m);
+        offer.BasePrice.Amount.Should().Be(5750m);
     }
 
     [Fact]

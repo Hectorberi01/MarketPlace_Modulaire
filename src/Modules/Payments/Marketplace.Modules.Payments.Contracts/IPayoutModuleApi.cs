@@ -7,6 +7,7 @@ public sealed record PayoutInstructionContract(
     string BeneficiaryName,
     string Msisdn,
     string CountryCode,
+    string Provider,
     string Reference);
 
 /// <summary>Résultat d'un reversement.</summary>

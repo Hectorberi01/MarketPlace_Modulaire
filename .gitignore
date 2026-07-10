@@ -24,7 +24,14 @@ appsettings.*.local.json
 appsettings.Local.json
 .env
 *.env
+.env.*
 !*.env.example
+!.env.*.example
+
+# Ansible Vault : ne jamais committer un vault.yml (risque de secrets en clair
+# avant chiffrement). Les gabarits *.example.yml restent suivis.
+**/vault.yml
+!**/vault.example.yml
 
 ## OS
 .DS_Store
@@ -32,3 +39,10 @@ Thumbs.db
 
 ## Logs
 *.log
+deploy/.env
+deploy/.env.staging.example
+deploy/.env.example
+
+# Compte de service Firebase (push FCM) — écrit au déploiement, jamais commité.
+deploy/fcm/*
+!deploy/fcm/.gitkeep

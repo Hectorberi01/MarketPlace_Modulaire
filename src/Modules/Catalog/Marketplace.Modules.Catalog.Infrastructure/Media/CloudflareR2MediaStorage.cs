@@ -156,7 +156,7 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
 
     private HttpClient CreateClient() => _httpClientFactory.CreateClient(ClientName);
 
-    private static string BuildObjectKey(string fileName)
+    private string BuildObjectKey(string fileName)
     {
         var safe = new string((fileName ?? "image").Select(c =>
             char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '-').ToArray());
@@ -165,7 +165,9 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
             safe = "image";
         }
 
-        return $"products/{Guid.NewGuid():N}/{safe}";
+        var prefix = _options.KeyPrefix.Trim().Trim('/');
+        var baseKey = $"products/{Guid.NewGuid():N}/{safe}";
+        return string.IsNullOrEmpty(prefix) ? baseKey : $"{prefix}/{baseKey}";
     }
 
     // Accepte soit une clé (« products/… »), soit une URL publique dont on extrait la clé.

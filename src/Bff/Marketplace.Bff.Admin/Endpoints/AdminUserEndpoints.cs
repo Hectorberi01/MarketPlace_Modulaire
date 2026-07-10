@@ -1,5 +1,6 @@
 using MediatR;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Identity.Application.Roles.Commands.CreateRole;
 using Marketplace.Modules.Identity.Application.Roles.Commands.DeleteRole;
 using Marketplace.Modules.Identity.Application.Roles.Commands.SetRolePermissions;
@@ -12,6 +13,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.RemoveRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.SuspendUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.ListUsers;
+using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 
 namespace Marketplace.Bff.Admin.Endpoints;
 
@@ -22,7 +24,9 @@ public static class AdminUserEndpoints
     {
         var users = app.MapAdminGroup("/admin/users", "Admin · Comptes");
         users.MapGet("/", ListUsersAsync);
+        users.MapPost("/register", RegisterUserAsync);
         users.MapGet("/{id:guid}", GetUserAsync);
+        users.MapGet("/{id:guid}/cart", GetUserCartAsync);
         users.MapPost("/{id:guid}/suspend", SuspendUserAsync);
         users.MapPost("/{id:guid}/reactivate", ReactivateUserAsync);
         users.MapPost("/{id:guid}/roles", AssignRoleAsync);
@@ -43,9 +47,34 @@ public static class AdminUserEndpoints
     private static async Task<IResult> ListUsersAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListUsersQuery(), ct)).Match(u => Results.Ok(u));
 
+    /// <summary>Crée un compte (par ex. un administrateur) et lui attribue les rôles fournis.</summary>
+    private static async Task<IResult> RegisterUserAsync(RegisterUserRequestBody request, ISender sender, CancellationToken ct)
+    {
+        var userResult = await sender.Send(new RegisterUserCommand(
+            request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty, request.Password), ct);
+        if (userResult.IsFailure)
+        {
+            return userResult.Match(_ => Results.Ok()); // mappe l'échec (400/409) proprement
+        }
+
+        if (request.RoleIds is { Count: > 0 })
+        {
+            foreach (var roleId in request.RoleIds)
+            {
+                await sender.Send(new AssignRoleCommand(userResult.Value, roleId), ct);
+            }
+        }
+
+        return Results.Ok(new { userId = userResult.Value });
+    }
+
     /// <summary>Détail d'un compte.</summary>
     private static async Task<IResult> GetUserAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new GetUserQuery(id), ct)).Match(u => Results.Ok(u));
+
+    /// <summary>Panier actif d'un acheteur (valorisé). Renvoie null si aucun panier ouvert.</summary>
+    private static async Task<IResult> GetUserCartAsync(Guid id, ICartModuleApi cart, CancellationToken ct)
+        => Results.Ok(await cart.GetActiveCartAsync(id, ct));
 
     /// <summary>Suspend un compte.</summary>
     private static async Task<IResult> SuspendUserAsync(Guid id, ISender sender, CancellationToken ct)
@@ -87,6 +116,7 @@ public static class AdminUserEndpoints
     private static async Task<IResult> DeleteRoleAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new DeleteRoleCommand(id), ct)).Match(() => Results.NoContent());
 
+    public sealed record RegisterUserRequestBody(string FirstName, string LastName, string Email, string? PhoneNumber, string Password, IReadOnlyList<Guid>? RoleIds);
     public sealed record RoleRefRequest(Guid RoleId);
     public sealed record CreateRoleRequest(string Name, string? Description, IReadOnlyList<string>? Permissions);
     public sealed record UpdateRoleRequest(string Name, string? Description);

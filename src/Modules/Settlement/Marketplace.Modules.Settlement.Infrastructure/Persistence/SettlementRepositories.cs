@@ -47,6 +47,13 @@ internal sealed class SellerEarningRepository : ISellerEarningRepository
             currency,
             lines.Count);
     }
+
+    public async Task<IReadOnlyList<SellerEarning>> ListSellerEarningsAsync(Guid sellerId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default)
+        => await _dbContext.Earnings
+            .AsNoTracking()
+            .Where(e => e.SellerId == sellerId && e.CreatedAtUtc >= startUtc && e.CreatedAtUtc <= endUtc)
+            .OrderBy(e => e.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
 }
 
 internal sealed class SettlementBatchRepository : ISettlementBatchRepository

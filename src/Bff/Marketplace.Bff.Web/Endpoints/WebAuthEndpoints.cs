@@ -12,7 +12,7 @@ public static class WebAuthEndpoints
 {
     public static IEndpointRouteBuilder MapWebAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var auth = app.MapGroup("/web/auth").WithTags("Web · Auth");
+        var auth = app.MapGroup("/web/auth").WithTags("Web · Auth").RequireRateLimiting("auth");
 
         auth.MapPost("/register", RegisterAsync).AllowAnonymous();
         auth.MapPost("/login", LoginAsync).AllowAnonymous();

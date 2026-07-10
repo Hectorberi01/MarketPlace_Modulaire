@@ -6,6 +6,7 @@ public sealed record SellerSummary(
     Guid UserId,
     string ShopName,
     string? LogoUrl,
+    string? Description,
     string Status,
     string KybStatus,
     decimal CommissionRate,
@@ -18,6 +19,10 @@ public sealed record KybDocumentSummary(
     Guid Id,
     string Type,
     string FileUrl,
+    // Statut par pièce, dérivé de la vérification : Verified si la pièce est
+    // vérifiée, Rejected si la boutique est refusée, sinon InReview.
+    string Status,
+    DateTime UploadedAtUtc,
     DateTime? VerifiedAtUtc);
 
 public sealed record PayoutAccountSummary(

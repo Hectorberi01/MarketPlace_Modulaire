@@ -21,6 +21,8 @@ x-app-env: &app-env
   # FedaPay : la clé secrète reste dans deploy/.env (gitignoré). Renseignée → l'adaptateur réel s'active ; vide → stub sandbox.
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
+  # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
+  Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
   # Cloudflare R2 : stockage des pièces KYB. Renseigné → adaptateur R2 réel ; vide → stub hors-ligne.
   Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
   Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
@@ -33,6 +35,7 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
+  Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
 
 x-app-depends: &app-depends
   postgres:

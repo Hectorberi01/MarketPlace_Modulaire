@@ -3,6 +3,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Application.Products.Commands.ChangeProductStatus;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListAllProducts;
+using Marketplace.Modules.Offers.Contracts;
 
 namespace Marketplace.Bff.Admin.Endpoints;
 
@@ -18,6 +19,7 @@ public static class AdminProductEndpoints
 
         products.MapGet("/", ListAsync);
         products.MapGet("/{id:guid}", GetAsync);
+        products.MapGet("/{id:guid}/offers", GetOffersAsync);
         products.MapPost("/{id:guid}/approve", ApproveAsync);
         products.MapPost("/{id:guid}/reject", RejectAsync);
         products.MapPatch("/{id:guid}/status", ChangeStatusAsync);
@@ -35,6 +37,10 @@ public static class AdminProductEndpoints
         var product = await catalog.GetProductAsync(id, ct);
         return product is null ? Results.NotFound() : Results.Ok(product);
     }
+
+    /// <summary>Offres (tarification) rattachées à un produit : prix, breakdown commission/frais, statut.</summary>
+    private static async Task<IResult> GetOffersAsync(Guid id, IOfferModuleApi offers, CancellationToken ct)
+        => Results.Ok(await offers.GetOffersByProductAsync(id, ct));
 
     /// <summary>Valide un produit (le publie : statut Active).</summary>
     private static async Task<IResult> ApproveAsync(Guid id, ISender sender, CancellationToken ct)

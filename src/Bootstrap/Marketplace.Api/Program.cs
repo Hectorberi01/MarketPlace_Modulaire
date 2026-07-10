@@ -1,5 +1,6 @@
 using System.Text;
 using Marketplace.Api.Endpoints;
+using Marketplace.Api.Observability;
 using Marketplace.Api.Modules;
 using Marketplace.BuildingBlocks.Application;
 using Marketplace.BuildingBlocks.Infrastructure;
@@ -33,6 +34,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 0. Observabilité (logs structurés + traces/métriques OTel + health checks).
+builder.AddObservability("marketplace-api");
 
 // 1. Modules : chaque installer enregistre son DbContext, ses handlers, son outbox.
 foreach (var module in ModuleRegistry.Installers)
@@ -124,6 +128,11 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// Webhooks PSP : n'accepter un webhook non signé (secret manquant) qu'en
+// développement. En production, un secret absent fait rejeter le webhook.
+Marketplace.Modules.Payments.Infrastructure.Gateways.GatewayWebhook.AllowUnsignedWhenSecretMissing
+    = app.Environment.IsDevelopment();
+
 // Migrations + seed au démarrage : pratique en dev, désactivé par défaut.
 if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
 {
@@ -134,79 +143,16 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
 
     var identityDb = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
     await identityDb.Database.MigrateAsync();
+    // Rôles RBAC par défaut (configuration système, pas des données de démo) :
+    // nécessaires pour pouvoir attribuer un rôle au premier administrateur.
     await IdentityDataSeeder.SeedDefaultRolesAsync(identityDb);
 
-    // Compte administrateur de bootstrap (idempotent). Surchargeable via la
-    // section « AdminSeed » de la configuration ; défauts en dev uniquement.
-    var passwordHasher = scope.ServiceProvider.GetRequiredService<Marketplace.Modules.Identity.Application.Abstractions.IPasswordHasher>();
-    await IdentityDataSeeder.SeedAdminUserAsync(
-        identityDb,
-        passwordHasher,
-        app.Configuration["AdminSeed:Email"] ?? "admin@marketplace.com",
-        app.Configuration["AdminSeed:Password"] ?? "Hector01@",
-        app.Configuration["AdminSeed:FirstName"] ?? "Hector",
-        app.Configuration["AdminSeed:LastName"] ?? "Admin",
-        app.Configuration["AdminSeed:Phone"] ?? "+221770000000");
+    // NB : aucun compte de démonstration n'est semé (ni admin, ni vendeur, ni
+    // « Boutique Démo »). Le premier administrateur doit être créé hors seed
+    // (script/SQL, ou via un compte existant).
 
     var sellersDb = scope.ServiceProvider.GetRequiredService<SellersDbContext>();
     await sellersDb.Database.MigrateAsync();
-
-    // Compte vendeur de démonstration (idempotent) : utilisateur Identity vérifié
-    // + profil boutique rattaché. Surchargeable via la section « SellerSeed ».
-    var sellerUserId = await IdentityDataSeeder.SeedSellerUserAsync(
-        identityDb,
-        passwordHasher,
-        app.Configuration["SellerSeed:Email"] ?? "seller@marketplace.com",
-        app.Configuration["SellerSeed:Password"] ?? "Hector01@",
-        app.Configuration["SellerSeed:FirstName"] ?? "Demo",
-        app.Configuration["SellerSeed:LastName"] ?? "Vendeur",
-        app.Configuration["SellerSeed:Phone"] ?? "+221770000001");
-
-    if (sellerUserId is { } sid)
-    {
-        var sellerRepo = scope.ServiceProvider.GetRequiredService<Marketplace.Modules.Sellers.Domain.Sellers.ISellerRepository>();
-        var shopName = app.Configuration["SellerSeed:ShopName"] ?? "Boutique Démo";
-
-        // Boutique existante (suivie par EF) ou nouvelle.
-        var seedSeller = await sellerRepo.GetByUserIdAsync(sid);
-        var isNew = seedSeller is null;
-        if (seedSeller is null)
-        {
-            var sellerResult = Marketplace.Modules.Sellers.Domain.Sellers.Seller.Register(sid, shopName, 0.10m);
-            seedSeller = sellerResult.IsSuccess ? sellerResult.Value : null;
-        }
-
-        // Onboarding idempotent : on amène la boutique démo à l'état ACTIVE (peut
-        // publier des offres) — pièce KYB + validation + compte payout + activation.
-        if (seedSeller is not null && seedSeller.Status != Marketplace.Modules.Sellers.Domain.Sellers.SellerStatus.Active)
-        {
-            if (seedSeller.KybDocuments.Count == 0)
-            {
-                seedSeller.AddKybDocument(
-                    Marketplace.Modules.Sellers.Domain.Sellers.KybDocumentType.BusinessRegistry,
-                    "https://hbamediacore.fr/uploads/kyb/seed-registry.pdf");
-            }
-            seedSeller.ApproveKyb();
-
-            var payout = Marketplace.Modules.Sellers.Domain.Sellers.PayoutAccount.Create(
-                Marketplace.Modules.Sellers.Domain.Sellers.PayoutProvider.MtnMomo,
-                app.Configuration["SellerSeed:PayoutNumber"] ?? "+221770000001",
-                shopName);
-            if (payout.IsSuccess)
-            {
-                seedSeller.SetPayoutAccount(payout.Value);
-            }
-            seedSeller.Activate();
-
-            if (isNew)
-            {
-                await sellerRepo.AddAsync(seedSeller);
-            }
-            await scope.ServiceProvider
-                .GetRequiredService<Marketplace.Modules.Sellers.Application.Abstractions.ISellerUnitOfWork>()
-                .SaveChangesAsync();
-        }
-    }
 
     var offersDb = scope.ServiceProvider.GetRequiredService<OffersDbContext>();
     await offersDb.Database.MigrateAsync();
@@ -275,15 +221,17 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     await fraudDb.Database.MigrateAsync();
 }
 
-// Swagger activé sans condition (surface de test, y compris en conteneur où
-// l'environnement est Production). À restreindre avant un déploiement public.
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger réservé au développement (pas d'exposition d'API en production).
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).WithTags("System");
+app.MapObservability();
 
 app.MapIdentityEndpoints();
 app.MapCatalogEndpoints();

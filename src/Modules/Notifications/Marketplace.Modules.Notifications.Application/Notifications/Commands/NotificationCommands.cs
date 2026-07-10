@@ -21,11 +21,16 @@ internal sealed class SendNotificationCommandHandler : ICommandHandler<SendNotif
 {
     private readonly INotificationRepository _repository;
     private readonly INotificationsUnitOfWork _unitOfWork;
+    private readonly NotificationDispatcher _dispatcher;
 
-    public SendNotificationCommandHandler(INotificationRepository repository, INotificationsUnitOfWork unitOfWork)
+    public SendNotificationCommandHandler(
+        INotificationRepository repository,
+        INotificationsUnitOfWork unitOfWork,
+        NotificationDispatcher dispatcher)
     {
         _repository = repository;
         _unitOfWork = unitOfWork;
+        _dispatcher = dispatcher;
     }
 
     public async Task<Result<Guid>> Handle(SendNotificationCommand command, CancellationToken cancellationToken)
@@ -44,6 +49,11 @@ internal sealed class SendNotificationCommandHandler : ICommandHandler<SendNotif
         notification.MarkSent();
         await _repository.AddAsync(notification, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Notif in-app créée ; on envoie aussi le push (best-effort) vers les
+        // appareils du destinataire — c'est ce qui rend l'envoi admin capable de push.
+        await _dispatcher.SendPushAsync(command.RecipientUserId, command.Subject, command.Body, "Admin", null, cancellationToken);
+
         return notification.Id.Value;
     }
 }

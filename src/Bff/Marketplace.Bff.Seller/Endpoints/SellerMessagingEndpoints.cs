@@ -118,7 +118,8 @@ public static class SellerMessagingEndpoints
         // Notifie en temps réel les participants connectés à la conversation.
         await hub.Clients.Group(ChatHub.Group(id)).SendAsync("message", new { conversationId = id.ToString() }, ct);
 
-        // Met à jour le badge « non lus » des autres participants (groupe utilisateur).
+        // Recharge le fil pour (a) notifier les autres participants et (b) renvoyer
+        // le VRAI message persisté (id/date réels), pas un objet factice.
         var convo = await sender.Send(new GetConversationQuery(id, userId), ct);
         if (convo.IsSuccess)
         {
@@ -127,8 +128,22 @@ public static class SellerMessagingEndpoints
                 await hub.Clients.Group(ChatHub.UserGroup(participantId))
                     .SendAsync("inbox", new { conversationId = id.ToString() }, ct);
             }
+
+            // Dernier message émis par le vendeur = celui qu'on vient de créer.
+            var created = convo.Value.Messages.LastOrDefault(m => m.SenderId == userId);
+            if (created is not null)
+            {
+                return Results.Ok(new
+                {
+                    id = created.Id,
+                    fromSeller = true,
+                    body = created.Body,
+                    sentAt = created.CreatedAtUtc,
+                });
+            }
         }
 
+        // Repli si la relecture échoue : au moins renvoyer le corps envoyé.
         return Results.Ok(new
         {
             id = Guid.NewGuid(),

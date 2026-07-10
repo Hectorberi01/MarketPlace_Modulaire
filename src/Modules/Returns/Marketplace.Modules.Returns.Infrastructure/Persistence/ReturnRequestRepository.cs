@@ -27,6 +27,17 @@ internal sealed class ReturnRequestRepository : IReturnRequestRepository
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<ReturnRequest>> ListRefundedBySellerAsync(
+        Guid sellerId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
+        => await _dbContext.ReturnRequests
+            .Where(r => r.SellerId == sellerId
+                        && r.Status == ReturnStatus.Refunded
+                        && r.ResolvedAtUtc != null
+                        && r.ResolvedAtUtc >= fromUtc
+                        && r.ResolvedAtUtc < toUtc)
+            .OrderBy(r => r.ResolvedAtUtc)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> ExistsOpenAsync(Guid orderId, Guid offerId, CancellationToken cancellationToken = default)
         => await _dbContext.ReturnRequests.AnyAsync(
             r => r.OrderId == orderId && r.OfferId == offerId

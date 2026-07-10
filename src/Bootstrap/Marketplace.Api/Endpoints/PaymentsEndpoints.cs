@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Payments.Application.Payments.Commands;
@@ -22,9 +23,12 @@ public static class PaymentsEndpoints
         payments.MapPost("/", InitiateAsync).WithName("InitiatePayment");
         payments.MapGet("/{id:guid}", GetAsync).WithName("GetPayment");
         payments.MapGet("/order/{orderId:guid}", GetByOrderAsync).WithName("GetPaymentByOrder");
-        payments.MapPost("/{id:guid}/capture", CaptureAsync).WithName("CapturePayment");
-
-        // Échec / remboursement : actions sensibles, réservées Admin (simulent le PSP).
+        // Capture / échec / remboursement : actions sensibles simulant le PSP, réservées Admin.
+        // La capture confirme la commande et solde le stock : accessible à tout compte
+        // authentifié (avec une référence PSP fournie par le client), elle permettrait de
+        // marquer une commande « payée » sans paiement réel. Les captures légitimes passent
+        // par les webhooks signés ou le retour de redirection (qui réinterroge le PSP).
+        payments.MapPost("/{id:guid}/capture", CaptureAsync).WithName("CapturePayment").RequireAuthorization(p => p.RequireRole("Admin"));
         payments.MapPost("/{id:guid}/fail", FailAsync).WithName("FailPayment").RequireAuthorization(p => p.RequireRole("Admin"));
         payments.MapPost("/{id:guid}/refund", RefundAsync).WithName("RefundPayment").RequireAuthorization(p => p.RequireRole("Admin"));
 
@@ -34,6 +38,7 @@ public static class PaymentsEndpoints
         gateway.MapPost("/webhooks/paypal", PayPalWebhookAsync).WithName("PayPalWebhook").AllowAnonymous();
         gateway.MapPost("/webhooks/momo", MomoCallbackAsync).WithName("MomoCallback").AllowAnonymous();
         gateway.MapPost("/webhooks/moov", MoovCallbackAsync).WithName("MoovCallback").AllowAnonymous();
+        gateway.MapPost("/webhooks/fedapay", FedaPayWebhookAsync).WithName("FedaPayWebhook").AllowAnonymous();
         gateway.MapGet("/return/{id:guid}", ReturnAsync).WithName("ConfirmPaymentReturn").AllowAnonymous();
 
         return app;
@@ -49,13 +54,43 @@ public static class PaymentsEndpoints
         return result.Match(r => Results.Ok(r));
     }
 
-    /// <summary>Récupère un paiement par son identifiant.</summary>
-    private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetPaymentQuery(id), ct)).Match(payment => Results.Ok(payment));
+    /// <summary>Récupère un paiement par son identifiant (propriétaire ou admin).</summary>
+    private static async Task<IResult> GetAsync(ClaimsPrincipal principal, Guid id, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetPaymentQuery(id), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(payment => Results.Ok(payment));
+        }
+        // Anti-IDOR : seul le propriétaire du paiement (ou un admin) peut le lire.
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
+        {
+            return Results.NotFound();
+        }
+        return Results.Ok(result.Value);
+    }
 
-    /// <summary>Récupère le paiement d'une commande.</summary>
-    private static async Task<IResult> GetByOrderAsync(Guid orderId, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetPaymentByOrderQuery(orderId), ct)).Match(payment => Results.Ok(payment));
+    /// <summary>Récupère le paiement d'une commande (propriétaire ou admin).</summary>
+    private static async Task<IResult> GetByOrderAsync(ClaimsPrincipal principal, Guid orderId, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetPaymentByOrderQuery(orderId), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(payment => Results.Ok(payment));
+        }
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
+        {
+            return Results.NotFound();
+        }
+        return Results.Ok(result.Value);
+    }
+
+    /// <summary>Identifiant du compte connecté (claim « sub »/NameIdentifier).</summary>
+    private static Guid? CurrentUserId(ClaimsPrincipal principal)
+    {
+        var sub = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        return Guid.TryParse(sub, out var id) ? id : null;
+    }
 
     /// <summary>Encaisse le paiement (confirmation PSP manuelle) — déclenche la confirmation de commande.</summary>
     private static async Task<IResult> CaptureAsync(Guid id, CaptureRequest request, ISender sender, CancellationToken ct)
@@ -84,6 +119,10 @@ public static class PaymentsEndpoints
     /// <summary>Callback Moov Money : statut du RequestToPay (SUCCESSFUL / FAILED).</summary>
     private static async Task<IResult> MoovCallbackAsync(HttpRequest httpRequest, ISender sender, CancellationToken ct)
         => await HandleWebhookAsync("Moov", "X-Callback-Signature", httpRequest, sender, ct);
+
+    /// <summary>Webhook FedaPay : vérifie la signature « x-fedapay-signature » et applique le résultat au paiement.</summary>
+    private static async Task<IResult> FedaPayWebhookAsync(HttpRequest httpRequest, ISender sender, CancellationToken ct)
+        => await HandleWebhookAsync("FedaPay", "x-fedapay-signature", httpRequest, sender, ct);
 
     private static async Task<IResult> HandleWebhookAsync(
         string provider, string signatureHeader, HttpRequest httpRequest, ISender sender, CancellationToken ct)

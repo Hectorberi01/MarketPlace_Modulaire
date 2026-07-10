@@ -34,7 +34,7 @@ internal static class DisputeMapper
 {
     public static DisputeSummary ToSummary(Dispute d) => new(
         d.Id.Value, d.OrderId, d.RaisedBy, d.Type.ToString(), d.Status.ToString(),
-        d.Resolution?.ToString(), d.CreatedAtUtc, d.ResolvedAtUtc,
+        d.Resolution?.ToString(), d.RefundAmount, d.CreatedAtUtc, d.ResolvedAtUtc,
         d.Messages.OrderBy(m => m.CreatedAtUtc)
             .Select(m => new DisputeMessageSummary(m.AuthorId, m.Body, m.PhotoUrl, m.CreatedAtUtc)).ToList());
 }

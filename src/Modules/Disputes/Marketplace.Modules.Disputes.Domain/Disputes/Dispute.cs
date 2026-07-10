@@ -32,6 +32,8 @@ public sealed class Dispute : AggregateRoot<DisputeId>
     public DisputeType Type { get; private set; }
     public DisputeStatus Status { get; private set; }
     public DisputeResolution? Resolution { get; private set; }
+    /// <summary>Montant remboursé — renseigné uniquement pour un remboursement partiel.</summary>
+    public decimal? RefundAmount { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? ResolvedAtUtc { get; private set; }
 
@@ -82,17 +84,34 @@ public sealed class Dispute : AggregateRoot<DisputeId>
         return Result.Success();
     }
 
-    public Result Resolve(DisputeResolution resolution)
+    public Result Resolve(DisputeResolution resolution, decimal? refundAmount = null)
     {
         if (Status is DisputeStatus.Resolved)
         {
             return Result.Failure(Error.Conflict("disputes.already_resolved", "Le litige est déjà tranché."));
         }
 
+        // Le montant n'a de sens que pour un remboursement partiel : requis et > 0
+        // dans ce cas, ignoré (mis à null) pour les autres décisions.
+        if (resolution == DisputeResolution.PartialRefund)
+        {
+            if (refundAmount is not { } amount || amount <= 0)
+            {
+                return Result.Failure(Error.Validation(
+                    "disputes.refund_amount_required",
+                    "Un remboursement partiel exige un montant strictement positif."));
+            }
+            RefundAmount = amount;
+        }
+        else
+        {
+            RefundAmount = null;
+        }
+
         Status = DisputeStatus.Resolved;
         Resolution = resolution;
         ResolvedAtUtc = DateTime.UtcNow;
-        Raise(new DisputeResolvedDomainEvent(Id.Value, OrderId, resolution.ToString()));
+        Raise(new DisputeResolvedDomainEvent(Id.Value, OrderId, resolution.ToString(), RefundAmount));
         return Result.Success();
     }
 
@@ -117,6 +136,7 @@ public sealed class Dispute : AggregateRoot<DisputeId>
 
         Status = DisputeStatus.UnderReview;
         Resolution = null;
+        RefundAmount = null;
         ResolvedAtUtc = null;
         return Result.Success();
     }

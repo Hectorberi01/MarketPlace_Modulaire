@@ -4,11 +4,18 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Identity.Application.PaymentMethods;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
+using Marketplace.Modules.Notifications.Application.Devices;
 using Marketplace.Modules.Notifications.Application.Notifications.Commands;
 using Marketplace.Modules.Notifications.Application.Notifications.Queries;
 using Marketplace.Modules.Wishlist.Application.Wishlists;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
+
+/// <summary>Corps d'enregistrement d'un appareil push (FCM) — app cliente.</summary>
+public sealed record MobileDeviceRegisterRequest(string Token, string? Platform);
+
+/// <summary>Corps de désenregistrement d'un appareil push — app cliente.</summary>
+public sealed record MobileDeviceUnregisterRequest(string Token);
 
 /// <summary>BFF Mobile — compte, favoris et notifications (scopés au jeton).</summary>
 public static class MobileAccountEndpoints
@@ -30,16 +37,30 @@ public static class MobileAccountEndpoints
         // Moyens de paiement enregistrés (Mobile Money + cartes masquées).
         mobile.MapGet("/account/payment-methods", ListPaymentMethodsAsync);
         mobile.MapPost("/account/payment-methods", AddPaymentMethodAsync);
+        mobile.MapPut("/account/payment-methods/{id:guid}", UpdatePaymentMethodAsync);
         mobile.MapDelete("/account/payment-methods/{id:guid}", DeletePaymentMethodAsync);
         mobile.MapPut("/account/payment-methods/{id:guid}/default", SetDefaultPaymentMethodAsync);
 
         // Préférences de notification et enregistrement de token push (FCM/APNs) :
         // capacités Notifications à exposer (NotificationPreference + device tokens).
         mobile.MapPut("/notifications/preferences", () => MobileBff.NotImplemented("notifications.preferences"));
-        mobile.MapPost("/devices", () => MobileBff.NotImplemented("notifications.push_devices"));
+        mobile.MapPost("/devices", RegisterDeviceAsync);
+        mobile.MapPost("/devices/unregister", UnregisterDeviceAsync);
 
         return app;
     }
+
+    /// <summary>Enregistre le jeton d'appareil (FCM) de l'acheteur pour les push.</summary>
+    private static async Task<IResult> RegisterDeviceAsync(ClaimsPrincipal user, MobileDeviceRegisterRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new RegisterDeviceTokenCommand(userId, request.Token, request.Platform ?? "unknown"), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Retire un jeton d'appareil (déconnexion / désabonnement push).</summary>
+    private static async Task<IResult> UnregisterDeviceAsync(ClaimsPrincipal user, MobileDeviceUnregisterRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is null
+            ? Results.Unauthorized()
+            : (await sender.Send(new UnregisterDeviceTokenCommand(request.Token), ct)).Match(() => Results.NoContent());
 
     /// <summary>Profil utilisateur.</summary>
     private static async Task<IResult> ProfileAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
@@ -104,6 +125,20 @@ public static class MobileAccountEndpoints
         return result.Match(id => Results.Ok(new { id }));
     }
 
+    /// <summary>Met à jour un moyen de paiement enregistré (scopé au jeton).</summary>
+    private static async Task<IResult> UpdatePaymentMethodAsync(ClaimsPrincipal user, Guid id, UpdatePaymentMethodRequest request, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new UpdatePaymentMethodCommand(
+            userId, id, request.Label, request.Provider, request.Msisdn,
+            request.ExpiryMonth, request.ExpiryYear, request.HolderName, request.MakeDefault), ct);
+        return result.Match(() => Results.NoContent());
+    }
+
     /// <summary>Supprime un moyen de paiement.</summary>
     private static async Task<IResult> DeletePaymentMethodAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
         => MobileBff.CurrentUserId(user) is not { } userId
@@ -125,6 +160,15 @@ public static class MobileAccountEndpoints
         string Provider,
         string? Msisdn,
         string? CardNumber,
+        int? ExpiryMonth,
+        int? ExpiryYear,
+        string? HolderName,
+        bool MakeDefault);
+
+    public sealed record UpdatePaymentMethodRequest(
+        string? Label,
+        string? Provider,
+        string? Msisdn,
         int? ExpiryMonth,
         int? ExpiryYear,
         string? HolderName,

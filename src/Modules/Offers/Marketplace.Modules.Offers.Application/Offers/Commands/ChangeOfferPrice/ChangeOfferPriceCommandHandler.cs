@@ -1,5 +1,4 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
-using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Offers.Application.Abstractions;
 using Marketplace.Modules.Offers.Domain.Offers;
@@ -10,11 +9,16 @@ internal sealed class ChangeOfferPriceCommandHandler : ICommandHandler<ChangeOff
 {
     private readonly IOfferRepository _offerRepository;
     private readonly IOffersUnitOfWork _unitOfWork;
+    private readonly PricingOptions _pricingOptions;
 
-    public ChangeOfferPriceCommandHandler(IOfferRepository offerRepository, IOffersUnitOfWork unitOfWork)
+    public ChangeOfferPriceCommandHandler(
+        IOfferRepository offerRepository,
+        IOffersUnitOfWork unitOfWork,
+        PricingOptions pricingOptions)
     {
         _offerRepository = offerRepository;
         _unitOfWork = unitOfWork;
+        _pricingOptions = pricingOptions;
     }
 
     public async Task<Result> Handle(ChangeOfferPriceCommand command, CancellationToken cancellationToken)
@@ -25,13 +29,16 @@ internal sealed class ChangeOfferPriceCommandHandler : ICommandHandler<ChangeOff
             return Result.Failure(Error.NotFound("offers.offer.not_found", $"Offre {command.OfferId} introuvable."));
         }
 
-        var priceResult = Money.Create(command.Amount, command.Currency);
-        if (priceResult.IsFailure)
+        var result = offer.ChangePrice(
+            command.SellerPrice,
+            _pricingOptions.PlatformCommissionRate,
+            _pricingOptions.ProviderFeeRate);
+
+        if (result.IsFailure)
         {
-            return Result.Failure(priceResult.Error);
+            return result;
         }
 
-        offer.ChangePrice(priceResult.Value);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();

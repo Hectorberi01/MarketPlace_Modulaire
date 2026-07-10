@@ -1,0 +1,26 @@
+---
+target_env: dev
+compose_file: docker-compose.yml
+manage_docker: false          # Docker Desktop déjà présent
+ansible_become: false         # pas de sudo en local
+skip_sync: true               # on déploie le dépôt courant en place
+app_dir: "{{ project_local_path }}"
+enable_portainer: false       # en dev, utilise Docker Desktop
+
+# Secrets dev (non sensibles) — identiques à deploy/.env.
+postgres_db: marketplace
+postgres_user: postgres
+postgres_password: "1ea1cdcf3b1a9c391e31d940767ae3aa"
+jwt_signing_key: "96221ea5-24e0-4bbe-a122-e0177fdd549a"
+
+fedapay_api_key: ""
+fedapay_webhook_secret: ""
+
+r2_account_id: ""
+r2_access_key_id: ""
+r2_secret_access_key: ""
+r2_bucket_name: "documents-pdf"
+r2_public_base_url: ""
+r2_media_bucket_name: "images"
+r2_media_key_prefix: "MarketPlace-dev"
+r2_media_public_base_url: ""

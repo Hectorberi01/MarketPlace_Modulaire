@@ -25,10 +25,11 @@ public enum EarningStatus
 }
 
 /// <summary>
-/// Gain vendeur accumulé pour une ligne de commande confirmée. Brut = prix de
-/// base − réduction financée par le vendeur ; net = brut − commission plateforme.
-/// Les réductions financées par la plateforme n'entament pas le revenu vendeur.
-/// Sert de grand livre alimenté par les events, batché ensuite en reversements.
+/// Gain vendeur accumulé pour une ligne de commande confirmée. Brut = prix
+/// produit payé par l'acheteur pour la ligne ; net = brut − commission
+/// plateforme − frais provider. Les réductions financées par la plateforme
+/// n'entament pas le revenu vendeur. Sert de grand livre alimenté par les
+/// events, batché ensuite en reversements.
 /// </summary>
 public sealed class SellerEarning : AggregateRoot<SellerEarningId>
 {
@@ -38,7 +39,7 @@ public sealed class SellerEarning : AggregateRoot<SellerEarningId>
 
     private SellerEarning(
         SellerEarningId id, Guid orderId, Guid offerId, Guid sellerId, Guid productId,
-        decimal grossAmount, decimal commissionAmount, string currency)
+        decimal grossAmount, decimal commissionAmount, decimal providerFeeAmount, string currency)
         : base(id)
     {
         OrderId = orderId;
@@ -47,7 +48,8 @@ public sealed class SellerEarning : AggregateRoot<SellerEarningId>
         ProductId = productId;
         GrossAmount = grossAmount;
         CommissionAmount = commissionAmount;
-        NetAmount = grossAmount - commissionAmount;
+        ProviderFeeAmount = providerFeeAmount;
+        NetAmount = grossAmount - commissionAmount - providerFeeAmount;
         Currency = currency;
         Status = EarningStatus.Accrued;
         CreatedAtUtc = DateTime.UtcNow;
@@ -59,6 +61,7 @@ public sealed class SellerEarning : AggregateRoot<SellerEarningId>
     public Guid ProductId { get; private set; }
     public decimal GrossAmount { get; private set; }
     public decimal CommissionAmount { get; private set; }
+    public decimal ProviderFeeAmount { get; private set; }
     public decimal NetAmount { get; private set; }
     public string Currency { get; private set; } = default!;
     public EarningStatus Status { get; private set; }
@@ -68,21 +71,21 @@ public sealed class SellerEarning : AggregateRoot<SellerEarningId>
 
     public static Result<SellerEarning> Create(
         Guid orderId, Guid offerId, Guid sellerId, Guid productId,
-        decimal grossAmount, decimal commissionAmount, string currency)
+        decimal grossAmount, decimal commissionAmount, decimal providerFeeAmount, string currency)
     {
         if (sellerId == Guid.Empty)
         {
             return Error.Validation("settlement.seller_required", "Le vendeur est obligatoire.");
         }
 
-        if (grossAmount < 0m || commissionAmount < 0m)
+        if (grossAmount < 0m || commissionAmount < 0m || providerFeeAmount < 0m)
         {
             return Error.Validation("settlement.amount_invalid", "Les montants ne peuvent pas être négatifs.");
         }
 
         return new SellerEarning(
             SellerEarningId.New(), orderId, offerId, sellerId, productId,
-            grossAmount, Math.Min(commissionAmount, grossAmount), currency.Trim().ToUpperInvariant());
+            grossAmount, commissionAmount, providerFeeAmount, currency.Trim().ToUpperInvariant());
     }
 
     /// <summary>

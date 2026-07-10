@@ -1,0 +1,43 @@
+---
+# Variables NON sensibles du staging (les secrets sont dans vault.yml).
+target_env: staging
+compose_file: docker-compose.staging.yml
+app_dir: /opt/marketplace-staging
+
+# --- Mode déploiement ---
+# false : le serveur COMPILE les images (lent, gourmand en RAM).
+# true  : le serveur ne fait que PULL depuis le registry (rapide).
+#   1) build+push local :  IMAGE_PREFIX=ghcr.io/hectorberi01 IMAGE_TAG=staging ./deploy/build-and-push.sh
+#   2) images privées → registry_token dans le vault (login auto avant le pull)
+use_registry: true
+image_prefix: ghcr.io/hectorberi01
+image_tag: staging
+registry_host: ghcr.io
+registry_username: hectorberi01   # (le token va dans vault.yml : registry_token)
+
+# Edge / TLS — un sous-domaine par surface sous ce root :
+#   api.marketplace-staging.hba-marketplace.fr, m., web., seller., admin.
+# (underscore INTERDIT en DNS → tiret « marketplace-staging »)
+root_domain: marketplace-staging.hba-marketplace.fr
+acme_email: admin@hba-marketplace.fr
+# ACME PROD (certificats fiables) : requis pour que l'app mobile accepte le TLS.
+# Repasser sur l'URL staging (acme-staging-v02) pour tester sans rate-limit.
+acme_caserver: https://acme-v02.api.letsencrypt.org/directory
+# Décommenter si staging cohabite avec la prod sur le même hôte :
+# traefik_http_port: 8081
+# traefik_https_port: 8443
+
+# Portainer (visualisation des conteneurs) → https://portainer.marketplace-staging.hba-marketplace.fr
+enable_portainer: true
+traefik_network: marketplace-staging-net
+
+# Versements FedaPay réels pour les retraits vendeur (visibles sur la console FedaPay).
+# true = appel FedaPay réel (sandbox) ; false = payout simulé (le retrait réussit sans FedaPay).
+fedapay_enable_payouts: true
+
+# R2 — noms de buckets (non sensibles)
+r2_bucket_name: documents-pdf
+r2_public_base_url: ""
+r2_media_bucket_name: images
+r2_media_key_prefix: MarketPlace-staging
+r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Settlement.Application.Batches;
+using Marketplace.Modules.Returns.Application.Returns;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -35,15 +36,81 @@ public static class SellerFinanceEndpoints
             return SellerBff.NotASeller();
         }
 
-        var end = to ?? DateTime.UtcNow;
-        var start = from ?? end.AddDays(-30);
+        // Les from/to liés depuis la query string sont en Kind=Unspecified ; les
+        // colonnes PostgreSQL sont en « timestamp with time zone » (Npgsql exige
+        // du DateTimeKind.Utc). On normalise donc en UTC avant toute requête.
+        var end = ToUtc(to) ?? DateTime.UtcNow;
+        var start = ToUtc(from) ?? end.AddDays(-30);
         if (end <= start)
         {
             return Results.BadRequest(new { error = "invalid_period", hint = "'to' doit être postérieur à 'from'." });
         }
 
-        return (await sender.Send(new GetSellerStatementQuery(seller.Id, start, end), ct)).Match(s => Results.Ok(s));
+        // On récupère les LIGNES détaillées (un gain = une ligne) puis on projette
+        // vers la forme EXACTE attendue par le dashboard Blazor : from/to, agrégats
+        // XOF entiers (le XOF n'a pas de décimales) et lines[] signées.
+        //
+        // Les remboursements ne vivent PAS dans le grand livre Earnings (montants
+        // toujours positifs). La source de vérité est le module Returns/RMA : un
+        // retour au statut Refunded porte un RefundAmount et une date de résolution.
+        var refundsResult = await sender.Send(new ListSellerRefundsQuery(seller.Id, start, end), ct);
+        IReadOnlyList<Marketplace.Modules.Returns.Contracts.SellerRefundLine> refunds =
+            refundsResult.IsSuccess ? refundsResult.Value : Array.Empty<Marketplace.Modules.Returns.Contracts.SellerRefundLine>();
+
+        return (await sender.Send(new GetSellerStatementLinesQuery(seller.Id, start, end), ct)).Match(earnings =>
+        {
+            var grossSalesXof = (int)Math.Round(earnings.Sum(e => e.GrossAmount));
+            var commissionXof = (int)Math.Round(earnings.Sum(e => e.CommissionAmount));
+            var providerFeeXof = (int)Math.Round(earnings.Sum(e => e.ProviderFeeAmount));
+            var refundsXof = (int)Math.Round(refunds.Sum(r => r.RefundAmount));
+
+            // Pour chaque gain : une écriture « vente » (+brut), une écriture
+            // « commission plateforme » (−commission) ET, si applicable, une écriture
+            // « frais provider » (−frais). Chaque remboursement devient une écriture
+            // « refund » (−montant). Le tout trié chronologiquement.
+            var lines = earnings
+                .SelectMany(e =>
+                {
+                    var entries = new List<StatementLineDto>
+                    {
+                        new(e.CreatedAtUtc, $"Vente commande #{e.OrderId}", "sale", (int)Math.Round(e.GrossAmount)),
+                        new(e.CreatedAtUtc, "Commission plateforme", "commission", -(int)Math.Round(e.CommissionAmount)),
+                    };
+                    if (e.ProviderFeeAmount > 0)
+                    {
+                        entries.Add(new StatementLineDto(e.CreatedAtUtc, $"Frais provider commande #{e.OrderId}", "provider", -(int)Math.Round(e.ProviderFeeAmount)));
+                    }
+                    return entries;
+                })
+                .Concat(refunds.Select(r =>
+                    new StatementLineDto(r.RefundedAtUtc, $"Remboursement commande #{r.OrderId}", "refund", -(int)Math.Round(r.RefundAmount))))
+                .OrderBy(l => l.Date)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                from = start,
+                to = end,
+                grossSalesXof,
+                commissionXof,
+                // Somme des frais provider du vendeur sur la période.
+                providerFeeXof,
+                // Somme des remboursements du vendeur (retours Refunded) sur la période.
+                refundsXof,
+                lines,
+            });
+        });
     }
+
+    /// <summary>
+    /// Ligne du relevé projetée vers la forme du dashboard : date, libellé, type
+    /// (sale|commission|refund|payout) et montant signé en XOF (entier).
+    /// </summary>
+    private sealed record StatementLineDto(DateTime Date, string Label, string Type, int AmountXof);
+
+    /// <summary>Normalise une date en UTC (les colonnes sont « timestamptz », Npgsql exige Kind=Utc).</summary>
+    private static DateTime? ToUtc(DateTime? value)
+        => value is null ? null : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
 
     /// <summary>Détail des reversements (payouts) de la boutique du jeton, tous lots confondus.</summary>
     private static async Task<IResult> PayoutsAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)

@@ -1,6 +1,8 @@
 using MediatR;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Disputes.Application.Disputes;
 using Marketplace.Modules.Reviews.Application.Reviews.Commands;
 using Marketplace.Modules.Reviews.Application.Reviews.Queries;
@@ -29,7 +31,8 @@ public static class AdminModerationEndpoints
         disputes.MapPost("/{id:guid}/resolve", ResolveAsync);
         disputes.MapPost("/{id:guid}/escalate", EscalateAsync);
         disputes.MapPost("/{id:guid}/reopen", ReopenAsync);
-        disputes.MapPost("/{id:guid}/messages", AddMessageAsync);
+        // Multipart : champ « body » + fichier « file » optionnel (pièce jointe).
+        disputes.MapPost("/{id:guid}/messages", AddMessageAsync).DisableAntiforgery();
 
         return app;
     }
@@ -68,7 +71,7 @@ public static class AdminModerationEndpoints
 
     /// <summary>Résout un litige.</summary>
     private static async Task<IResult> ResolveAsync(Guid id, ResolveRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ResolveDisputeCommand(id, request.Resolution), ct)).Match(() => Results.NoContent());
+        => (await sender.Send(new ResolveDisputeCommand(id, request.Resolution, request.RefundAmount), ct)).Match(() => Results.NoContent());
 
     /// <summary>Escalade un litige.</summary>
     private static async Task<IResult> EscalateAsync(Guid id, ISender sender, CancellationToken ct)
@@ -79,16 +82,36 @@ public static class AdminModerationEndpoints
         => (await sender.Send(new ReopenDisputeCommand(id), ct)).Match(() => Results.NoContent());
 
     /// <summary>Ajoute un message de l'administration au fil du litige.</summary>
-    private static async Task<IResult> AddMessageAsync(Guid id, MessageRequest request, ClaimsPrincipal user, ISender sender, CancellationToken ct)
+    private static async Task<IResult> AddMessageAsync(
+        Guid id, [FromForm] string body, IFormFile? file,
+        ClaimsPrincipal user, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
     {
         if (AdminBff.CurrentUserId(user) is not { } authorId)
         {
             return Results.Unauthorized();
         }
 
-        return (await sender.Send(new AddDisputeMessageCommand(id, authorId, request.Body, request.PhotoUrl), ct)).Match(() => Results.NoContent());
+        // Pièce jointe optionnelle : téléversée vers le stockage média public,
+        // son URL est enregistrée comme PhotoUrl du message.
+        string? photoUrl = null;
+        if (file is { Length: > 0 })
+        {
+            if (UploadValidation.ValidateImage(file) is { } invalid)
+            {
+                return invalid;
+            }
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, ct);
+            var upload = await mediaStorage.UploadAsync(new MediaUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+            if (upload.IsFailure)
+            {
+                return Results.BadRequest(new { error = upload.Error.Message });
+            }
+            photoUrl = upload.Value.Url;
+        }
+
+        return (await sender.Send(new AddDisputeMessageCommand(id, authorId, body, photoUrl), ct)).Match(() => Results.NoContent());
     }
 
-    public sealed record ResolveRequest(string Resolution);
-    public sealed record MessageRequest(string Body, string? PhotoUrl);
+    public sealed record ResolveRequest(string Resolution, decimal? RefundAmount = null);
 }

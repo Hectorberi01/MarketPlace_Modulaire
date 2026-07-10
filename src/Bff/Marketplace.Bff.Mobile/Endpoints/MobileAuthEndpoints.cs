@@ -13,7 +13,7 @@ public static class MobileAuthEndpoints
 {
     public static IEndpointRouteBuilder MapMobileAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var auth = app.MapGroup("/mobile/auth").WithTags("Mobile · Auth");
+        var auth = app.MapGroup("/mobile/auth").WithTags("Mobile · Auth").RequireRateLimiting("auth");
 
         auth.MapPost("/register", RegisterAsync).AllowAnonymous();
         auth.MapPost("/login", LoginAsync).AllowAnonymous();

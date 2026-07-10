@@ -11,6 +11,7 @@ public sealed record DisputeSummary(
     string Type,
     string Status,
     string? Resolution,
+    decimal? RefundAmount,
     DateTime CreatedAtUtc,
     DateTime? ResolvedAtUtc,
     IReadOnlyList<DisputeMessageSummary> Messages);

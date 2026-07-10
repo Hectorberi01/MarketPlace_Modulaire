@@ -37,6 +37,7 @@ internal sealed class PlatformWalletConfiguration : IEntityTypeConfiguration<Pla
 
         builder.Property(w => w.Currency).HasMaxLength(3).IsRequired();
         builder.Property(w => w.CommissionBalance).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(w => w.ProviderFeeBalance).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.ShippingBalance).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.UpdatedAtUtc).IsRequired();
 

@@ -1,0 +1,36 @@
+# Configuration DYNAMIQUE (provider file) — PRODUCTION.
+# Chaîne « edge-chain@file » référencée par les labels des services.
+
+http:
+  middlewares:
+    # En-têtes de sécurité durcis + HSTS (HTTPS forcé côté navigateur).
+    sec-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customResponseHeaders:
+          X-Gateway: "traefik"
+          Server: ""
+
+    # Limitation de débit par client (moyenne req/s + rafale).
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+
+    # Compression des réponses.
+    gzip:
+      compress: {}
+
+    # Chaîne appliquée à toutes les routes de l'edge.
+    edge-chain:
+      chain:
+        middlewares:
+          - sec-headers
+          - rate-limit
+          - gzip

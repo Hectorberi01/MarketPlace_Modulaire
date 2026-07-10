@@ -109,11 +109,21 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
             services.AddHttpClient(FedaPayHttpGateway.ClientName, client =>
                 client.BaseAddress = new Uri(EnsureTrailingSlash(fedapayOptions.BaseUrl)));
             services.AddSingleton<IPaymentGateway, FedaPayHttpGateway>();
-            services.AddSingleton<IPayoutGateway, FedaPayPayoutGateway>();
         }
         else
         {
             services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>();
+        }
+
+        // Versements (payouts vendeur) : réels via FedaPay UNIQUEMENT si explicitement
+        // activés ET clé configurée. Sinon simulés (le retrait aboutit en sandbox au
+        // lieu d'échouer en 500). Découplé de l'encaissement, qui reste réel.
+        if (fedapayOptions.IsConfigured && fedapayOptions.EnablePayouts)
+        {
+            services.AddSingleton<IPayoutGateway, FedaPayPayoutGateway>();
+        }
+        else
+        {
             services.AddSingleton<IPayoutGateway, SimulatedPayoutGateway>();
         }
 
@@ -210,7 +220,10 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         {
             ApiKey = section["ApiKey"] ?? string.Empty,
             WebhookSecret = section["WebhookSecret"] ?? string.Empty,
-            CallbackUrl = section["CallbackUrl"] ?? string.Empty
+            CallbackUrl = section["CallbackUrl"] ?? string.Empty,
+            // Active les versements réels FedaPay (sinon payout simulé). Clé lue
+            // depuis Payments__FedaPay__EnablePayouts (« true »/« false »).
+            EnablePayouts = bool.TryParse(section["EnablePayouts"], out var enablePayouts) && enablePayouts
         };
         if (!string.IsNullOrWhiteSpace(section["BaseUrl"]))
         {
@@ -219,6 +232,12 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         if (!string.IsNullOrWhiteSpace(section["Currency"]))
         {
             options.Currency = section["Currency"]!;
+        }
+        // Méthode de transfert payout (« mode » FedaPay). Lue depuis
+        // Payments__FedaPay__PayoutMode. Défaut mtn_open (MTN Mobile Money Bénin).
+        if (!string.IsNullOrWhiteSpace(section["PayoutMode"]))
+        {
+            options.PayoutMode = section["PayoutMode"]!;
         }
         return options;
     }

@@ -8,6 +8,7 @@ using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.Modules.Offers.Application.Abstractions;
+using Marketplace.Modules.Offers.Application.Offers;
 using Marketplace.Modules.Offers.Application.Offers.Commands.CreateOffer;
 using Marketplace.Modules.Offers.Application.Offers.EventHandlers;
 using Marketplace.Modules.Offers.Contracts;
@@ -27,6 +28,27 @@ public sealed class OffersModuleInstaller : IModuleInstaller
 
     public void Install(IServiceCollection services, IConfiguration configuration)
     {
+        // Taux du modèle de prix (section « Pricing »), liés manuellement
+        // (même pattern que Payments/Billing : aucune dépendance IOptions).
+        var pricingOptions = new PricingOptions();
+        var pricingSection = configuration.GetSection("Pricing");
+
+        var commRaw = pricingSection["PlatformCommissionRate"];
+        if (decimal.TryParse(commRaw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsedComm))
+        {
+            pricingOptions.PlatformCommissionRate = parsedComm;
+        }
+
+        var provRaw = pricingSection["ProviderFeeRate"];
+        if (decimal.TryParse(provRaw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsedProv))
+        {
+            pricingOptions.ProviderFeeRate = parsedProv;
+        }
+
+        services.AddSingleton(pricingOptions);
+
         var connectionString = configuration.GetConnectionString("Marketplace")
             ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");
 

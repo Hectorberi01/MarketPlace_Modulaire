@@ -12,7 +12,7 @@ public class SettlementTests
     {
         // Scénario dossier : brut 5600 (base 7000 - réduction vendeur 1400), commission 560.
         var earning = SellerEarning.Create(
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 5600m, 560m, "XOF").Value;
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 5600m, 560m, 0m, "XOF").Value;
 
         earning.NetAmount.Should().Be(5040m);
         earning.Status.Should().Be(EarningStatus.Accrued);
@@ -48,7 +48,7 @@ public class SettlementTests
     [Fact]
     public void Release_passe_le_gain_de_accrued_a_released_puis_idempotent()
     {
-        var earning = SellerEarning.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1000m, 100m, "XOF").Value;
+        var earning = SellerEarning.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1000m, 100m, 0m, "XOF").Value;
 
         earning.Release();
         earning.Status.Should().Be(EarningStatus.Released);
@@ -62,7 +62,7 @@ public class SettlementTests
     [Fact]
     public void MarkSettled_links_earning_to_batch()
     {
-        var earning = SellerEarning.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1000m, 100m, "XOF").Value;
+        var earning = SellerEarning.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1000m, 100m, 0m, "XOF").Value;
         var batchId = Guid.NewGuid();
 
         earning.MarkSettled(batchId);

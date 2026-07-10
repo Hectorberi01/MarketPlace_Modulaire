@@ -9,7 +9,9 @@ namespace Marketplace.Bff.Seller.Endpoints;
 /// <summary>
 /// BFF Vendeur — portefeuille : solde à venir (gains en attente de livraison),
 /// solde principal (retirable), historique des mouvements et demandes de retrait.
-/// Un retrait déclenche un versement FedaPay immédiat vers le compte du vendeur.
+/// Une demande de retrait RETIENT les fonds (statut « Requested ») et attend la
+/// VALIDATION d'un administrateur ; le versement FedaPay n'est déclenché qu'à
+/// l'approbation admin (ou les fonds sont recrédités en cas de refus).
 /// </summary>
 public static class SellerWalletEndpoints
 {
@@ -52,7 +54,7 @@ public static class SellerWalletEndpoints
             : (await sender.Send(new ListWithdrawalsQuery(seller.Id), ct)).Match(w => Results.Ok(w));
     }
 
-    /// <summary>Demande un retrait du solde principal (versement FedaPay immédiat).</summary>
+    /// <summary>Crée une demande de retrait du solde principal (fonds retenus, en attente de validation admin — pas de versement immédiat).</summary>
     private static async Task<IResult> WithdrawAsync(ClaimsPrincipal user, WithdrawRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);

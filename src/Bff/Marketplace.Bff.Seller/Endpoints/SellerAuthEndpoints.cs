@@ -17,7 +17,7 @@ public static class SellerAuthEndpoints
 {
     public static IEndpointRouteBuilder MapSellerAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var auth = app.MapGroup("/seller/auth").WithTags("Vendeur · Auth");
+        var auth = app.MapGroup("/seller/auth").WithTags("Vendeur · Auth").RequireRateLimiting("auth");
 
         auth.MapPost("/login", LoginAsync).AllowAnonymous();
         auth.MapPost("/refresh", RefreshAsync).AllowAnonymous();

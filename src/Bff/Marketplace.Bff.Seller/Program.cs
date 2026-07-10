@@ -3,13 +3,18 @@ using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Marketplace.Api.Extensions;
 using Marketplace.Api.Modules;
+using Marketplace.Api.Observability;
 using Marketplace.Api.RealTime;
 using Marketplace.Bff.Seller.Endpoints;
 using Marketplace.BuildingBlocks.Application;
 using Marketplace.BuildingBlocks.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Observabilité (logs structurés + traces/métriques OTel + health checks).
+builder.AddObservability("bff-seller");
 
 // 1. Modules composés in-process (même registre que Marketplace.Api).
 foreach (var module in ModuleRegistry.Installers)
@@ -107,6 +112,8 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+// Rate limiting sur les endpoints d'auth (brute-force / énumération).
+builder.Services.AddAuthRateLimiter();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -161,16 +168,19 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     }
 }
 
-// Swagger activé sans condition (surface de test du BFF). À restreindre à
-// l'environnement de dev avant un déploiement public.
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger réservé au développement (pas d'exposition d'API en production).
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseCors(SellerCorsPolicy);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", surface = "seller" })).WithTags("System");
+app.MapObservability();
 
 // Surface /seller (back-office vendeur).
 app.MapSellerAuthEndpoints();
@@ -188,6 +198,7 @@ app.MapSellerWalletEndpoints();
 app.MapSellerReviewEndpoints();
 app.MapSellerDisputeEndpoints();
 app.MapSellerMessagingEndpoints();
+app.MapSellerNotificationEndpoints();
 
 // Hub temps réel (messagerie). Sous /seller pour être routé par Traefik + CORS navigateur.
 app.MapHub<ChatHub>("/seller/hubs/chat").RequireCors(SellerCorsPolicy);

@@ -50,6 +50,7 @@ internal sealed class SellerModuleApi : ISellerModuleApi
         seller.UserId,
         seller.ShopName,
         seller.LogoUrl,
+        seller.Description,
         seller.Status.ToString(),
         seller.KybStatus.ToString(),
         seller.CommissionRate,
@@ -62,6 +63,18 @@ internal sealed class SellerModuleApi : ISellerModuleApi
                 seller.PayoutAccount.AccountNumber,
                 seller.PayoutAccount.AccountName),
         seller.KybDocuments
-            .Select(d => new KybDocumentSummary(d.Id, d.Type.ToString(), d.FileUrl, d.VerifiedAtUtc))
+            .Select(d => new KybDocumentSummary(
+                d.Id,
+                d.Type.ToString(),
+                d.FileUrl,
+                ResolveDocStatus(d, seller.KybStatus),
+                d.UploadedOnUtc,
+                d.VerifiedAtUtc))
             .ToList());
+
+    /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>
+    private static string ResolveDocStatus(KybDocument doc, KybStatus sellerStatus) =>
+        doc.VerifiedAtUtc.HasValue ? "Verified"
+        : sellerStatus == KybStatus.Rejected ? "Rejected"
+        : "InReview";
 }

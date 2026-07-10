@@ -147,6 +147,63 @@ public sealed class PaymentMethod : AggregateRoot<PaymentMethodId>
             isDefault));
     }
 
+    /// <summary>
+    /// Met à jour un moyen Mobile Money : libellé, opérateur et numéro (MSISDN).
+    /// Refuse l'appel si le moyen n'est pas de type Mobile Money.
+    /// </summary>
+    public Result UpdateMobileMoney(string? label, string provider, string msisdn)
+    {
+        if (Type != PaymentMethodType.MobileMoney)
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.type_mismatch", "Ce moyen n'est pas un compte Mobile Money."));
+        }
+
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.provider_required", "Opérateur requis."));
+        }
+
+        var digits = new string((msisdn ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digits.Length < 8)
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.msisdn_invalid", "Numéro Mobile Money invalide."));
+        }
+
+        Provider = provider.Trim();
+        AccountRef = digits;
+        Label = string.IsNullOrWhiteSpace(label) ? Provider : label!.Trim();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Met à jour un moyen Carte : libellé, expiration et titulaire. Le numéro de
+    /// carte n'est pas modifiable (on ne conserve que les 4 derniers chiffres).
+    /// Refuse l'appel si le moyen n'est pas de type Carte.
+    /// </summary>
+    public Result UpdateCard(string? label, int expiryMonth, int expiryYear, string? holderName)
+    {
+        if (Type != PaymentMethodType.Card)
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.type_mismatch", "Ce moyen n'est pas une carte."));
+        }
+
+        if (expiryMonth is < 1 or > 12)
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.expiry_invalid", "Mois d'expiration invalide."));
+        }
+
+        if (expiryYear < 2000)
+        {
+            return Result.Failure(Error.Validation("identity.payment_method.expiry_invalid", "Année d'expiration invalide."));
+        }
+
+        ExpiryMonth = expiryMonth;
+        ExpiryYear = expiryYear;
+        HolderName = string.IsNullOrWhiteSpace(holderName) ? null : holderName!.Trim();
+        Label = string.IsNullOrWhiteSpace(label) ? Provider : label!.Trim();
+        return Result.Success();
+    }
+
     public void MarkDefault() => IsDefault = true;
 
     public void ClearDefault() => IsDefault = false;

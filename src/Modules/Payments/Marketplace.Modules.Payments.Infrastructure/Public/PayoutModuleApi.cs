@@ -19,7 +19,7 @@ internal sealed class PayoutModuleApi : IPayoutModuleApi
             new PayoutInstruction(
                 instruction.Amount,
                 instruction.Currency,
-                new PayoutBeneficiary(instruction.BeneficiaryName, instruction.Msisdn, instruction.CountryCode),
+                new PayoutBeneficiary(instruction.BeneficiaryName, instruction.Msisdn, instruction.CountryCode, instruction.Provider),
                 instruction.Reference),
             cancellationToken);
 

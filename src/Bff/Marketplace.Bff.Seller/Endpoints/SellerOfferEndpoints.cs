@@ -61,7 +61,7 @@ public static class SellerOfferEndpoints
         }
 
         var result = await sender.Send(new CreateOfferCommand(
-            request.ProductId, seller.Id, request.Sku, request.BasePriceAmount, request.Currency,
+            request.ProductId, seller.Id, request.Sku, request.SellerPrice, request.Currency,
             request.Condition, request.FulfillmentType, request.ShipFromLocationId, request.HandlingTime), ct);
 
         return result.Match(id => Results.Ok(new { offerId = id }));
@@ -69,7 +69,7 @@ public static class SellerOfferEndpoints
 
     private static async Task<IResult> ChangePriceAsync(ClaimsPrincipal user, Guid id, PriceRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct,
-            () => sender.Send(new ChangeOfferPriceCommand(id, request.Amount, request.Currency), ct));
+            () => sender.Send(new ChangeOfferPriceCommand(id, request.SellerPrice), ct));
 
     private static async Task<IResult> ChangeStatusAsync(ClaimsPrincipal user, Guid id, StatusRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct,
@@ -99,10 +99,10 @@ public static class SellerOfferEndpoints
     }
 
     public sealed record CreateOfferRequest(
-        Guid ProductId, string Sku, decimal BasePriceAmount, string Currency, string Condition,
+        Guid ProductId, string Sku, decimal SellerPrice, string Currency, string Condition,
         string FulfillmentType, Guid ShipFromLocationId, int HandlingTime);
 
-    public sealed record PriceRequest(decimal Amount, string Currency);
+    public sealed record PriceRequest(decimal SellerPrice);
     public sealed record StatusRequest(string Status);
     public sealed record HandlingTimeRequest(int HandlingTime);
 }

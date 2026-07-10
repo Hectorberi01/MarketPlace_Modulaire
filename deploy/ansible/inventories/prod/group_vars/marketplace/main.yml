@@ -1,0 +1,21 @@
+---
+# Variables NON sensibles de la production (les secrets sont dans vault.yml).
+target_env: prod
+compose_file: docker-compose.prod.yml
+app_dir: /opt/marketplace
+
+# Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
+root_domain: example.com
+acme_email: admin@example.com
+
+# Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
+enable_portainer: true
+traefik_network: marketplace-prod-net
+
+# R2 — noms de buckets (non sensibles)
+r2_bucket_name: documents-pdf
+r2_public_base_url: ""
+r2_media_bucket_name: images
+r2_media_key_prefix: MarketPlace
+# En prod, préférer un domaine personnalisé connecté au bucket public.
+r2_media_public_base_url: "https://pub-xxxxxxxx.r2.dev"

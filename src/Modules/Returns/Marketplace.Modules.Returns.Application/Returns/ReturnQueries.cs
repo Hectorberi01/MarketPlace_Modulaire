@@ -14,6 +14,14 @@ public sealed record ListMyReturnsQuery(Guid BuyerId) : IQuery<IReadOnlyList<Ret
 /// <summary>Liste les retours d'un vendeur.</summary>
 public sealed record ListSellerReturnsQuery(Guid SellerId) : IQuery<IReadOnlyList<ReturnRequestSummary>>;
 
+/// <summary>
+/// Liste les REMBOURSEMENTS (retours au statut Refunded) d'un vendeur dont la
+/// date de remboursement tombe dans [From, To). Lecture seule, sert au relevé
+/// finances. Ne renvoie que des remboursements dont le montant est renseigné.
+/// </summary>
+public sealed record ListSellerRefundsQuery(Guid SellerId, DateTime From, DateTime To)
+    : IQuery<IReadOnlyList<SellerRefundLine>>;
+
 internal static class ReturnMapper
 {
     public static ReturnRequestSummary ToSummary(ReturnRequest r) => new(
@@ -58,5 +66,23 @@ internal sealed class ListSellerReturnsQueryHandler : IQueryHandler<ListSellerRe
         var items = await _repository.ListBySellerAsync(query.SellerId, cancellationToken);
         IReadOnlyList<ReturnRequestSummary> summaries = items.Select(ReturnMapper.ToSummary).ToList();
         return Result.Success(summaries);
+    }
+}
+
+internal sealed class ListSellerRefundsQueryHandler : IQueryHandler<ListSellerRefundsQuery, IReadOnlyList<SellerRefundLine>>
+{
+    private readonly IReturnRequestRepository _repository;
+    public ListSellerRefundsQueryHandler(IReturnRequestRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<SellerRefundLine>>> Handle(ListSellerRefundsQuery query, CancellationToken cancellationToken)
+    {
+        var items = await _repository.ListRefundedBySellerAsync(query.SellerId, query.From, query.To, cancellationToken);
+
+        IReadOnlyList<SellerRefundLine> refunds = items
+            .Where(r => r.RefundAmount is > 0m && r.ResolvedAtUtc is not null)
+            .Select(r => new SellerRefundLine(r.OrderId, r.RefundAmount!.Value, r.Currency, r.ResolvedAtUtc!.Value))
+            .ToList();
+
+        return Result.Success(refunds);
     }
 }

@@ -5,11 +5,26 @@ public sealed record SellerWalletView(
     Guid SellerId,
     decimal PendingBalance,
     decimal AvailableBalance,
+    // Somme des retraits demandés en attente de validation admin (fonds déjà
+    // retenus, retirés du solde principal).
+    decimal PendingWithdrawal,
     string Currency);
+
+/// <summary>Demande de retrait en attente de validation (vue admin, enrichie vendeur).</summary>
+public sealed record PendingWithdrawalView(
+    Guid Id,
+    Guid SellerId,
+    string SellerName,
+    decimal Amount,
+    string Currency,
+    string? PayoutProvider,
+    string? PayoutAccountNumber,
+    DateTime CreatedAtUtc);
 
 /// <summary>Soldes du portefeuille de la plateforme (admin).</summary>
 public sealed record PlatformWalletView(
     decimal CommissionBalance,
+    decimal ProviderFeeBalance,
     decimal ShippingBalance,
     string Currency);
 

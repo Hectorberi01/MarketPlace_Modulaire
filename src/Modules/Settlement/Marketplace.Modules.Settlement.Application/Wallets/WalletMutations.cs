@@ -78,6 +78,20 @@ public sealed class WalletMutations
             WalletTransaction.ForPlatform(WalletAccount.Commission, WalletDirection.Credit, amount, currency, "commission", "order", orderId), ct);
     }
 
+    /// <summary>Crédite le solde frais provider de la plateforme.</summary>
+    public async Task CreditPlatformProviderFeeAsync(decimal amount, string currency, Guid orderId, CancellationToken ct)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreatePlatformAsync(currency, ct);
+        wallet.CreditProviderFee(amount);
+        await _ledger.AddAsync(
+            WalletTransaction.ForPlatform(WalletAccount.Provider, WalletDirection.Credit, amount, currency, "provider_fee", "order", orderId), ct);
+    }
+
     /// <summary>Crédite le solde frais de livraison de la plateforme.</summary>
     public async Task CreditPlatformShippingAsync(decimal amount, string currency, Guid orderId, CancellationToken ct)
     {

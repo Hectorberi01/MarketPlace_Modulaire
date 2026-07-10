@@ -1,0 +1,27 @@
+---
+# Playbook principal : installe Docker puis déploie la stack Marketplace sur les
+# hôtes du groupe « marketplace » de l'inventaire choisi (dev / staging / prod).
+#
+# Exemples :
+#   ansible-playbook -i inventories/staging/hosts.ini site.yml --ask-vault-pass
+#   ansible-playbook -i inventories/prod/hosts.ini    site.yml --ask-vault-pass
+#   ansible-playbook -i inventories/dev/hosts.ini     site.yml
+#
+# Le tag « deploy » permet de ne relancer que le déploiement (sans (ré)installer Docker) :
+#   ansible-playbook -i inventories/prod/hosts.ini site.yml --tags deploy --ask-vault-pass
+
+- name: Déployer Marketplace ({{ target_env | default('?') }})
+  hosts: marketplace
+  become: true
+  vars:
+    # Racine du dépôt sur la machine de contrôle (deploy/ansible -> repo).
+    project_local_path: "{{ playbook_dir | dirname | dirname }}"
+  roles:
+    - role: docker
+      tags: [docker, setup]
+      when: manage_docker | default(true)
+    - role: marketplace
+      tags: [deploy]
+    - role: portainer
+      tags: [portainer]
+      when: enable_portainer | default(true)

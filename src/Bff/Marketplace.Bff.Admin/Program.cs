@@ -1,14 +1,20 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Marketplace.Api.Modules;
+using Marketplace.Api.Observability;
 using Marketplace.Bff.Admin.Endpoints;
 using Marketplace.BuildingBlocks.Application;
 using Marketplace.BuildingBlocks.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 0. Observabilité (logs structurés + traces/métriques OTel + health checks).
+builder.AddObservability("bff-admin");
 
 // 1. Modules composés in-process (même registre que Marketplace.Api).
 foreach (var module in ModuleRegistry.Installers)
@@ -86,6 +92,24 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+
+// 4bis. Rate limiting — protège les endpoints d'authentification anonymes
+//       (login / refresh / mot de passe oublié / reset) contre le brute-force
+//       et l'énumération. Fenêtre fixe par adresse IP.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -138,16 +162,20 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     }
 }
 
-// Swagger activé sans condition (surface de test du BFF). À restreindre à
-// l'environnement de dev avant un déploiement public.
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger réservé au développement : en production, ne pas exposer la surface
+// d'API ni l'UI « Authorize ».
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseCors(AdminCorsPolicy);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", surface = "admin" })).WithTags("System");
+app.MapObservability();
 
 // Surface /admin (back-office plateforme).
 app.MapAdminAuthEndpoints();
