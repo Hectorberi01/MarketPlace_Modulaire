@@ -9,6 +9,7 @@ using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
+using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
 using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
 using Marketplace.Modules.Settlement.Application.Abstractions;
 using Marketplace.Modules.Settlement.Application.Batches;
@@ -72,10 +73,25 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();
         services.AddScoped<WalletMutations>();
 
+        // Règle de clôture d'un retrait (sent → payé, failed → remboursé), partagée par
+        // le webhook et la réconciliation : une seule et même logique, donc pas de risque
+        // qu'un double verdict produise un double remboursement.
+        services.AddScoped<WithdrawalSettlement>();
+
         services.AddScoped<IDomainEventHandler<PayoutPaidDomainEvent>, PayoutPaidDomainEventHandler>();
+
+        // Réconciliation des retraits « en cours » avec le statut réel du PSP.
+        // SANS ce service, un versement échoué chez FedaPay laisserait le retrait
+        // marqué « payé » et le vendeur débité, sans jamais avoir reçu son argent.
+        services.AddHostedService<Reconciliation.WithdrawalReconciliationService>();
 
         // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueEarningsOnOrderConfirmedHandler>();
+
+        // CONTRE-PASSATION. Sans ce handler, l'événement « retour remboursé » était
+        // publié dans le vide : le vendeur gardait son gain sur un article qui nous
+        // revenait, et la plateforme payait deux fois — le client ET le vendeur.
+        services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, ReverseEarningsOnReturnRefundedHandler>();
 
         // Libération des gains (escrow levé) à la livraison confirmée → payables.
         services.AddScoped<IIntegrationEventHandler<OrderDeliveredIntegrationEvent>, ReleaseEarningsOnOrderDeliveredHandler>();

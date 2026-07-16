@@ -19,6 +19,15 @@ public sealed record MarkConversationReadCommand(Guid ConversationId, Guid Reade
 /// <summary>Archive une conversation (participant).</summary>
 public sealed record ArchiveConversationCommand(Guid ConversationId, Guid UserId) : ICommand;
 
+/// <summary>Réagit à un message (emoji de la palette autorisée ; bascule/remplace).</summary>
+public sealed record ReactToMessageCommand(Guid ConversationId, Guid MessageId, Guid UserId, string Emoji) : ICommand;
+
+/// <summary>Supprime un message POUR TOUT LE MONDE (auteur uniquement).</summary>
+public sealed record DeleteMessageForEveryoneCommand(Guid ConversationId, Guid MessageId, Guid UserId) : ICommand;
+
+/// <summary>Masque un message POUR SOI seulement (l'autre participant continue de le voir).</summary>
+public sealed record HideMessageForMeCommand(Guid ConversationId, Guid MessageId, Guid UserId) : ICommand;
+
 public sealed class StartConversationCommandValidator : AbstractValidator<StartConversationCommand>
 {
     public StartConversationCommandValidator()
@@ -110,6 +119,30 @@ internal sealed class MarkConversationReadCommandHandler : ConversationMutationH
 
     public Task<Result> Handle(MarkConversationReadCommand c, CancellationToken ct)
         => MutateAsync(c.ConversationId, conv => conv.MarkRead(c.ReaderId), ct);
+}
+
+internal sealed class ReactToMessageCommandHandler : ConversationMutationHandlerBase, ICommandHandler<ReactToMessageCommand>
+{
+    public ReactToMessageCommandHandler(IConversationRepository r, IMessagingUnitOfWork u) : base(r, u) { }
+
+    public Task<Result> Handle(ReactToMessageCommand c, CancellationToken ct)
+        => MutateAsync(c.ConversationId, conv => conv.ReactToMessage(c.MessageId, c.UserId, c.Emoji), ct);
+}
+
+internal sealed class DeleteMessageForEveryoneCommandHandler : ConversationMutationHandlerBase, ICommandHandler<DeleteMessageForEveryoneCommand>
+{
+    public DeleteMessageForEveryoneCommandHandler(IConversationRepository r, IMessagingUnitOfWork u) : base(r, u) { }
+
+    public Task<Result> Handle(DeleteMessageForEveryoneCommand c, CancellationToken ct)
+        => MutateAsync(c.ConversationId, conv => conv.DeleteMessageForEveryone(c.MessageId, c.UserId), ct);
+}
+
+internal sealed class HideMessageForMeCommandHandler : ConversationMutationHandlerBase, ICommandHandler<HideMessageForMeCommand>
+{
+    public HideMessageForMeCommandHandler(IConversationRepository r, IMessagingUnitOfWork u) : base(r, u) { }
+
+    public Task<Result> Handle(HideMessageForMeCommand c, CancellationToken ct)
+        => MutateAsync(c.ConversationId, conv => conv.HideMessageForUser(c.MessageId, c.UserId), ct);
 }
 
 internal sealed class ArchiveConversationCommandHandler : ConversationMutationHandlerBase, ICommandHandler<ArchiveConversationCommand>

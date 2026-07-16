@@ -14,7 +14,7 @@ public static class BillingEndpoints
     /// <summary>Enregistre les routes de commission et de facturation.</summary>
     public static IEndpointRouteBuilder MapBillingEndpoints(this IEndpointRouteBuilder app)
     {
-        var billing = app.MapGroup("/api/billing").WithTags("Billing")
+        var billing = app.MapAdminGroup("/api/billing").WithTags("Billing")
             .RequireAuthorization(p => p.RequireRole("Admin"));
 
         billing.MapPost("/commission-rules", CreateRuleAsync).WithName("CreateCommissionRule");

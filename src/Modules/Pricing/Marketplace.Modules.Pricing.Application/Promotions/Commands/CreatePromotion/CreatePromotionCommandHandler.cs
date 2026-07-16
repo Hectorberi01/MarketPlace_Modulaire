@@ -36,7 +36,7 @@ internal sealed class CreatePromotionCommandHandler : ICommandHandler<CreateProm
 
         var result = Promotion.Create(
             ownerType, command.OwnerId, fundedBy, type, command.Value, scopeType,
-            command.Targets, conditions, command.Code, periodResult.Value, command.UsageLimit);
+            command.Targets, conditions, command.Code, periodResult.Value, command.UsageLimit, command.PerUserLimit);
 
         if (result.IsFailure)
         {

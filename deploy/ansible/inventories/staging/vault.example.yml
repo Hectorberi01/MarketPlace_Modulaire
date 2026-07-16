@@ -11,6 +11,9 @@ marketplace_connection: "Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Us
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
 
+# Mot de passe admin Grafana (stack monitoring).
+grafana_password: "CHANGE_ME_STRONG_RANDOM"
+
 # FedaPay SANDBOX en staging.
 fedapay_api_key: "sk_sandbox_xxx"
 fedapay_webhook_secret: ""

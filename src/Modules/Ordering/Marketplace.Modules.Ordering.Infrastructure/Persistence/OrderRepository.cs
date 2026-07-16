@@ -24,6 +24,18 @@ internal sealed class OrderRepository : IOrderRepository
             .OrderByDescending(o => o.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    public async Task<bool> HasPurchasedAsync(Guid buyerId, CancellationToken cancellationToken = default)
+        // Pas d'Include, pas de ToList : un EXISTS servi par l'index (BuyerId, Status).
+        // Cette lecture est sur le chemin chaud (chaque affichage de panier valorisé) —
+        // elle doit rester à quelques microsecondes.
+        => await _dbContext.Orders
+            .AnyAsync(
+                o => o.BuyerId == buyerId
+                     && (o.Status == OrderStatus.Paid
+                         || o.Status == OrderStatus.Confirmed
+                         || o.Status == OrderStatus.Delivered),
+                cancellationToken);
+
     public async Task<IReadOnlyList<Order>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
         => await _dbContext.Orders
             .AsNoTracking()

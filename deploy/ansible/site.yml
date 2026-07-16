@@ -22,6 +22,9 @@
       when: manage_docker | default(true)
     - role: marketplace
       tags: [deploy]
+    - role: monitoring
+      tags: [monitoring]
+      when: enable_monitoring | default(false)
     - role: portainer
       tags: [portainer]
       when: enable_portainer | default(true)

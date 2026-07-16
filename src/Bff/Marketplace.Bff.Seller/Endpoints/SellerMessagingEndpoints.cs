@@ -14,11 +14,16 @@ public static class SellerMessagingEndpoints
 {
     public static IEndpointRouteBuilder MapSellerMessagingEndpoints(this IEndpointRouteBuilder app)
     {
-        var conv = app.MapGroup("/seller/conversations").WithTags("Vendeur · Messagerie").RequireAuthorization();
+        var conv = app.MapSellerGroup("/seller/conversations", "Vendeur · Messagerie");
 
         conv.MapGet("/", ListAsync);
         conv.MapGet("/{id:guid}/messages", MessagesAsync);
         conv.MapPost("/{id:guid}/messages", SendAsync);
+
+        // Réactions et suppression (voir sémantique dans les handlers).
+        conv.MapPost("/{id:guid}/messages/{messageId:guid}/reactions", ReactAsync);
+        conv.MapDelete("/{id:guid}/messages/{messageId:guid}", DeleteForEveryoneAsync);
+        conv.MapDelete("/{id:guid}/messages/{messageId:guid}/for-me", HideForMeAsync);
 
         return app;
     }
@@ -93,6 +98,8 @@ public static class SellerMessagingEndpoints
             fromSeller = m.SenderId == userId,
             body = m.Body,
             sentAt = m.CreatedAtUtc,
+            isDeleted = m.IsDeleted,
+            reactions = m.Reactions.Select(r => new { emoji = r.Emoji, count = r.Count, mine = r.Mine }),
         });
 
         return Results.Ok(messages);
@@ -153,5 +160,83 @@ public static class SellerMessagingEndpoints
         });
     }
 
+    /// <summary>
+    /// Réagit à un message (emoji de la palette autorisée). Une seule réaction par
+    /// personne : renvoyer le même emoji la retire, un autre la remplace. L'emoji est
+    /// validé côté domaine — on n'accepte pas une chaîne libre.
+    /// </summary>
+    private static async Task<IResult> ReactAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId, ReactRequest request,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (SellerBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new ReactToMessageCommand(id, messageId, userId, request.Emoji), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Supprime un message POUR TOUT LE MONDE. Le domaine n'autorise que l'auteur, et
+    /// conserve le corps en base (preuve en cas de litige) : seule la projection le
+    /// remplace par « Message supprimé ».
+    /// </summary>
+    private static async Task<IResult> DeleteForEveryoneAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (SellerBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new DeleteMessageForEveryoneCommand(id, messageId, userId), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Masque un message POUR SOI seulement. L'autre participant continue de le voir :
+    /// on ne notifie donc que… tout le monde quand même, car le fil du demandeur doit
+    /// se rafraîchir (le message disparaît de SA vue via la projection).
+    /// </summary>
+    private static async Task<IResult> HideForMeAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (SellerBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new HideMessageForMeCommand(id, messageId, userId), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>Signale au fil que son contenu a changé (les clients rechargent).</summary>
+    private static Task NotifyAsync(IHubContext<ChatHub> hub, Guid conversationId, CancellationToken ct)
+        => hub.Clients.Group(ChatHub.Group(conversationId))
+            .SendAsync("message", new { conversationId = conversationId.ToString() }, ct);
+
     public sealed record SendRequest(string Body, IReadOnlyList<string>? Attachments);
+    public sealed record ReactRequest(string Emoji);
 }

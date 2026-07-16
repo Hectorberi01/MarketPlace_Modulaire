@@ -17,8 +17,23 @@ public sealed record AddReturnTrackingCommand(Guid ReturnRequestId, string Carri
 /// <summary>Marque le colis retour comme réceptionné.</summary>
 public sealed record MarkReturnReceivedCommand(Guid ReturnRequestId) : ICommand;
 
-/// <summary>Déclenche le remboursement du retour.</summary>
-public sealed record RefundReturnCommand(Guid ReturnRequestId, decimal Amount) : ICommand;
+/// <summary>
+/// VALIDE le remboursement et son montant (vendeur ou admin). L'argent ne bouge pas.
+///
+/// Renommée depuis « RefundReturnCommand » — et ce n'est pas cosmétique. L'ancien nom
+/// promettait un remboursement ; le code ne faisait que changer un statut. Le nom
+/// mentait autant que le code.
+/// </summary>
+public sealed record ApproveReturnRefundCommand(Guid ReturnRequestId, decimal Amount) : ICommand;
+
+/// <summary>
+/// CONFIRME que l'argent est parti (admin uniquement), référence FedaPay à l'appui.
+///
+/// Réservé à l'admin parce que lui seul a accès au tableau de bord FedaPay où le
+/// versement s'effectue réellement. Laisser un vendeur déclarer « c'est payé » sans
+/// qu'il puisse le faire serait rouvrir exactement le trou qu'on vient de boucher.
+/// </summary>
+public sealed record ConfirmReturnRefundCommand(Guid ReturnRequestId, string ProviderReference) : ICommand;
 
 internal abstract class ReturnMutationHandlerBase
 {
@@ -76,8 +91,18 @@ internal sealed class MarkReturnReceivedCommandHandler : ReturnMutationHandlerBa
     public Task<Result> Handle(MarkReturnReceivedCommand c, CancellationToken ct) => MutateAsync(c.ReturnRequestId, r => r.MarkReceived(), ct);
 }
 
-internal sealed class RefundReturnCommandHandler : ReturnMutationHandlerBase, ICommandHandler<RefundReturnCommand>
+internal sealed class ApproveReturnRefundCommandHandler : ReturnMutationHandlerBase, ICommandHandler<ApproveReturnRefundCommand>
 {
-    public RefundReturnCommandHandler(IReturnRequestRepository r, IReturnsUnitOfWork u) : base(r, u) { }
-    public Task<Result> Handle(RefundReturnCommand c, CancellationToken ct) => MutateAsync(c.ReturnRequestId, r => r.Refund(c.Amount), ct);
+    public ApproveReturnRefundCommandHandler(IReturnRequestRepository r, IReturnsUnitOfWork u) : base(r, u) { }
+
+    public Task<Result> Handle(ApproveReturnRefundCommand c, CancellationToken ct)
+        => MutateAsync(c.ReturnRequestId, r => r.ApproveRefund(c.Amount), ct);
+}
+
+internal sealed class ConfirmReturnRefundCommandHandler : ReturnMutationHandlerBase, ICommandHandler<ConfirmReturnRefundCommand>
+{
+    public ConfirmReturnRefundCommandHandler(IReturnRequestRepository r, IReturnsUnitOfWork u) : base(r, u) { }
+
+    public Task<Result> Handle(ConfirmReturnRefundCommand c, CancellationToken ct)
+        => MutateAsync(c.ReturnRequestId, r => r.ConfirmRefundExecuted(c.ProviderReference, DateTime.UtcNow), ct);
 }

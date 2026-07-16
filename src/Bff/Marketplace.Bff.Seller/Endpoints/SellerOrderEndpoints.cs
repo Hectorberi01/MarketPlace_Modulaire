@@ -18,7 +18,7 @@ public static class SellerOrderEndpoints
 {
     public static IEndpointRouteBuilder MapSellerOrderEndpoints(this IEndpointRouteBuilder app)
     {
-        var orders = app.MapGroup("/seller/orders").WithTags("Vendeur · Commandes").RequireAuthorization();
+        var orders = app.MapSellerGroup("/seller/orders", "Vendeur · Commandes");
 
         orders.MapGet("/", ListMineAsync);
         orders.MapGet("/{id:guid}", DetailAsync);
@@ -26,9 +26,21 @@ public static class SellerOrderEndpoints
         return app;
     }
 
-    /// <summary>Commandes contenant au moins une ligne du vendeur du jeton, avec le nom du client (Identity).</summary>
+    /// <summary>
+    /// Commandes du vendeur, avec le nom du client (Identity).
+    ///
+    /// PAGINÉE (<c>?page=&amp;pageSize=</c>) et filtrable (<c>?search=</c> sur la
+    /// référence). Sans paramètre, tout est renvoyé — les appelants existants
+    /// (dashboard MAUI) continuent donc de fonctionner.
+    ///
+    /// La pagination a un second effet, moins visible mais décisif : la résolution
+    /// du nom de l'acheteur coûte UNE requête Identity par acheteur. Sur 2 000
+    /// commandes, c'était 2 000 requêtes à chaque affichage de liste. On ne résout
+    /// désormais que les acheteurs de la page demandée.
+    /// </summary>
     private static async Task<IResult> ListMineAsync(
-        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, IIdentityModuleApi identity, CancellationToken ct)
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, IIdentityModuleApi identity,
+        CancellationToken ct, int? page = null, int? pageSize = null, string? search = null)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
         if (seller is null)
@@ -42,9 +54,28 @@ public static class SellerOrderEndpoints
             return result.Match(list => Results.Ok(list));
         }
 
-        var scoped = result.Value.Select(o => ScopeToSeller(o, seller.Id)).ToList();
+        var scoped = result.Value
+            .Select(o => ScopeToSeller(o, seller.Id))
+            // Les plus récentes d'abord : sans tri stable, la pagination renverrait
+            // deux fois la même commande sur des pages différentes.
+            .OrderByDescending(o => o.CreatedAtUtc)
+            .ToList();
 
-        // Nom du client résolu une seule fois par acheteur (repli anonymisé si introuvable).
+        // Recherche par référence (« CMD-A1B2C3D4 » ou juste « a1b2 »). On ne
+        // cherche PAS sur le nom du client : cela obligerait à résoudre les 2 000
+        // acheteurs avant de filtrer — exactement ce qu'on veut éviter.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var needle = search.Trim().Replace("CMD-", "", StringComparison.OrdinalIgnoreCase);
+            scoped = scoped
+                .Where(o => o.Id.ToString("N").StartsWith(needle, StringComparison.OrdinalIgnoreCase)
+                            || o.Lines.Any(l => l.Sku.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        scoped = SellerBff.Paginate(scoped, page, pageSize);
+
+        // Nom du client résolu une seule fois par acheteur DE LA PAGE.
         var names = new Dictionary<Guid, string>();
         foreach (var buyerId in scoped.Select(o => o.BuyerId).Distinct())
         {

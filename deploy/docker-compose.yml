@@ -19,6 +19,7 @@ x-app-env: &app-env
   Jwt__Audience: "marketplace"
   Jwt__SigningKey: "${JWT_SIGNING_KEY}"
   # FedaPay : la clé secrète reste dans deploy/.env (gitignoré). Renseignée → l'adaptateur réel s'active ; vide → stub sandbox.
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
   # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.

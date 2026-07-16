@@ -7,6 +7,8 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
+using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Pricing.Application.Abstractions;
 using Marketplace.Modules.Pricing.Application.Promotions.Commands.CreatePromotion;
 using Marketplace.Modules.Pricing.Application.Promotions.EventHandlers;
@@ -37,9 +39,18 @@ public sealed class PricingModuleInstaller : IModuleInstaller
         services.AddScoped<IPricingUnitOfWork>(sp => sp.GetRequiredService<PricingDbContext>());
 
         services.AddScoped<IPromotionRepository, PromotionRepository>();
+        services.AddScoped<IPromotionRedemptionRepository, PromotionRedemptionRepository>();
         services.AddScoped<IPricingModuleApi, PricingModuleApi>();
 
         services.AddScoped<IDomainEventHandler<PromotionCreatedDomainEvent>, PromotionCreatedDomainEventHandler>();
+
+        // ⚠️ SANS CETTE LIGNE, AUCUN COUPON N'EST JAMAIS DÉCOMPTÉ.
+        //
+        // MediatR et le dispatcher d'événements d'intégration résolvent LAZILY : un
+        // handler non enregistré ne provoque aucune erreur au démarrage. Il n'est
+        // simplement jamais appelé — en silence. C'est précisément ainsi que
+        // `RecordUsage()` a pu rester sans appelant sans que rien ne le signale.
+        services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, RedeemPromotionOnOrderConfirmedHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 

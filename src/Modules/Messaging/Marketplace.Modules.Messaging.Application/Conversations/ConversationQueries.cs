@@ -13,10 +13,41 @@ public sealed record ListMyConversationsQuery(Guid UserId) : IQuery<IReadOnlyLis
 
 internal static class ConversationMapper
 {
-    public static ConversationSummary ToSummary(Conversation c) => new(
+    /// <summary>Corps affiché à la place d'un message supprimé pour tout le monde.</summary>
+    private const string DeletedPlaceholder = "Message supprimé";
+
+    /// <summary>
+    /// Projette une conversation POUR UN LECTEUR donné. C'est ici — et nulle part
+    /// ailleurs — que s'applique la confidentialité :
+    /// <list type="bullet">
+    ///   <item>les messages que le lecteur a masqués (« supprimer pour moi ») sont
+    ///         purement et simplement absents de sa vue ;</item>
+    ///   <item>les messages supprimés pour tout le monde voient leur corps ET leurs
+    ///         pièces jointes remplacés par un marqueur — le contenu réel reste en base
+    ///         pour le support et la preuve, mais ne sort jamais par cette API ;</item>
+    ///   <item>les réactions sont agrégées par emoji, avec un drapeau « Mine ».</item>
+    /// </list>
+    /// </summary>
+    public static ConversationSummary ToSummary(Conversation c, Guid viewerId) => new(
         c.Id.Value, c.ParticipantIds.ToList(), c.ContextType, c.ContextId, c.Status.ToString(), c.LastMessageAtUtc,
-        c.Messages.OrderBy(m => m.CreatedAtUtc)
-            .Select(m => new MessageSummary(m.Id, m.SenderId, m.Body, m.Attachments.ToList(), m.ReadAtUtc, m.CreatedAtUtc)).ToList());
+        c.Messages
+            .Where(m => !m.IsHiddenFor(viewerId))
+            .OrderBy(m => m.CreatedAtUtc)
+            .Select(m => new MessageSummary(
+                m.Id,
+                m.SenderId,
+                m.IsDeleted ? DeletedPlaceholder : m.Body,
+                m.IsDeleted ? Array.Empty<string>() : m.Attachments.ToList(),
+                m.ReadAtUtc,
+                m.CreatedAtUtc,
+                m.IsDeleted,
+                m.IsDeleted
+                    ? Array.Empty<MessageReactionSummary>()
+                    : m.Reactions
+                        .GroupBy(r => r.Emoji, StringComparer.Ordinal)
+                        .Select(g => new MessageReactionSummary(g.Key, g.Count(), g.Any(r => r.UserId == viewerId)))
+                        .ToList()))
+            .ToList());
 }
 
 internal sealed class GetConversationQueryHandler : IQueryHandler<GetConversationQuery, ConversationSummary>
@@ -37,7 +68,7 @@ internal sealed class GetConversationQueryHandler : IQueryHandler<GetConversatio
             return Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation.");
         }
 
-        return ConversationMapper.ToSummary(conversation);
+        return ConversationMapper.ToSummary(conversation, query.RequesterId);
     }
 }
 
@@ -49,7 +80,7 @@ internal sealed class ListMyConversationsQueryHandler : IQueryHandler<ListMyConv
     public async Task<Result<IReadOnlyList<ConversationSummary>>> Handle(ListMyConversationsQuery query, CancellationToken cancellationToken)
     {
         var items = await _repository.ListByParticipantAsync(query.UserId, cancellationToken);
-        IReadOnlyList<ConversationSummary> summaries = items.Select(ConversationMapper.ToSummary).ToList();
+        IReadOnlyList<ConversationSummary> summaries = items.Select(c => ConversationMapper.ToSummary(c, query.UserId)).ToList();
         return Result.Success(summaries);
     }
 }

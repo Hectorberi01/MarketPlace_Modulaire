@@ -1,5 +1,6 @@
 using MediatR;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Identity.Application.Users.Commands.ConfirmEmail;
 using Marketplace.Modules.Identity.Application.Users.Commands.Login;
 using Marketplace.Modules.Identity.Application.Users.Commands.Logout;
 using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
@@ -24,6 +25,18 @@ public static class MobileAuthEndpoints
         auth.MapPost("/password/forgot", ForgotPasswordAsync).AllowAnonymous();
         auth.MapPost("/password/reset", ResetPasswordAsync).AllowAnonymous();
 
+        // Confirmation d'adresse e-mail.
+        //
+        // ⚠️ CETTE ROUTE N'EXISTAIT PAS. `ConfirmEmailCommand` était écrite, testée, et
+        // AUCUN endpoint ne l'appelait : même si l'e-mail de vérification était parti
+        // (il ne partait pas non plus), le lien n'aurait mené nulle part. La chaîne était
+        // rompue à chacun de ses maillons.
+        //
+        // C'est un POST, jamais un GET : les clients de messagerie et les passerelles
+        // antivirus PRÉ-CHARGENT les liens des e-mails pour les analyser. Une confirmation
+        // sur GET serait déclenchée par le scanner, avant même que l'utilisateur ne clique.
+        auth.MapPost("/email/confirm", ConfirmEmailAsync).AllowAnonymous();
+
         // OTP par SMS : nécessite un fournisseur SMS (non encore branché).
         auth.MapPost("/otp/request", () => MobileBff.NotImplemented("identity.sms_otp")).AllowAnonymous();
         auth.MapPost("/otp/verify", () => MobileBff.NotImplemented("identity.sms_otp")).AllowAnonymous();
@@ -32,21 +45,50 @@ public static class MobileAuthEndpoints
     }
 
     /// <summary>
-    /// Demande de réinitialisation. Renvoie toujours 200 (pas d'énumération de
-    /// comptes). En l'absence d'e-mailing, le jeton est renvoyé dans la réponse
-    /// (à câbler sur un envoi e-mail/SMS en production).
+    /// Demande de réinitialisation. Renvoie TOUJOURS la même réponse — succès, échec, ou
+    /// e-mail inconnu — afin qu'on ne puisse pas énumérer les comptes existants.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// 🚨 CET ENDPOINT DIVULGUAIT LE JETON DE RÉINITIALISATION. À TOUT LE MONDE.
+    ///
+    /// Il renvoyait littéralement ceci, en ANONYME, pour n'importe quelle adresse saisie :
+    ///
+    ///     // TODO production : envoyer result.Value par e-mail/SMS et ne pas l'exposer ici.
+    ///     return Results.Ok(new { sent = true, token = result.Value });
+    ///
+    /// Deux requêtes suffisaient pour prendre n'importe quel compte : `password/forgot`
+    /// avec l'e-mail de la victime pour récolter le jeton, puis `password/reset` avec ce
+    /// jeton. Les cinq hôtes partagent la même base Identity : un compte administrateur
+    /// tombait aussi facilement qu'un compte acheteur. Prise de contrôle totale de la
+    /// plateforme, sans authentification.
+    ///
+    /// La cause n'était pas la négligence, mais l'absence : il n'existait AUCUN canal
+    /// e-mail dans le dépôt. Le jeton n'avait nulle part où aller, alors il est sorti par
+    /// la seule porte ouverte — la réponse HTTP.
+    ///
+    /// Désormais, `RequestPasswordResetCommand` ne renvoie plus RIEN (`ICommand` nu) : cet
+    /// endpoint ne peut plus divulguer un jeton qu'il ne reçoit pas. Le jeton part par
+    /// l'outbox vers Notifications, qui l'envoie par e-mail à son propriétaire.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static async Task<IResult> ForgotPasswordAsync(ForgotRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
-        if (result.IsFailure)
-        {
-            return Results.Ok(new { sent = true });
-        }
+        // Le résultat est volontairement ignoré : succès comme échec produisent la MÊME
+        // réponse. Renvoyer une erreur sur un e-mail inconnu rétablirait l'énumération de
+        // comptes qu'on cherche précisément à empêcher.
+        _ = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
 
-        // TODO production : envoyer result.Value par e-mail/SMS et ne pas l'exposer ici.
-        return Results.Ok(new { sent = true, token = result.Value });
+        return Results.Ok(new
+        {
+            sent = true,
+            message = "Si un compte existe pour cette adresse, un e-mail de réinitialisation vient d'être envoyé.",
+        });
     }
+
+    /// <summary>Confirme l'adresse e-mail à partir du lien reçu par mail.</summary>
+    private static async Task<IResult> ConfirmEmailAsync(ConfirmEmailRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ConfirmEmailCommand(request.UserId, request.Token), ct))
+            .Match(() => Results.Ok(new { confirmed = true }));
 
     /// <summary>Réinitialise le mot de passe à partir du jeton reçu.</summary>
     private static async Task<IResult> ResetPasswordAsync(ResetRequest request, ISender sender, CancellationToken ct)
@@ -62,6 +104,14 @@ public static class MobileAuthEndpoints
     }
 
     /// <summary>Connexion : renvoie access + refresh token.</summary>
+    /// <summary>
+    /// Connexion à l'app acheteur.
+    ///
+    /// AUCUN rôle exigé, et c'est délibéré : c'est la seule des trois surfaces qui
+    /// doit rester ouverte à tous. Un vendeur est aussi quelqu'un qui achète ; lui
+    /// imposer un second compte pour commander une paire de chaussures serait une
+    /// régression, pas une sécurité.
+    /// </summary>
     private static async Task<IResult> LoginAsync(LoginRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new LoginCommand(request.Email, request.Password, request.MfaCode), ct)).Match(r => Results.Ok(r));
 
@@ -84,6 +134,7 @@ public static class MobileAuthEndpoints
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);
+    public sealed record ConfirmEmailRequest(Guid UserId, string Token);
     public sealed record ForgotRequest(string Email);
     public sealed record ResetRequest(string Email, string Token, string NewPassword);
 }

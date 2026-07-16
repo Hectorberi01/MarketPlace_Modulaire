@@ -105,6 +105,50 @@ public sealed class SellerWallet : AggregateRoot<SellerWalletId>
         Touch();
     }
 
+    /// <summary>
+    /// Contre-passe le gain d'un vendeur après un remboursement CLIENT réellement versé.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// LA SEULE OPÉRATION QUI PEUT RENDRE UN SOLDE NÉGATIF — ET C'EST VOULU.
+    ///
+    /// Sans elle, un retour vous coûtait DEUX FOIS : vous remboursiez le client de
+    /// votre poche, et vous payiez quand même le vendeur pour l'article qui vous
+    /// était revenu. La marchandise rentre, l'argent sort deux fois.
+    ///
+    /// On prélève d'abord sur le solde à venir (le gain n'est pas encore libéré :
+    /// c'est le cas le plus fréquent, et le moins douloureux), puis sur le solde
+    /// principal. Si le vendeur a déjà tout retiré, le solde principal passe en
+    /// NÉGATIF : la dette est réelle, elle doit être visible, et elle se résorbera
+    /// sur ses ventes suivantes.
+    ///
+    /// Refuser le débit faute de fonds — le réflexe naturel — laisserait la perte à
+    /// la charge de la plateforme. Le vendeur aurait été payé pour une vente annulée,
+    /// et rien dans les comptes ne le dirait.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    /// <returns>Ce qui a été pris sur le solde à venir, et sur le solde principal.</returns>
+    public (decimal FromPending, decimal FromAvailable) DebitForRefund(decimal amount)
+    {
+        if (amount <= 0m)
+        {
+            return (0m, 0m);
+        }
+
+        // 1. Le solde à venir d'abord : ce gain n'a pas encore été libéré, le
+        //    reprendre ne retire rien au vendeur — il n'y avait pas encore droit.
+        var fromPending = Math.Min(amount, PendingBalance);
+        PendingBalance -= fromPending;
+
+        // 2. Le reste sur le solde principal — quitte à le rendre négatif. C'est
+        //    exactement le cas d'un vendeur qui a déjà été payé pour un article
+        //    qui lui revient.
+        var fromAvailable = amount - fromPending;
+        AvailableBalance -= fromAvailable;
+
+        Touch();
+        return (fromPending, fromAvailable);
+    }
+
     private void Touch() => UpdatedAtUtc = DateTime.UtcNow;
 
     private static string Normalize(string currency)

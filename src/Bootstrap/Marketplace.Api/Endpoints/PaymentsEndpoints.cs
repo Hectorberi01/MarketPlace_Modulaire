@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.RateLimiting;
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Payments.Application.Payments.Commands;
 using Marketplace.Modules.Payments.Application.Payments.Commands.InitiatePayment;
 using Marketplace.Modules.Payments.Application.Payments.Queries;
+using Marketplace.Modules.Payments.Contracts;
+using Marketplace.Modules.Settlement.Application.Wallets;
 
 namespace Marketplace.Api.Endpoints;
 
@@ -33,7 +36,27 @@ public static class PaymentsEndpoints
         payments.MapPost("/{id:guid}/refund", RefundAsync).WithName("RefundPayment").RequireAuthorization(p => p.RequireRole("Admin"));
 
         // Webhooks PSP + retour de redirection : appelés par le PSP / le navigateur, donc anonymes.
-        var gateway = app.MapGroup("/api/payments").WithTags("Payments");
+        //
+        // ═════════════════════════════════════════════════════════════════════════
+        // ⚠️ `DisableRateLimiting()` — ET C'EST INDISPENSABLE.
+        //
+        // Le limiteur global partitionne les appelants anonymes PAR ADRESSE IP. Or TOUS
+        // les webhooks d'un PSP arrivent de la MÊME poignée d'adresses : ils tomberaient
+        // donc dans une seule et unique partition.
+        //
+        // Un pic de commandes — exactement le moment où l'on a le moins envie de
+        // problèmes — dépasserait le quota, et FedaPay recevrait des 429. Résultat :
+        // des paiements ENCAISSÉS chez le PSP mais JAMAIS confirmés chez nous. Des
+        // clients débités dont la commande reste « en attente de paiement ».
+        //
+        // Ces routes ne sont pas pour autant sans défense : leur SIGNATURE est vérifiée
+        // (HMAC, comparaison en temps constant, fail-closed en production). Un appelant
+        // qui ne sait pas signer ne peut rien faire — le limiteur n'ajouterait rien
+        // contre lui, et pénaliserait le PSP légitime.
+        //
+        // Le débit brut reste borné à l'edge par Traefik.
+        // ═════════════════════════════════════════════════════════════════════════
+        var gateway = app.MapGroup("/api/payments").WithTags("Payments").DisableRateLimiting();
         gateway.MapPost("/webhooks/stripe", StripeWebhookAsync).WithName("StripeWebhook").AllowAnonymous();
         gateway.MapPost("/webhooks/paypal", PayPalWebhookAsync).WithName("PayPalWebhook").AllowAnonymous();
         gateway.MapPost("/webhooks/momo", MomoCallbackAsync).WithName("MomoCallback").AllowAnonymous();
@@ -120,9 +143,41 @@ public static class PaymentsEndpoints
     private static async Task<IResult> MoovCallbackAsync(HttpRequest httpRequest, ISender sender, CancellationToken ct)
         => await HandleWebhookAsync("Moov", "X-Callback-Signature", httpRequest, sender, ct);
 
-    /// <summary>Webhook FedaPay : vérifie la signature « x-fedapay-signature » et applique le résultat au paiement.</summary>
-    private static async Task<IResult> FedaPayWebhookAsync(HttpRequest httpRequest, ISender sender, CancellationToken ct)
-        => await HandleWebhookAsync("FedaPay", "x-fedapay-signature", httpRequest, sender, ct);
+    /// <summary>
+    /// Webhook FedaPay. FedaPay poste sur la MÊME URL les événements de transaction
+    /// (encaissement) et de payout (reversement vendeur) : on aiguille donc d'abord.
+    ///
+    /// Sans cet aiguillage, un événement de dépôt serait interprété comme un événement de
+    /// paiement, et son identifiant — un entier propre aux dépôts, mais collisionnable
+    /// avec un identifiant de transaction — irait frapper un PAIEMENT sans rapport.
+    /// </summary>
+    private static async Task<IResult> FedaPayWebhookAsync(
+        HttpRequest httpRequest, ISender sender, IPayoutModuleApi payouts, CancellationToken ct)
+    {
+        using var reader = new StreamReader(httpRequest.Body);
+        var rawBody = await reader.ReadToEndAsync(ct);
+        var signature = httpRequest.Headers["x-fedapay-signature"].ToString();
+
+        var payoutEvent = payouts.ReadPayoutWebhook(rawBody, signature);
+        if (!payoutEvent.IsPayoutEvent)
+        {
+            // Événement de transaction : flux paiement habituel (qui revérifie la signature).
+            var payment = await sender.Send(new ProcessGatewayWebhookCommand("FedaPay", rawBody, signature), ct);
+            return payment.Match(() => Results.Ok());
+        }
+
+        if (!payoutEvent.Verified)
+        {
+            // Un faux webhook « sent » clôturerait un retrait jamais versé, un faux
+            // « failed » déclencherait un remboursement : on rejette sans rien appliquer.
+            return Results.Unauthorized();
+        }
+
+        var applied = await sender.Send(
+            new ApplyPayoutWebhookCommand(payoutEvent.ProviderReference ?? string.Empty, payoutEvent.Progress), ct);
+
+        return applied.Match(() => Results.Ok());
+    }
 
     private static async Task<IResult> HandleWebhookAsync(
         string provider, string signatureHeader, HttpRequest httpRequest, ISender sender, CancellationToken ct)

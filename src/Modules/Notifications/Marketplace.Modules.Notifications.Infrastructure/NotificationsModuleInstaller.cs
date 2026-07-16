@@ -12,13 +12,17 @@ using FirebaseAdmin.Messaging;
 using Marketplace.Modules.Notifications.Application.Abstractions;
 using Marketplace.Modules.Notifications.Application.Notifications;
 using Marketplace.Modules.Notifications.Application.Notifications.EventHandlers;
+using Marketplace.Modules.Notifications.Application.Emails;
 using Marketplace.Modules.Notifications.Application.Notifications.Queries;
 using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Notifications.Domain.Notifications;
 using Marketplace.Modules.Notifications.Infrastructure.Persistence;
+using Marketplace.Modules.Notifications.Infrastructure.Email;
 using Marketplace.Modules.Notifications.Infrastructure.Push;
+using Marketplace.Modules.Identity.Contracts.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
+using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
 // Lève l'ambiguïté avec FirebaseAdmin.Messaging.FcmOptions.
 using FcmOptions = Marketplace.Modules.Notifications.Infrastructure.Push.FcmOptions;
 
@@ -71,14 +75,108 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
                 $"FichierExiste={(!string.IsNullOrWhiteSpace(fcm.ServiceAccountPath) && File.Exists(fcm.ServiceAccountPath) ? "oui" : "non")}.");
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // E-MAIL. IL N'Y EN AVAIT AUCUN — ET CE VIDE AVAIT PRODUIT UNE FAILLE CRITIQUE.
+        //
+        // Aucun IEmailSender n'existait dans le dépôt. Conséquences en chaîne :
+        //   • l'e-mail de vérification n'est jamais parti (l'événement n'avait aucun
+        //     consommateur) ;
+        //   • le jeton de réinitialisation n'avait nulle part où aller, alors il a été
+        //     renvoyé DANS LA RÉPONSE HTTP d'un endpoint anonyme. N'importe qui prenait
+        //     n'importe quel compte, administrateurs compris.
+        //
+        // Une capacité manquante finit toujours par être contournée. Le contournement est
+        // rarement sûr.
+        // ═════════════════════════════════════════════════════════════════════════
+        var email = BindEmailOptions(configuration);
+        services.AddSingleton(email);
+        services.AddSingleton<IAccountLinkBuilder, AccountLinkBuilder>();
+
+        if (email.IsConfigured)
+        {
+            services.AddHttpClient(ResendEmailSender.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+            services.AddScoped<IEmailSender, ResendEmailSender>();
+        }
+        else if (IsProduction(configuration))
+        {
+            // ⚠️ REFUS DE DÉMARRER. C'est volontairement brutal.
+            //
+            // Sans e-mail en production : aucun compte ne peut être vérifié, et surtout
+            // AUCUN mot de passe oublié ne peut être récupéré. Les utilisateurs se
+            // retrouvent enfermés dehors, définitivement, et l'exploitant ne s'en aperçoit
+            // que par les plaintes.
+            //
+            // Un adaptateur silencieux ferait « tourner » la plateforme dans cet état. Un
+            // démarrage refusé se remarque tout de suite — et se corrige en une variable.
+            throw new InvalidOperationException(
+                "Notifications:Email n'est pas configuré (ApiKey, From, AppBaseUrl) alors que "
+                + "l'environnement est Production. Sans canal e-mail, la vérification d'adresse et "
+                + "la réinitialisation de mot de passe sont IMPOSSIBLES : les utilisateurs qui "
+                + "oublient leur mot de passe seront définitivement bloqués. "
+                + "Renseigner les secrets dans le vault, puis redéployer.");
+        }
+        else
+        {
+            // Développement : l'e-mail est écrit dans la console (jeton compris), pour que
+            // le flux complet reste praticable en local. Impossible en production — la
+            // garde ci-dessus s'est déclenchée avant.
+            services.AddScoped<IEmailSender, DevelopmentEmailSender>();
+            Console.WriteLine(
+                "[E-mail] Notifications:Email NON configuré : DevelopmentEmailSender actif "
+                + "(les e-mails sont écrits dans la console, PAS envoyés).");
+        }
+
+        // Les deux consommateurs qui n'existaient pas. Sans eux, les événements étaient
+        // publiés, marqués traités, et disparaissaient — sans la moindre erreur.
+        services.AddScoped<IIntegrationEventHandler<EmailVerificationRequestedIntegrationEvent>, SendEmailVerificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<PasswordResetRequestedIntegrationEvent>, SendPasswordResetEmailHandler>();
+
         // Consumers fan-out : un fait métier d'un autre module -> une notification.
         services.AddScoped<IIntegrationEventHandler<OrderPlacedIntegrationEvent>, OrderPlacedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, OrderConfirmedNotificationHandler>();
+
+        // Le VENDEUR est prévenu de la même confirmation, par un handler distinct.
+        // Le dispatcher résout tous les handlers d'un event (GetServices) : celui de
+        // l'acheteur et celui du vendeur coexistent sans se gêner. Séparés, parce
+        // qu'ils ne disent pas la même chose à des gens qui n'attendent pas la même
+        // chose — et que l'un peut échouer sans faire tomber l'autre.
+        services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, SellerOrderConfirmedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<OrderCancelledIntegrationEvent>, OrderCancelledNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentShippedIntegrationEvent>, ShipmentShippedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, ShipmentDeliveredNotificationHandler>();
 
+        // REMBOURSEMENTS. Deux moments, deux messages :
+        //  - accepté : rassure l'acheteur pendant que l'admin exécute le versement
+        //              chez FedaPay (qui n'a pas d'API de remboursement) ;
+        //  - versé   : l'argent est parti — on prévient l'acheteur ET le vendeur,
+        //              qui vient d'être débité.
+        services.AddScoped<IIntegrationEventHandler<ReturnRefundApprovedIntegrationEvent>, ReturnRefundApprovedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, ReturnRefundedNotificationHandler>();
+
         services.AddOutboxProcessor<NotificationsDbContext>();
+    }
+
+    private static EmailOptions BindEmailOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Notifications:Email");
+        return new EmailOptions
+        {
+            ApiKey = section["ApiKey"] ?? string.Empty,
+            From = section["From"] ?? string.Empty,
+            AppBaseUrl = section["AppBaseUrl"] ?? string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Même détection que PaymentsModuleInstaller : on lit l'environnement depuis la
+    /// configuration, car un IModuleInstaller ne reçoit pas d'IWebHostEnvironment.
+    /// </summary>
+    private static bool IsProduction(IConfiguration configuration)
+    {
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"]
+            ?? configuration["DOTNET_ENVIRONMENT"];
+
+        return string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
     }
 
     private static FcmOptions BindFcmOptions(IConfiguration configuration)

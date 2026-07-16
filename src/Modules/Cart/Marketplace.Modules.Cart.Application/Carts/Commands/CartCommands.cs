@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Cart.Application.Abstractions;
 using Marketplace.Modules.Cart.Domain.Carts;
+using Marketplace.Modules.Pricing.Contracts;
 
 namespace Marketplace.Modules.Cart.Application.Carts.Commands;
 
@@ -17,6 +18,12 @@ public sealed record ClearCartCommand(Guid BuyerId) : ICommand;
 
 /// <summary>Valide le panier (checkout) — déclenche la création de commande côté Ordering.</summary>
 public sealed record CheckoutCartCommand(Guid BuyerId) : ICommand<Guid>;
+
+/// <summary>Applique un code promo au panier.</summary>
+public sealed record ApplyCouponCommand(Guid BuyerId, string Code) : ICommand;
+
+/// <summary>Retire le code promo du panier.</summary>
+public sealed record RemoveCouponCommand(Guid BuyerId) : ICommand;
 
 internal abstract class CartCommandHandlerBase
 {
@@ -131,5 +138,81 @@ internal sealed class CheckoutCartCommandHandler
 
         await SaveAndInvalidateAsync(command.BuyerId, cancellationToken);
         return cart.Id.Value;
+    }
+}
+
+/// <summary>
+/// Attache un code promo au panier — après l'avoir fait valider par Pricing.
+///
+/// La validation est INDICATIVE : elle sert à répondre tout de suite « code expiré » ou
+/// « déjà utilisé », plutôt que de laisser l'acheteur porter un code mort jusqu'au
+/// checkout et découvrir que la remise ne s'applique pas. Elle n'engage rien : le coupon
+/// n'est réellement consommé qu'à la CONFIRMATION de la commande, sous verrou
+/// (RedeemPromotionOnOrderConfirmedHandler).
+///
+/// Le panier, lui, ne sait pas ce qu'est une promotion — et ne doit pas le savoir. Il
+/// stocke une chaîne ; Pricing en fait le sens.
+/// </summary>
+internal sealed class ApplyCouponCommandHandler
+    : CartCommandHandlerBase, ICommandHandler<ApplyCouponCommand>
+{
+    private readonly IPricingModuleApi _pricing;
+
+    public ApplyCouponCommandHandler(
+        ICartRepository cartRepository, ICartUnitOfWork unitOfWork, ICacheService cache, IPricingModuleApi pricing)
+        : base(cartRepository, unitOfWork, cache) => _pricing = pricing;
+
+    public async Task<Result> Handle(ApplyCouponCommand command, CancellationToken cancellationToken)
+    {
+        var cart = await CartRepository.GetActiveByBuyerAsync(command.BuyerId, cancellationToken);
+        if (cart is null)
+        {
+            return Result.Failure(Error.NotFound("cart.not_found", "Aucun panier actif."));
+        }
+
+        var validation = await _pricing.ValidateCouponAsync(command.Code, command.BuyerId, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return Result.Failure(Error.Validation(
+                validation.ErrorCode ?? "pricing.coupon.invalid",
+                validation.ErrorMessage ?? "Ce code promo est invalide."));
+        }
+
+        var result = cart.ApplyPromotionCode(command.Code);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        // Invalide le panier valorisé en cache : sans cela, l'acheteur appliquerait son
+        // code et verrait pendant 2 minutes l'ANCIEN total, sans remise. Il croirait le
+        // code refusé et le ressaisirait — ou abandonnerait.
+        await SaveAndInvalidateAsync(command.BuyerId, cancellationToken);
+        return Result.Success();
+    }
+}
+
+internal sealed class RemoveCouponCommandHandler
+    : CartCommandHandlerBase, ICommandHandler<RemoveCouponCommand>
+{
+    public RemoveCouponCommandHandler(ICartRepository cartRepository, ICartUnitOfWork unitOfWork, ICacheService cache)
+        : base(cartRepository, unitOfWork, cache) { }
+
+    public async Task<Result> Handle(RemoveCouponCommand command, CancellationToken cancellationToken)
+    {
+        var cart = await CartRepository.GetActiveByBuyerAsync(command.BuyerId, cancellationToken);
+        if (cart is null)
+        {
+            return Result.Failure(Error.NotFound("cart.not_found", "Aucun panier actif."));
+        }
+
+        var result = cart.RemovePromotionCode();
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        await SaveAndInvalidateAsync(command.BuyerId, cancellationToken);
+        return Result.Success();
     }
 }

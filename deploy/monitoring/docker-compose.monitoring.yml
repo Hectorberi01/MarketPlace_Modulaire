@@ -1,0 +1,205 @@
+# ============================================================
+# Stack de monitoring self-hostée pour HbaExpress (backend .NET).
+# S'appuie sur l'observabilité déjà câblée dans les apps :
+#   - Traces + métriques : export OTLP vers l'OpenTelemetry Collector.
+#   - Logs : JSON sur stdout, récupérés depuis Docker par Promtail.
+#
+# Ingestion  : OpenTelemetry Collector (OTLP 4317/4318)
+# Métriques  : Prometheus        (scrape le collector)
+# Traces     : Tempo             (reçoit du collector)
+# Logs       : Loki + Promtail   (scrape les conteneurs Docker)
+# Dashboards : Grafana           (datasources pré-provisionnées)
+# Uptime     : Uptime Kuma       (ping des /health, alertes)
+#
+# ⚠️ Sécurité : n'exposez PAS ces services publiquement. Gardez-les derrière
+#    un VPN / réseau interne, ou Traefik avec authentification.
+#
+# Lancement :  docker compose -f docker-compose.monitoring.yml up -d
+# ============================================================
+
+name: marketplace-monitoring
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC — les apps exportent ici (Otel:Endpoint)
+      - "4318:4318"   # OTLP HTTP
+    networks: [monitoring]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-rules.yml:/etc/prometheus/prometheus-rules.yml:ro
+      - prometheus-data:/prometheus
+    networks: [monitoring]
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    networks: [monitoring]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.0
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    networks: [monitoring]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.2.0
+    command: ["-config.file=/etc/promtail/config.yaml"]
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Positions persistées : sans ça (positions dans /tmp), chaque redémarrage
+      # relit tous les logs depuis le début → tempête de ré-ingestion + 429.
+      - promtail-data:/var/lib/promtail
+    networks: [monitoring]
+    depends_on: [loki]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Autorise l'affichage des dashboards en iframe dans la console admin.
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      # URL publique (derrière Traefik) : liens/redirections correctes.
+      - GF_SERVER_ROOT_URL=https://${GRAFANA_HOST:-grafana.hba-marketplace.fr}
+      # Embed sans login (iframe dans la console admin) : lecture seule anonyme.
+      # ⚠️ Grafana étant sur un domaine public, restreignez l'accès au réseau
+      #    interne / VPN via Traefik (IP allowlist) — voir README.
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    networks: [monitoring]
+    depends_on: [prometheus, loki, tempo]
+    # Exposé via Traefik (TLS Let's Encrypt) — pas de port publié directement.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-grafana.hba-marketplace.fr}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana.middlewares=edge-chain-embed@file"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    restart: unless-stopped
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    volumes:
+      - uptimekuma-data:/app/data
+    ports:
+      - "3001:3001"
+    networks: [monitoring]
+    restart: unless-stopped
+
+  # Métriques par conteneur (CPU / RAM / réseau), scrapées par Prometheus.
+  # privileged + montages en lecture seule : requis pour lire les cgroups Docker.
+  #
+  # Ce serveur utilise le snapshotter containerd (driver « overlayfs ») : le handler
+  # Docker de cAdvisor ne peut pas s'initialiser (base image/overlay2/layerdb absente
+  # → « failed to identify the read-write layer ID » → création du conteneur avortée,
+  # seule la racine « / » remontait). On neutralise donc le handler Docker
+  # (--docker vers un socket inexistant) et on laisse la factory CONTAINERD prendre
+  # le relais : les conteneurs lancés par Docker vivent dans le namespace containerd
+  # « moby ». cAdvisor lit alors les stats cgroup avec le label « name ».
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command:
+      - "--housekeeping_interval=15s"
+      - "--docker=unix:///dev/null"        # désactive le handler Docker (cassé ici)
+      - "--containerd=/run/containerd/containerd.sock"
+      - "--containerd-namespace=moby"      # namespace des conteneurs Docker
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [monitoring]
+    restart: unless-stopped
+
+  # Métriques de l'hôte VPS (CPU, RAM, disque, réseau, charge, fichiers ouverts).
+  # Lit /proc et /sys de l'hôte ; pid: host pour la visibilité des process.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      # Exclut les FS virtuels/overlay du collecteur filesystem (bruit + cardinalité).
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker)($$|/)"
+      - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|tmpfs)$$"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    pid: host
+    networks: [monitoring]
+    restart: unless-stopped
+
+  # Métriques Redis (mémoire, clients, hits/misses, évictions, latence…).
+  # Rejoint « redis » sur le réseau partagé ; mot de passe via REDIS_PASSWORD (.env).
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+    networks: [monitoring]
+    restart: unless-stopped
+
+  # Routage + notifications des alertes Prometheus (Slack + e-mail).
+  # Le fichier alertmanager.yml est GÉNÉRÉ par Ansible depuis le vault (secrets) :
+  # ne pas committer de secrets. Voir alertmanager.yml.example pour le format.
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [monitoring]
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  tempo-data:
+  loki-data:
+  grafana-data:
+  uptimekuma-data:
+  promtail-data:
+
+# Réseau EXTERNE partagé avec la stack applicative (et Traefik) : les apps
+# joignent « otel-collector », le bff-admin joint « prometheus », et Traefik
+# route vers « grafana ». Le réseau est créé par la stack app (docker-compose.
+# staging.yml → marketplace-staging-net). Surcharger via APP_NETWORK pour la prod.
+networks:
+  monitoring:
+    external: true
+    name: ${APP_NETWORK:-marketplace-staging-net}

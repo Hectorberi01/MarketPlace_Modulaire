@@ -18,6 +18,13 @@ public sealed record ListWithdrawalsQuery(Guid SellerId) : IQuery<IReadOnlyList<
 /// <summary>File des demandes de retrait en attente de validation admin (tous vendeurs).</summary>
 public sealed record ListPendingWithdrawalsQuery : IQuery<IReadOnlyList<PendingWithdrawalView>>;
 
+/// <summary>
+/// Versements demandés au PSP et NON confirmés (tous vendeurs). Sans cette vue, cet
+/// état — le seul où le vendeur est débité sans avoir été payé — serait invisible pour
+/// l'admin : il ne figure ni dans la file d'attente, ni dans l'historique des payés.
+/// </summary>
+public sealed record ListProcessingWithdrawalsQuery : IQuery<IReadOnlyList<ProcessingWithdrawalView>>;
+
 /// <summary>Soldes du portefeuille de la plateforme (commission + livraison).</summary>
 public sealed record GetPlatformWalletQuery : IQuery<PlatformWalletView>;
 
@@ -36,7 +43,34 @@ internal static class WalletMapper
         => new(t.Id, t.Account.ToString(), t.Direction.ToString(), t.Amount, t.Currency, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAtUtc);
 
     public static WithdrawalView ToView(Withdrawal w)
-        => new(w.Id.Value, w.SellerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef, w.FailureReason, w.CreatedAtUtc, w.CompletedAtUtc);
+        => new(w.Id.Value, w.SellerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef,
+               PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);
+
+    /// <summary>
+    /// Filet de sécurité à la LECTURE : un motif d'échec technique ne sort jamais.
+    ///
+    /// La passerelle FedaPay a longtemps recopié la réponse HTTP brute du PSP dans
+    /// <c>FailureReason</c> ; elle ne le fait plus, mais les retraits déjà en base
+    /// gardent ce texte, et le vendeur lit encore aujourd'hui
+    /// « FedaPay — création refusée (403) : {"message":"Opération non autorisée"…} ».
+    /// Réécrire l'historique serait une migration destructive pour un bénéfice nul :
+    /// on neutralise donc à l'affichage. Et si une future passerelle refaisait la
+    /// même erreur, le vendeur en serait protégé d'office.
+    /// </summary>
+    private static string? PresentableFailure(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return reason;
+
+        var looksTechnical =
+            reason.Contains('{') ||                                   // corps JSON
+            reason.Contains("http", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("FedaPay", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("Exception", StringComparison.OrdinalIgnoreCase);
+
+        return looksTechnical
+            ? "Versement refusé par l'opérateur. Vos fonds ont été recrédités sur votre solde."
+            : reason;
+    }
 }
 
 internal sealed class GetSellerWalletQueryHandler : IQueryHandler<GetSellerWalletQuery, SellerWalletView>
@@ -54,9 +88,11 @@ internal sealed class GetSellerWalletQueryHandler : IQueryHandler<GetSellerWalle
     {
         var wallet = await _wallets.GetBySellerAsync(query.SellerId, cancellationToken);
 
-        // Somme retenue : retraits demandés encore en attente de validation admin.
+        // Somme retenue : retraits demandés (attente admin) ET versements en cours chez le
+        // PSP. Les deux ont déjà quitté le solde principal. Omettre les seconds ferait
+        // disparaître l'argent de l'écran du vendeur pendant tout le versement.
         var pendingWithdrawal = (await _withdrawals.ListBySellerAsync(query.SellerId, cancellationToken))
-            .Where(w => w.Status == WithdrawalStatus.Requested)
+            .Where(w => w.Status is WithdrawalStatus.Requested or WithdrawalStatus.Processing)
             .Sum(w => w.Amount);
 
         // Portefeuille pas encore créé (aucune vente confirmée) : soldes à zéro.
@@ -125,6 +161,43 @@ internal sealed class ListPendingWithdrawalsQueryHandler : IQueryHandler<ListPen
         }
 
         return Result.Success<IReadOnlyList<PendingWithdrawalView>>(views);
+    }
+}
+
+internal sealed class ListProcessingWithdrawalsQueryHandler : IQueryHandler<ListProcessingWithdrawalsQuery, IReadOnlyList<ProcessingWithdrawalView>>
+{
+    private readonly IWithdrawalRepository _withdrawals;
+    private readonly ISellerModuleApi _sellers;
+
+    public ListProcessingWithdrawalsQueryHandler(IWithdrawalRepository withdrawals, ISellerModuleApi sellers)
+    {
+        _withdrawals = withdrawals;
+        _sellers = sellers;
+    }
+
+    public async Task<Result<IReadOnlyList<ProcessingWithdrawalView>>> Handle(ListProcessingWithdrawalsQuery query, CancellationToken cancellationToken)
+    {
+        var items = await _withdrawals.ListByStatusAsync(WithdrawalStatus.Processing, cancellationToken);
+
+        var views = new List<ProcessingWithdrawalView>();
+        foreach (var w in items)
+        {
+            var seller = await _sellers.GetSellerAsync(w.SellerId, cancellationToken);
+            views.Add(new ProcessingWithdrawalView(
+                w.Id.Value,
+                w.SellerId,
+                string.IsNullOrWhiteSpace(seller?.ShopName) ? "Vendeur" : seller!.ShopName,
+                w.Amount,
+                w.Currency,
+                w.ProviderRef,
+                w.FailureReason, // trace de l'incident éventuel (timeout, démarrage indéterminé…)
+                w.CreatedAtUtc,
+                w.SentToPspAtUtc));
+        }
+
+        // Les plus anciens d'abord : ce sont eux qui traînent, donc ceux à traiter.
+        return Result.Success<IReadOnlyList<ProcessingWithdrawalView>>(
+            views.OrderBy(v => v.SentToPspAtUtc ?? v.CreatedAtUtc).ToList());
     }
 }
 

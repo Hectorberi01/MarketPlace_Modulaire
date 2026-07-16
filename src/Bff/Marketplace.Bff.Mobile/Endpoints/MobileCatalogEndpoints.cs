@@ -123,6 +123,12 @@ public static class MobileCatalogEndpoints
             products = enriched.Items;
         }
 
-        return Results.Ok(new { seller, products });
+        // ⚠️ `.ToPublic()` — SANS LUI, CET ENDPOINT ANONYME FUIT LE RIB ET LES PIÈCES KYB.
+        //
+        // `seller` est un SellerSummary COMPLET : numéro Mobile Money, taux de commission,
+        // URLs des documents d'identité. Le sérialiser tel quel sur une route anonyme
+        // permettait de moissonner ces données pour tous les vendeurs. On projette la
+        // vitrine publique, qui ne contient que ce qu'un visiteur a le droit de voir.
+        return Results.Ok(new { seller = seller.ToPublic(), products });
     }
 }

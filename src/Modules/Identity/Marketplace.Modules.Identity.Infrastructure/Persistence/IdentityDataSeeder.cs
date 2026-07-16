@@ -88,7 +88,14 @@ public static class IdentityDataSeeder
         }
 
         var user = userResult.Value;
-        user.ConfirmEmail(verificationTokenHash, DateTime.UtcNow); // e-mail vérifié + compte actif
+        // `Approve()`, et non `ConfirmEmail()`.
+        //
+        // Le compte d'amorçage doit être ACTIF — sans lui, personne ne peut se
+        // connecter pour valider les autres, et la plateforme démarre verrouillée.
+        // Mais il ne doit pas prétendre que son e-mail a été vérifié : aucun message
+        // n'a été envoyé, personne n'a cliqué sur rien. `Approve()` active le compte
+        // sans inventer ce fait.
+        user.Approve();
         user.AssignRole(adminRole.Id.Value);
 
         await dbContext.Users.AddAsync(user, cancellationToken);
@@ -141,7 +148,14 @@ public static class IdentityDataSeeder
         }
 
         var user = userResult.Value;
-        user.ConfirmEmail(verificationTokenHash, DateTime.UtcNow); // e-mail vérifié + compte actif
+        // `Approve()`, et non `ConfirmEmail()`.
+        //
+        // Le compte d'amorçage doit être ACTIF — sans lui, personne ne peut se
+        // connecter pour valider les autres, et la plateforme démarre verrouillée.
+        // Mais il ne doit pas prétendre que son e-mail a été vérifié : aucun message
+        // n'a été envoyé, personne n'a cliqué sur rien. `Approve()` active le compte
+        // sans inventer ce fait.
+        user.Approve();
         user.AssignRole(sellerRole.Id.Value);
 
         await dbContext.Users.AddAsync(user, cancellationToken);

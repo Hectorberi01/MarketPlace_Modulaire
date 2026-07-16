@@ -1,0 +1,50 @@
+---
+# Stack d'observabilité (deploy/monitoring/) : OpenTelemetry Collector, Prometheus,
+# Tempo, Loki + Promtail, Grafana (exposé via Traefik/TLS), Uptime Kuma.
+#
+# Pré-requis : la stack applicative doit être UP (le réseau externe partagé
+# « {{ app_network }} » est créé par elle). Le rôle « marketplace » synchronise
+# déjà deploy/monitoring/ sur l'hôte et démarre l'app AVANT ce rôle.
+#
+# Idempotent (docker compose up -d). Gated par enable_monitoring.
+
+- name: Générer le .env de la stack monitoring
+  ansible.builtin.template:
+    src: monitoring.env.j2
+    dest: "{{ app_dir }}/deploy/monitoring/.env"
+    mode: "0600"
+
+# Config Alertmanager rendue depuis le vault (webhook Slack + SMTP). Contient des
+# secrets → jamais committée (exclue de la synchro Git), régénérée à chaque run.
+- name: Générer la config Alertmanager (secrets vault)
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ app_dir }}/deploy/monitoring/alertmanager.yml"
+    mode: "0600"
+
+- name: Démarrer la stack de monitoring (docker compose up -d)
+  ansible.builtin.command:
+    cmd: "docker compose -f docker-compose.monitoring.yml --env-file .env up -d --remove-orphans"
+    chdir: "{{ app_dir }}/deploy/monitoring"
+  register: monitoring_up
+  changed_when: true
+
+# Les fichiers de config montés (prometheus.yml, promtail-config.yaml, provisioning
+# Grafana) ne sont relus qu'au démarrage : un « up -d » ne les recharge pas si la
+# définition du service est inchangée. On redémarre les services concernés.
+- name: Recharger la config (Prometheus + Collector + Promtail + Alertmanager + Grafana)
+  ansible.builtin.command:
+    cmd: "docker compose -f docker-compose.monitoring.yml restart otel-collector prometheus promtail alertmanager grafana"
+    chdir: "{{ app_dir }}/deploy/monitoring"
+  changed_when: true
+
+- name: Statut des conteneurs de monitoring
+  ansible.builtin.command:
+    cmd: "docker compose -f docker-compose.monitoring.yml ps"
+    chdir: "{{ app_dir }}/deploy/monitoring"
+  register: monitoring_ps
+  changed_when: false
+
+- name: Afficher le statut du monitoring
+  ansible.builtin.debug:
+    var: monitoring_ps.stdout_lines

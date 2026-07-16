@@ -29,12 +29,23 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("DeadLetteredOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Error")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("OccurredOnUtc")
                         .HasColumnType("timestamp with time zone");
@@ -49,7 +60,13 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProcessedOnUtc");
+                    b.HasIndex("DeadLetteredOnUtc")
+                        .HasDatabaseName("ix_outbox_messages_dead_letters")
+                        .HasFilter("\"DeadLetteredOnUtc\" IS NOT NULL");
+
+                    b.HasIndex("NextAttemptAtUtc", "OccurredOnUtc")
+                        .HasDatabaseName("ix_outbox_messages_pending")
+                        .HasFilter("\"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL");
 
                     b.ToTable("outbox_messages", "offers");
                 });

@@ -1,7 +1,13 @@
 using MediatR;
+using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Identity.Application.PaymentMethods;
+using Marketplace.Modules.Identity.Application.Users.Commands.AcceptTerms;
+using Marketplace.Modules.Sellers.Contracts;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
+using Marketplace.Modules.Identity.Application.Users.Commands.DeleteAccount;
+using Marketplace.Modules.Disputes.Application.Disputes;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Notifications.Application.Devices;
@@ -17,6 +23,12 @@ public sealed record MobileDeviceRegisterRequest(string Token, string? Platform)
 /// <summary>Corps de désenregistrement d'un appareil push — app cliente.</summary>
 public sealed record MobileDeviceUnregisterRequest(string Token);
 
+/// <summary>
+/// Suppression du compte. Le mot de passe est EXIGÉ : l'action est irréversible, et un
+/// téléphone déverrouillé laissé sans surveillance ne doit pas suffire à l'exécuter.
+/// </summary>
+public sealed record DeleteAccountRequest(string Password);
+
 /// <summary>BFF Mobile — compte, favoris et notifications (scopés au jeton).</summary>
 public static class MobileAccountEndpoints
 {
@@ -26,6 +38,16 @@ public static class MobileAccountEndpoints
 
         mobile.MapGet("/account/profile", ProfileAsync);
         mobile.MapPut("/account/profile", UpdateProfileAsync);
+
+        // Consentement aux conditions générales. La version acceptée remonte déjà
+        // dans le profil (UserSummary) : l'app compare, et n'affiche l'écran que
+        // si le texte a changé.
+        mobile.MapPost("/account/accept-terms", AcceptTermsAsync);
+
+        // SUPPRESSION DU COMPTE — exigée par Apple (Guideline 5.1.1(v)) dès lors que
+        // l'application permet de créer un compte. Sans ce parcours, l'app cliente est
+        // REJETÉE à la soumission.
+        mobile.MapDelete("/account", DeleteAccountAsync);
 
         mobile.MapGet("/wishlist", WishlistAsync);
         mobile.MapPost("/wishlist/items", AddWishlistAsync);
@@ -50,6 +72,101 @@ public static class MobileAccountEndpoints
         return app;
     }
 
+    /// <summary>
+    /// SUPPRESSION DU COMPTE (Apple Guideline 5.1.1(v)).
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA SUPPRESSION EST REFUSÉE SI DES AFFAIRES SONT EN COURS — ET C'EST UN SERVICE.
+    ///
+    /// Le réflexe serait d'obéir sans discuter. Ce serait une faute :
+    ///
+    ///  • une COMMANDE EN COURS rattachée à un compte anonymisé devient impossible à
+    ///    livrer et impossible à rembourser. On aurait exaucé le vœu de l'acheteur en
+    ///    lui faisant perdre son argent ;
+    ///  • un LITIGE OUVERT sans plaignant ne peut plus être tranché — au bénéfice de
+    ///    personne ;
+    ///  • une BOUTIQUE VENDEUR implique un solde, des versements, des obligations
+    ///    fiscales. Cela ne se supprime pas depuis un écran de téléphone.
+    ///
+    /// On refuse donc, EN DISANT PRÉCISÉMENT CE QUI BLOQUE. Un refus sans explication
+    /// pousse l'utilisateur à croire au bug — et à écrire au support, ce qui vous coûte
+    /// plus cher que le refus lui-même.
+    ///
+    /// Apple accepte parfaitement ce garde-fou : l'exigence est qu'un chemin de
+    /// suppression EXISTE, pas qu'il ignore les obligations légales et commerciales.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> DeleteAccountAsync(
+        ClaimsPrincipal user,
+        // DELETE n'infère PAS de corps en minimal-API : sans [FromBody] explicite,
+        // le démarrage échoue (« method does not allow inferred body parameters »).
+        [FromBody] DeleteAccountRequest request,
+        ISender sender,
+        ISellerModuleApi sellers,
+        CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 1. VENDEUR ? Un compte marchand porte un solde et des obligations : il ne se
+        //    supprime pas depuis l'app cliente.
+        var seller = await sellers.GetSellerByUserIdAsync(userId, ct);
+        if (seller is not null)
+        {
+            return Results.Problem(
+                title: "identity.account.seller_must_contact_support",
+                detail: "Votre compte est rattaché à une boutique. Pour des raisons comptables et fiscales, "
+                      + "la suppression d'un compte vendeur passe par notre support : support@hba-express.com.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        // 2. COMMANDE EN COURS ? Tout ce qui n'est ni livré, ni annulé, ni échoué.
+        var orders = await sender.Send(new ListMyOrdersQuery(userId), ct);
+        if (orders.IsSuccess)
+        {
+            var ongoing = orders.Value
+                .Count(o => !string.Equals(o.Status, "Delivered", StringComparison.OrdinalIgnoreCase)
+                         && !string.Equals(o.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
+                         && !string.Equals(o.Status, "Failed", StringComparison.OrdinalIgnoreCase));
+
+            if (ongoing > 0)
+            {
+                return Results.Problem(
+                    title: "identity.account.orders_in_progress",
+                    detail: ongoing == 1
+                        ? "Vous avez une commande en cours. Attendez sa livraison (ou son annulation) avant de supprimer votre compte : "
+                          + "sans compte, nous ne pourrions plus vous livrer ni vous rembourser."
+                        : $"Vous avez {ongoing} commandes en cours. Attendez leur livraison (ou leur annulation) avant de supprimer votre compte : "
+                          + "sans compte, nous ne pourrions plus vous livrer ni vous rembourser.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        }
+
+        // 3. LITIGE OUVERT ? Un litige sans plaignant ne se tranche pas.
+        var disputes = await sender.Send(new ListMyDisputesQuery(userId), ct);
+        if (disputes.IsSuccess)
+        {
+            var open = disputes.Value.Count(d =>
+                string.Equals(d.Status, "Open", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(d.Status, "UnderReview", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(d.Status, "Escalated", StringComparison.OrdinalIgnoreCase));
+
+            if (open > 0)
+            {
+                return Results.Problem(
+                    title: "identity.account.disputes_open",
+                    detail: "Un litige vous concernant est encore ouvert. Il doit être résolu avant la suppression de votre compte — "
+                          + "sans quoi nous ne pourrions plus vous verser un éventuel remboursement.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        }
+
+        return (await sender.Send(new DeleteAccountCommand(userId, request.Password), ct))
+            .Match(() => Results.NoContent());
+    }
+
     /// <summary>Enregistre le jeton d'appareil (FCM) de l'acheteur pour les push.</summary>
     private static async Task<IResult> RegisterDeviceAsync(ClaimsPrincipal user, MobileDeviceRegisterRequest request, ISender sender, CancellationToken ct)
         => MobileBff.CurrentUserId(user) is not { } userId
@@ -67,6 +184,18 @@ public static class MobileAccountEndpoints
         => MobileBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new GetUserQuery(userId), ct)).Match(u => Results.Ok(u));
+
+    /// <summary>
+    /// Enregistre l'acceptation d'une version des conditions générales.
+    ///
+    /// La version vient du CLIENT : c'est le texte qu'il avait sous les yeux. Faire
+    /// consigner par le serveur « la version courante » sans savoir laquelle a été
+    /// affichée reviendrait à faire signer un document qu'on n'a pas montré.
+    /// </summary>
+    private static async Task<IResult> AcceptTermsAsync(ClaimsPrincipal user, AcceptTermsRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new AcceptTermsCommand(userId, request.Version), ct)).Match(() => Results.NoContent());
 
     /// <summary>Met à jour le profil.</summary>
     private static async Task<IResult> UpdateProfileAsync(ClaimsPrincipal user, ProfileRequest request, ISender sender, CancellationToken ct)
@@ -152,6 +281,7 @@ public static class MobileAccountEndpoints
             : (await sender.Send(new SetDefaultPaymentMethodCommand(userId, id), ct)).Match(() => Results.NoContent());
 
     public sealed record ProfileRequest(string FirstName, string LastName, string PhoneNumber);
+    public sealed record AcceptTermsRequest(string Version);
     public sealed record WishlistRequest(Guid ProductId, Guid? OfferId, bool PriceAlert, bool StockAlert);
 
     public sealed record PaymentMethodRequest(

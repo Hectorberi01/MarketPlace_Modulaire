@@ -23,9 +23,7 @@ public static class SellerNotificationEndpoints
 {
     public static IEndpointRouteBuilder MapSellerNotificationEndpoints(this IEndpointRouteBuilder app)
     {
-        var notifications = app.MapGroup("/seller/notifications")
-            .WithTags("Vendeur · Notifications")
-            .RequireAuthorization();
+        var notifications = app.MapSellerGroup("/seller/notifications", "Vendeur · Notifications");
 
         notifications.MapGet("/", ListAsync);
         notifications.MapGet("/unread-count", UnreadCountAsync);

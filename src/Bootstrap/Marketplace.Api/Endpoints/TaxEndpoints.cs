@@ -13,7 +13,7 @@ public static class TaxEndpoints
     /// <summary>Enregistre les routes fiscales.</summary>
     public static IEndpointRouteBuilder MapTaxEndpoints(this IEndpointRouteBuilder app)
     {
-        var tax = app.MapGroup("/api/tax").WithTags("Tax");
+        var tax = app.MapAuthenticatedGroup("/api/tax").WithTags("Tax");
 
         tax.MapPost("/rules", CreateAsync).WithName("CreateTaxRule").RequireAuthorization(p => p.RequireRole("Admin"));
         tax.MapGet("/rules", ListAsync).WithName("ListTaxRules").RequireAuthorization(p => p.RequireRole("Admin"));

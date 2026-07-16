@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Infrastructure.Caching;
 using Marketplace.BuildingBlocks.Infrastructure.Events;
@@ -29,7 +32,20 @@ public static class DependencyInjection
         // remplace l'IDistributedCache par Redis quand « Redis:ConnectionString »
         // est renseigné.
         services.AddDistributedMemoryCache();
-        services.AddSingleton<ICacheService, DistributedCacheService>();
+
+        // Le logger est résolu en OPTIONNEL, et c'est délibéré.
+        //
+        // DistributedCacheService journalise les pannes de cache (Redis injoignable,
+        // invalidation ratée). Mais exiger un ILogger ferait échouer tout conteneur
+        // monté sans AddLogging() — c'est le cas de plusieurs harnais de tests, qui
+        // n'installent qu'un module. Le cache aurait alors cassé des tests qui
+        // n'ont rien à voir avec lui.
+        //
+        // Un service transverse ne doit pas imposer ses dépendances de confort à
+        // ceux qui l'utilisent. Sans logger : NullLogger, et tout fonctionne.
+        services.AddSingleton<ICacheService>(sp => new DistributedCacheService(
+            sp.GetRequiredService<IDistributedCache>(),
+            sp.GetService<ILogger<DistributedCacheService>>() ?? NullLogger<DistributedCacheService>.Instance));
 
         return services;
     }

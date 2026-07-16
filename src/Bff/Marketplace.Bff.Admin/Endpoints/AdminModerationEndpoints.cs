@@ -96,13 +96,20 @@ public static class AdminModerationEndpoints
         string? photoUrl = null;
         if (file is { Length: > 0 })
         {
-            if (UploadValidation.ValidateImage(file) is { } invalid)
+            var check = await UploadValidation.CheckImageAsync(file, ct);
+            if (check.Error is { } invalid)
             {
                 return invalid;
             }
+
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
-            var upload = await mediaStorage.UploadAsync(new MediaUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+
+            // Le type RÉEL, déduit des octets — jamais `file.ContentType`, qui n'est que
+            // la déclaration non vérifiée du client. C'est ce type qui sera stocké sur R2,
+            // renvoyé aux navigateurs, et remis aux processeurs d'image.
+            var upload = await mediaStorage.UploadAsync(
+                new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
             if (upload.IsFailure)
             {
                 return Results.BadRequest(new { error = upload.Error.Message });

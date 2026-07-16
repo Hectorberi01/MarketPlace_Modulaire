@@ -12,6 +12,8 @@ using Marketplace.Modules.Messaging.Application.Conversations;
 using Marketplace.Modules.Messaging.Application.Conversations.EventHandlers;
 using Marketplace.Modules.Messaging.Domain.Conversations;
 using Marketplace.Modules.Messaging.Domain.Conversations.Events;
+using Marketplace.Modules.Messaging.Contracts;
+using Marketplace.Modules.Messaging.Infrastructure.Public;
 using Marketplace.Modules.Messaging.Infrastructure.Persistence;
 
 namespace Marketplace.Modules.Messaging.Infrastructure;
@@ -35,6 +37,7 @@ public sealed class MessagingModuleInstaller : IModuleInstaller
         services.AddScoped<IMessagingUnitOfWork>(sp => sp.GetRequiredService<MessagingDbContext>());
 
         services.AddScoped<IConversationRepository, ConversationRepository>();
+        services.AddScoped<IMessagingModuleApi, MessagingModuleApi>();
 
         services.AddScoped<IDomainEventHandler<MessageSentDomainEvent>, MessageSentDomainEventHandler>();
 

@@ -56,5 +56,15 @@ public enum WithdrawalStatus
     Completed = 1,
     Failed = 2,
     Requested = 3,
-    Rejected = 4
+    Rejected = 4,
+
+    /// <summary>
+    /// Versement DEMANDÉ au PSP mais pas encore confirmé. État essentiel : un « start »
+    /// FedaPay accepté ne veut dire que « started », pas « reçu ». Les fonds restent
+    /// débités du vendeur ; la réconciliation clôturera en Completed (statut « sent »)
+    /// ou en Failed avec remboursement (statut « failed »).
+    /// Couvre aussi les issues INDÉTERMINÉES (timeout) : on ne rembourse pas, car
+    /// l'argent est peut-être parti — rembourser autoriserait un double versement.
+    /// </summary>
+    Processing = 5
 }

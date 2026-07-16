@@ -8,6 +8,8 @@ using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SuspendSeller;
 using Marketplace.Modules.Sellers.Application.Abstractions;
+using Marketplace.Modules.Identity.Application.Roles.Queries.ListRoles;
+using Marketplace.Modules.Identity.Application.Users.Commands.AssignRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.ListSellers;
@@ -71,22 +73,89 @@ public static class AdminSellerEndpoints
         => (await sender.Send(new ListSellersQuery(), ct)).Match(s => Results.Ok(s));
 
     /// <summary>
-    /// Crée un compte vendeur (par l'admin) : d'abord le compte utilisateur (Identity),
-    /// puis la boutique (Sellers). Non transactionnel : si la 2ᵉ étape échoue, le compte
-    /// utilisateur reste créé (à durcir en saga si nécessaire).
+    /// Ouvre une boutique. DEUX cas, et il fallait les distinguer :
+    ///
+    ///  • <c>UserId</c> fourni → le compte existe déjà (un acheteur qui se lance dans
+    ///    la vente, un compte créé plus tôt depuis la page Utilisateurs). On ne
+    ///    recrée rien : on lui attache une boutique. Redemander son prénom, son e-mail
+    ///    et un mot de passe n'aurait aucun sens — et provoquait un 409 « e-mail déjà
+    ///    pris », puisque le formulaire tentait de recréer le compte.
+    ///
+    ///  • <c>UserId</c> absent → on crée le compte, puis la boutique.
+    ///
+    /// `RegisterSellerCommand` disait pourtant, en toutes lettres : « Onboarde un
+    /// vendeur rattaché à un compte Identity EXISTANT ». La capacité était là depuis
+    /// le début ; seul l'endpoint refusait de l'exposer.
+    ///
+    /// Non transactionnel : si l'ouverture de boutique échoue, le compte utilisateur
+    /// reste créé (à durcir en saga si nécessaire).
     /// </summary>
     private static async Task<IResult> RegisterSellerAccountAsync(RegisterSellerRequest request, ISender sender, CancellationToken ct)
     {
-        var userResult = await sender.Send(new RegisterUserCommand(
-            request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty, request.Password), ct);
-        if (userResult.IsFailure)
+        Guid userId;
+
+        if (request.UserId is { } existingUserId)
         {
-            return userResult.Match(_ => Results.Ok()); // mappe l'échec (400/409) proprement
+            userId = existingUserId;
+        }
+        else
+        {
+            // `CreatedByAdmin: true` — le vendeur a déjà été examiné (candidature, RCCM,
+            // pièce d'identité) AVANT d'arriver dans ce formulaire. Le faire ensuite
+            // patienter dans une file d'approbation qu'on remplirait soi-même serait
+            // absurde : il doit pouvoir se connecter dès que vous lui transmettez son
+            // mot de passe provisoire.
+            var userResult = await sender.Send(new RegisterUserCommand(
+                request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty,
+                request.Password, CreatedByAdmin: true), ct);
+            if (userResult.IsFailure)
+            {
+                return userResult.Match(_ => Results.Ok()); // mappe l'échec (400/409) proprement
+            }
+
+            userId = userResult.Value;
+        }
+
+        // ── LE RÔLE SELLER. Il n'était attribué NULLE PART. ───────────────────────
+        //
+        // `RegisterUserCommand` pose « Buyer » par défaut, et ce formulaire n'ajoutait
+        // rien. Un vendeur créé ici n'avait donc que le rôle Buyer.
+        //
+        // C'était déjà faux ; c'est devenu bloquant depuis que la surface /seller/*
+        // exige `RequireRole("Seller")` : sans ce rôle, le vendeur ne peut pas se
+        // connecter à l'application vendeur. Du tout.
+        //
+        // On le pose ici, avant d'ouvrir la boutique — un vendeur sans son rôle est un
+        // vendeur qui ne peut pas vendre.
+        var rolesResult = await sender.Send(new ListRolesQuery(), ct);
+        if (rolesResult.IsFailure)
+        {
+            return rolesResult.Match(_ => Results.Ok());
+        }
+
+        var sellerRole = rolesResult.Value.FirstOrDefault(
+            r => r.Name.Equals("Seller", StringComparison.OrdinalIgnoreCase));
+        if (sellerRole is null)
+        {
+            // Le rôle est semé au démarrage (IdentityDataSeeder). S'il manque, la base
+            // n'est pas dans un état exploitable : mieux vaut le dire que d'ouvrir une
+            // boutique dont le gérant ne pourra jamais se connecter.
+            return Results.Problem(
+                title: "identity.role.seller_missing",
+                detail: "Le rôle « Seller » est introuvable. La base n'a pas été correctement initialisée.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        // Idempotent côté domaine : User.AssignRole ignore un rôle déjà présent.
+        var roleResult = await sender.Send(new AssignRoleCommand(userId, sellerRole.Id), ct);
+        if (roleResult.IsFailure)
+        {
+            return roleResult.Match(() => Results.Ok());
         }
 
         var commission = request.CommissionRate is { } c ? c : 0.10m;
-        return (await sender.Send(new RegisterSellerCommand(userResult.Value, request.ShopName, commission), ct))
-            .Match(sellerId => Results.Ok(new { sellerId, userId = userResult.Value }));
+        return (await sender.Send(new RegisterSellerCommand(userId, request.ShopName, commission), ct))
+            .Match(sellerId => Results.Ok(new { sellerId, userId }));
     }
 
     /// <summary>Détail d'un vendeur.</summary>
@@ -117,14 +186,20 @@ public static class AdminSellerEndpoints
         Guid id, [FromForm] string type, IFormFile file,
         ISender sender, IKybDocumentStorage kybStorage, CancellationToken ct)
     {
-        if (UploadValidation.ValidateDocument(file) is { } invalid)
+        var check = await UploadValidation.CheckDocumentAsync(file, ct);
+        if (check.Error is { } invalid)
         {
             return invalid;
         }
 
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
-        var upload = await kybStorage.UploadAsync(new KybFileUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+
+        // Pièce KYB : le cas qui fait le plus mal. Un « PDF » qui n'en est pas un serait
+        // stocké tel quel, puis TÉLÉCHARGÉ ET OUVERT par un agent de conformité. C'est le
+        // type réel qui est enregistré, pas celui que le vendeur a déclaré.
+        var upload = await kybStorage.UploadAsync(
+            new KybFileUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
         if (upload.IsFailure)
         {
             return Results.BadRequest(new { error = upload.Error.Message });
@@ -143,7 +218,12 @@ public static class AdminSellerEndpoints
         => (await sender.Send(new SuspendSellerCommand(id), ct)).Match(() => Results.NoContent());
 
     /// <summary>Corps de création d'un compte vendeur par l'admin.</summary>
+    /// <param name="UserId">
+    /// Compte EXISTANT à qui rattacher la boutique. Renseigné, les champs d'identité
+    /// (prénom, nom, e-mail, téléphone, mot de passe) sont ignorés — il n'y a rien à
+    /// créer. Nul, on crée le compte puis la boutique.
+    /// </param>
     public sealed record RegisterSellerRequest(
         string FirstName, string LastName, string Email, string? PhoneNumber, string Password,
-        string ShopName, decimal? CommissionRate = null);
+        string ShopName, decimal? CommissionRate = null, Guid? UserId = null);
 }

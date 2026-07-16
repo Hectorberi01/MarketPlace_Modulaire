@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
+using Marketplace.BuildingBlocks.Infrastructure.Caching;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 
 namespace Marketplace.Modules.Offers.Infrastructure.Persistence;
@@ -19,7 +20,11 @@ public sealed class OffersDbContextFactory : IDesignTimeDbContextFactory<OffersD
                 npgsql.MigrationsHistoryTable("__ef_migrations_history", OffersDbContext.SchemaName))
             .Options;
 
-        return new OffersDbContext(options, NoOpDomainEventDispatcher.Instance, new IntegrationEventQueue());
+        return new OffersDbContext(
+            options,
+            NoOpDomainEventDispatcher.Instance,
+            new IntegrationEventQueue(),
+            NoOpCacheService.Instance);
     }
 
     private sealed class NoOpDomainEventDispatcher : IDomainEventDispatcher

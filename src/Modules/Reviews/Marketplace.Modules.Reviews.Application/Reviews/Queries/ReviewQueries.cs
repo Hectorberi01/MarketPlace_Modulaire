@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Reviews.Contracts;
@@ -49,26 +50,61 @@ internal sealed class GetReviewQueryHandler : IQueryHandler<GetReviewQuery, Revi
 internal sealed class ListReviewsByProductQueryHandler : IQueryHandler<ListReviewsByProductQuery, IReadOnlyList<ReviewSummary>>
 {
     private readonly IReviewRepository _repository;
+    private readonly ICacheService _cache;
 
-    public ListReviewsByProductQueryHandler(IReviewRepository repository) => _repository = repository;
+    public ListReviewsByProductQueryHandler(IReviewRepository repository, ICacheService cache)
+    {
+        _repository = repository;
+        _cache = cache;
+    }
 
     public async Task<Result<IReadOnlyList<ReviewSummary>>> Handle(ListReviewsByProductQuery query, CancellationToken cancellationToken)
     {
-        var reviews = await _repository.ListByProductAsync(query.ProductId, cancellationToken);
-        IReadOnlyList<ReviewSummary> summaries = reviews.Select(ReviewMapper.ToSummary).ToList();
-        return Result.Success(summaries);
+        // Onglet « Avis » de la fiche produit : anonyme, et consulté autant que la
+        // fiche elle-même.
+        var summaries = await _cache.GetOrCreateAsync(
+            ReviewsCacheKeys.ByProduct(query.ProductId),
+            async ct =>
+            {
+                var reviews = await _repository.ListByProductAsync(query.ProductId, ct);
+                return reviews.Select(ReviewMapper.ToSummary).ToList();
+            },
+            ReviewsCacheKeys.RatingTtl,
+            cancellationToken: cancellationToken);
+
+        IReadOnlyList<ReviewSummary> result = summaries ?? [];
+        return Result.Success(result);
     }
 }
 
 internal sealed class GetProductRatingQueryHandler : IQueryHandler<GetProductRatingQuery, ProductRatingSummary>
 {
     private readonly IReviewRepository _repository;
+    private readonly ICacheService _cache;
 
-    public GetProductRatingQueryHandler(IReviewRepository repository) => _repository = repository;
+    public GetProductRatingQueryHandler(IReviewRepository repository, ICacheService cache)
+    {
+        _repository = repository;
+        _cache = cache;
+    }
 
     public async Task<Result<ProductRatingSummary>> Handle(GetProductRatingQuery query, CancellationToken cancellationToken)
     {
-        var rating = await _repository.GetProductRatingAsync(query.ProductId, cancellationToken);
-        return new ProductRatingSummary(rating.ProductId, rating.Average, rating.Count);
+        // L'AGRÉGATION la plus coûteuse de la fiche produit : moyenne + comptage sur
+        // tous les avis. Son coût grandit avec le succès du produit — les fiches les
+        // plus vues sont donc les plus chères à recalculer. Elle l'était à chaque
+        // affichage, pour deux nombres qui ne changent qu'à la publication d'un avis.
+        var summary = await _cache.GetOrCreateAsync(
+            ReviewsCacheKeys.Rating(query.ProductId),
+            async ct =>
+            {
+                var rating = await _repository.GetProductRatingAsync(query.ProductId, ct);
+                return new ProductRatingSummary(rating.ProductId, rating.Average, rating.Count);
+            },
+            ReviewsCacheKeys.RatingTtl,
+            cancellationToken: cancellationToken);
+
+        // Un produit sans aucun avis est normal : note nulle, zéro avis.
+        return summary ?? new ProductRatingSummary(query.ProductId, 0d, 0);
     }
 }

@@ -34,7 +34,23 @@ public sealed class OrderConfirmedDomainEventHandler : IDomainEventHandler<Order
 
     public Task HandleAsync(OrderConfirmedDomainEvent domainEvent, CancellationToken cancellationToken = default)
         => _publisher.PublishAsync(
-            new OrderConfirmedIntegrationEvent { OrderId = domainEvent.OrderId, BuyerId = domainEvent.BuyerId },
+            new OrderConfirmedIntegrationEvent
+            {
+                OrderId = domainEvent.OrderId,
+                BuyerId = domainEvent.BuyerId,
+                Currency = domainEvent.Currency,
+                PromotionCode = domainEvent.PromotionCode,
+
+                // La répartition par vendeur traverse la frontière du module. Deux
+                // records distincts portent la même idée — l'un dans le domaine,
+                // l'autre dans les Contracts — et c'est délibéré : le contrat public
+                // ne doit pas dépendre du modèle interne d'Ordering, sans quoi le
+                // moindre remaniement du domaine casserait tous les autres modules.
+                SellerShares = domainEvent.SellerShares
+                    .Select(s => new Marketplace.Modules.Ordering.Contracts.IntegrationEvents.OrderSellerShare(
+                        s.SellerId, s.ItemCount, s.Amount))
+                    .ToList(),
+            },
             cancellationToken);
 }
 

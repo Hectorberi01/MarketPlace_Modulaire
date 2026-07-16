@@ -20,7 +20,8 @@ internal sealed class ListUsersQueryHandler : IQueryHandler<ListUsersQuery, IRea
         IReadOnlyList<UserSummary> summaries = users
             .Select(u => new UserSummary(
                 u.Id.Value, u.FirstName, u.LastName, u.Email.Value, u.PhoneNumber.Value,
-                u.Status.ToString(), u.EmailVerified, u.MfaEnabled, u.RoleIds.ToList()))
+                u.Status.ToString(), u.EmailVerified, u.MfaEnabled, u.RoleIds.ToList(),
+                u.AcceptedTermsVersion, u.AcceptedTermsOnUtc, u.EmailVerifiedByAdminOnUtc))
             .ToList();
         return Result.Success(summaries);
     }

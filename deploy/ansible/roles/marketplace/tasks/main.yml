@@ -8,6 +8,9 @@
     state: directory
     mode: "0755"
   when: not skip_sync
+  # Aussi sous « monitoring » : un déploiement monitoring-only doit pouvoir
+  # pousser les fichiers de conf (prometheus.yml, promtail, dashboards…).
+  tags: [deploy, monitoring]
 
 - name: Synchroniser le code source vers l'hôte
   ansible.posix.synchronize:
@@ -24,7 +27,13 @@
       - "--exclude=.env.*"
       - "--exclude=*.dump"
       - "--exclude=TestResults"
+      # Config Alertmanager générée sur l'hôte depuis le vault (secrets) : ne pas
+      # la supprimer lors de la synchro (elle n'existe pas dans le dépôt).
+      - "--exclude=alertmanager.yml"
   when: not skip_sync
+  # Le sync pousse aussi deploy/monitoring/ (conf montée dans les conteneurs) :
+  # accessible via --tags monitoring pour ne PAS rebuild l'app.
+  tags: [deploy, monitoring]
 
 - name: Générer le fichier d'environnement ({{ target_env }})
   ansible.builtin.template:

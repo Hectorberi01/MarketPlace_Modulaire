@@ -27,8 +27,17 @@ public static class SellerAuthEndpoints
     }
 
     /// <summary>Connexion : renvoie access + refresh token.</summary>
+    /// <summary>
+    /// Connexion à l'app vendeur. Le rôle Seller est exigé DÈS LA PORTE : sans lui,
+    /// un acheteur obtenait un jeton valide, l'app s'ouvrait, et il se heurtait à un
+    /// 403 sur chaque écran sans comprendre pourquoi.
+    /// </summary>
     private static async Task<IResult> LoginAsync(LoginRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new LoginCommand(request.Email, request.Password, request.MfaCode), ct)).Match(r => Results.Ok(r));
+        => (await sender.Send(
+                new LoginCommand(request.Email, request.Password, request.MfaCode, SellerRoles), ct))
+            .Match(r => Results.Ok(r));
+
+    private static readonly string[] SellerRoles = [SellerBff.SellerRole];
 
     /// <summary>Rafraîchit l'access token.</summary>
     private static async Task<IResult> RefreshAsync(RefreshRequest request, ISender sender, CancellationToken ct)

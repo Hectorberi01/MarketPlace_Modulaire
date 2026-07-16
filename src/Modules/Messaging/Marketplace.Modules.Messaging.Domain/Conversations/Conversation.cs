@@ -105,6 +105,86 @@ public sealed class Conversation : AggregateRoot<ConversationId>
         return Result.Success();
     }
 
+    /// <summary>
+    /// Réagit à un message (emoji de la palette autorisée). Une seule réaction par
+    /// personne : re-cliquer le même emoji la retire, en cliquer un autre la remplace.
+    /// </summary>
+    public Result ReactToMessage(Guid messageId, Guid userId, string emoji)
+    {
+        if (_participants.All(p => p.UserId != userId))
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+        }
+
+        if (!MessageReactions.IsAllowed(emoji))
+        {
+            return Result.Failure(Error.Validation("messaging.reaction_not_allowed", "Cet emoji n'est pas autorisé."));
+        }
+
+        var message = _messages.FirstOrDefault(m => m.Id == messageId);
+        if (message is null)
+        {
+            return Result.Failure(Error.NotFound("messaging.message_not_found", "Message introuvable."));
+        }
+
+        if (message.IsDeleted)
+        {
+            return Result.Failure(Error.Conflict("messaging.message_deleted", "Impossible de réagir à un message supprimé."));
+        }
+
+        message.React(userId, emoji);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Supprime un message POUR TOUT LE MONDE. Réservé à l'auteur : on ne peut pas
+    /// effacer la parole d'autrui. Le corps reste stocké (preuve/support) ; c'est la
+    /// projection qui affiche « Message supprimé ». Idempotent.
+    /// </summary>
+    public Result DeleteMessageForEveryone(Guid messageId, Guid userId)
+    {
+        if (_participants.All(p => p.UserId != userId))
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+        }
+
+        var message = _messages.FirstOrDefault(m => m.Id == messageId);
+        if (message is null)
+        {
+            return Result.Failure(Error.NotFound("messaging.message_not_found", "Message introuvable."));
+        }
+
+        if (message.SenderId != userId)
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_author", "Vous ne pouvez supprimer que vos propres messages."));
+        }
+
+        message.DeleteForEveryone();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Masque un message POUR CE PARTICIPANT UNIQUEMENT (« supprimer pour moi »).
+    /// N'importe quel message du fil, y compris ceux reçus. L'autre continue de le voir.
+    /// Idempotent.
+    /// </summary>
+    public Result HideMessageForUser(Guid messageId, Guid userId)
+    {
+        if (_participants.All(p => p.UserId != userId))
+        {
+            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+        }
+
+        var message = _messages.FirstOrDefault(m => m.Id == messageId);
+        if (message is null)
+        {
+            return Result.Failure(Error.NotFound("messaging.message_not_found", "Message introuvable."));
+        }
+
+        message.HideFor(userId);
+        return Result.Success();
+    }
+
     public void Archive() => Status = ConversationStatus.Archived;
 
     public void Block() => Status = ConversationStatus.Blocked;

@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Application.Observability;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Analytics.Domain.Metrics;
 using Marketplace.Modules.Ordering.Contracts;
@@ -15,15 +16,18 @@ public sealed class AccrueMetricsOnOrderConfirmedHandler : IIntegrationEventHand
     private readonly IMetricSnapshotRepository _repository;
     private readonly IOrderingModuleApi _orderingModuleApi;
     private readonly IAnalyticsUnitOfWork _unitOfWork;
+    private readonly IMarketplaceBusinessMetrics _businessMetrics;
 
     public AccrueMetricsOnOrderConfirmedHandler(
         IMetricSnapshotRepository repository,
         IOrderingModuleApi orderingModuleApi,
-        IAnalyticsUnitOfWork unitOfWork)
+        IAnalyticsUnitOfWork unitOfWork,
+        IMarketplaceBusinessMetrics businessMetrics)
     {
         _repository = repository;
         _orderingModuleApi = orderingModuleApi;
         _unitOfWork = unitOfWork;
+        _businessMetrics = businessMetrics;
     }
 
     public async Task HandleAsync(OrderConfirmedIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
@@ -42,6 +46,9 @@ public sealed class AccrueMetricsOnOrderConfirmedHandler : IIntegrationEventHand
         var dayKey = order.CreatedAtUtc.ToString("yyyy-MM-dd");
         var monthKey = order.CreatedAtUtc.ToString("yyyy-MM");
         var platformItems = order.Lines.Sum(l => l.Quantity);
+
+        // Métrique Prometheus temps réel : commande payée + CA (plus petite unité, par devise).
+        _businessMetrics.OrderCompleted(order.Currency, MoneyUnits.ToMinorUnits(order.GrandTotal, order.Currency));
 
         await AccrueAsync(MetricScope.Platform, null, dayKey, MetricGranularity.Day, order.Currency, order.GrandTotal, platformItems, cancellationToken);
         await AccrueAsync(MetricScope.Platform, null, monthKey, MetricGranularity.Month, order.Currency, order.GrandTotal, platformItems, cancellationToken);

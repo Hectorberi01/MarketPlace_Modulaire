@@ -17,7 +17,7 @@ public static class OfferEndpoints
     /// <summary>Enregistre les routes des offres.</summary>
     public static IEndpointRouteBuilder MapOfferEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/offers").WithTags("Offers");
+        var group = app.MapAdminGroup("/api/offers").WithTags("Offers");
 
         group.MapGet("/{id:guid}", GetAsync).WithName("GetOffer").AllowAnonymous();
         group.MapGet("/by-product/{productId:guid}", ListByProductAsync).WithName("ListOffersByProduct").AllowAnonymous();

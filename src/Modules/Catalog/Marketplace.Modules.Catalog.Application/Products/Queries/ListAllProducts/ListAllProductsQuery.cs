@@ -14,27 +14,22 @@ internal sealed class ListAllProductsQueryHandler : IQueryHandler<ListAllProduct
 
     public ListAllProductsQueryHandler(IProductRepository productRepository) => _productRepository = productRepository;
 
+    /// <summary>
+    /// ⚠️ VOLONTAIREMENT NON MISE EN CACHE.
+    ///
+    /// C'est la vue de gouvernance admin : une poignée de personnes, qui viennent
+    /// précisément vérifier l'état RÉEL du catalogue — souvent juste après avoir
+    /// modifié quelque chose. Leur servir une vue vieille de cinq minutes, c'est leur
+    /// faire douter de leur propre action, et transformer un outil de contrôle en
+    /// source de confusion.
+    ///
+    /// Le trafic est négligeable ; le cache ne rapporterait rien et coûterait la
+    /// confiance. Toutes les mises en cache ne sont pas des gains.
+    /// </summary>
     public async Task<Result<IReadOnlyList<ProductSummary>>> Handle(ListAllProductsQuery query, CancellationToken cancellationToken)
     {
         var products = await _productRepository.ListAllAsync(cancellationToken: cancellationToken);
-        IReadOnlyList<ProductSummary> summaries = products.Select(ToSummary).ToList();
+        IReadOnlyList<ProductSummary> summaries = products.Select(ProductMapping.ToSummary).ToList();
         return Result.Success(summaries);
-    }
-
-    private static ProductSummary ToSummary(Product product)
-    {
-        var variants = product.Variants
-            .Select(v => new ProductVariantSummary(v.Id, v.Sku.Value, v.VariantAttributes, v.Barcode, v.WeightGrams))
-            .ToList();
-
-        var media = product.Media
-            .OrderBy(m => m.Position)
-            .Select(m => new ProductMediaSummary(m.Id, m.Url, m.Type.ToString(), m.IsPrimary, m.Position, m.AltText))
-            .ToList();
-
-        return new ProductSummary(
-            product.Id.Value, product.SellerId, product.CategoryId, product.BrandId,
-            product.Name, product.Description, product.Slug.Value, product.Status.ToString(), product.Gtin, product.Ean,
-            product.ProductGroupId, product.Attributes, product.Tags.ToList(), variants, media);
     }
 }

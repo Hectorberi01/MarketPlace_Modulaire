@@ -25,13 +25,34 @@ x-logging: &logging
 
 x-app-env: &app-env
   ASPNETCORE_ENVIRONMENT: "Staging"
+  # Observabilité : export OTLP (traces + métriques) vers le collector. Vide = pas
+  # d'export (l'app tourne normalement). Ex. : http://otel-collector:4317
+  Otel__Endpoint: "${OTEL_ENDPOINT:-}"
   # Base DÉDIÉE au staging (branche Neon de staging). Endpoint DIRECT (sans -pooler).
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon staging)}"
   Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD requis},abortConnect=false"
   Jwt__Issuer: "marketplace"
   Jwt__Audience: "marketplace"
   Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
+  # Validation des comptes par un administrateur.
+  #
+  # « true » = tout compte issu de l'inscription publique reste bloqué tant qu'un
+  # administrateur ne l'a pas validé dans la console. C'est le réglage actuel, et
+  # il a un coût réel : un acheteur qui s'inscrit la nuit ne peut rien commander
+  # avant d'être validé. Le jour où le volume rendra la file intenable, basculer
+  # REQUIRE_APPROVAL_BUYERS à « false » suffit — sans livraison de code.
+  #
+  # Les comptes créés DEPUIS la console restent actifs d'emblée : c'est
+  # l'administrateur qui vient de les créer, l'auto-validation n'apporterait rien.
+  Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
+  Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
   # FedaPay SANDBOX en staging (pas les clés live).
+  #
+  # L'URL DOIT correspondre au préfixe de la clé : sk_sandbox_… → sandbox-api,
+  # sk_live_… → api.fedapay.com. L'API refuse de démarrer si les deux divergent.
+  # ⚠️ Le bac à sable FedaPay n'exécute PAS les versements (403) : en staging,
+  #    les retraits sont simulés, quoi que dise FEDAPAY_ENABLE_PAYOUTS.
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
   # Active les VERSEMENTS réels FedaPay (retraits vendeur). false = payout simulé.
@@ -208,7 +229,7 @@ services:
       OUTBOX_ENABLED: "false"
       # Origine CORS du dashboard vendeur hébergé séparément (Blazor WASM
       # sur web-seller.hba-marketplace.fr → appels cross-origin vers ce BFF).
-      Cors__Origins__0: "https://web-seller.hba-marketplace.fr"
+      Cors__Origins: "${SELLER_CORS_ORIGINS:-https://web-seller.hba-marketplace.fr}"
     depends_on:
       api:
         condition: service_healthy
@@ -233,6 +254,32 @@ services:
       <<: *app-env
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
+      # --- CORS ---
+      # La console d'administration est une application NAVIGATEUR servie depuis une
+      # autre origine que l'API : sans déclaration explicite, la politique reste
+      # FERMÉE (SetIsOriginAllowed(false)) et le navigateur bloque tout — pas de
+      # message côté serveur, juste un échec CORS côté client.
+      #
+      # Liste séparée par des virgules. En développement, on y ajoute l'origine
+      # locale de la console (ex. http://localhost:5318) — JAMAIS en production.
+      Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
+      # --- Supervision (page « Santé système ») ---
+      # Surfaces surveillées : URLs INTERNES (noms de services sur le réseau).
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
+      Monitoring__Surfaces__1__Name: "BFF Mobile"
+      Monitoring__Surfaces__1__Url: "http://bff-mobile:8080"
+      Monitoring__Surfaces__2__Name: "BFF Web"
+      Monitoring__Surfaces__2__Url: "http://bff-web:8080"
+      Monitoring__Surfaces__3__Name: "BFF Vendeur"
+      Monitoring__Surfaces__3__Url: "http://bff-seller:8080"
+      Monitoring__Surfaces__4__Name: "BFF Admin"
+      Monitoring__Surfaces__4__Url: "http://bff-admin:8080"
+      # KPIs live + liens Grafana (vides = masqués). Ex. PROMETHEUS_URL=http://prometheus:9090
+      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
+      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
+      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
+      Monitoring__PortainerUrl: "${PORTAINER_URL:-}"
     depends_on:
       api:
         condition: service_healthy

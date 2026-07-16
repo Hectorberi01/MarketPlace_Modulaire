@@ -18,7 +18,7 @@ public static class SellerFulfillmentEndpoints
 {
     public static IEndpointRouteBuilder MapSellerFulfillmentEndpoints(this IEndpointRouteBuilder app)
     {
-        var ship = app.MapGroup("/seller/shipments").WithTags("Vendeur · Exécution").RequireAuthorization();
+        var ship = app.MapSellerGroup("/seller/shipments", "Vendeur · Exécution");
 
         ship.MapGet("/", QueueAsync);
         ship.MapGet("/by-order/{orderId:guid}", ByOrderAsync);

@@ -1,5 +1,6 @@
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Application.Observability;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Identity.Application.Abstractions;
@@ -23,8 +24,11 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
     private readonly IPasswordHasher _passwordHasher;
     private readonly ISecureTokenGenerator _tokenGenerator;
     private readonly IAuthTokenSettings _tokenSettings;
+    private readonly IRegistrationPolicy _registrationPolicy;
     private readonly IIntegrationEventPublisher _publisher;
     private readonly IIdentityUnitOfWork _unitOfWork;
+    private readonly ISecurityMetrics _security;
+    private readonly IMarketplaceBusinessMetrics _business;
 
     public RegisterUserCommandHandler(
         IUserRepository userRepository,
@@ -32,16 +36,22 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
         IPasswordHasher passwordHasher,
         ISecureTokenGenerator tokenGenerator,
         IAuthTokenSettings tokenSettings,
+        IRegistrationPolicy registrationPolicy,
         IIntegrationEventPublisher publisher,
-        IIdentityUnitOfWork unitOfWork)
+        IIdentityUnitOfWork unitOfWork,
+        ISecurityMetrics security,
+        IMarketplaceBusinessMetrics business)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
         _passwordHasher = passwordHasher;
         _tokenGenerator = tokenGenerator;
         _tokenSettings = tokenSettings;
+        _registrationPolicy = registrationPolicy;
         _publisher = publisher;
         _unitOfWork = unitOfWork;
+        _security = security;
+        _business = business;
     }
 
     public async Task<Result<Guid>> Handle(RegisterUserCommand command, CancellationToken cancellationToken)
@@ -88,11 +98,26 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
 
         var user = userResult.Value;
 
-        // Dev/démo : aucun service d'e-mailing n'est branché, donc on confirme
-        // l'e-mail immédiatement pour que le compte soit Actif et puisse se
-        // connecter. En production : retirer cet appel et confirmer via le lien
-        // reçu par e-mail (event EmailVerificationRequested ci-dessous).
-        user.ConfirmEmail(tokenHash, DateTime.UtcNow);
+        // Le compte naît `PendingVerification` (cf. User.Register). Reste à savoir
+        // s'il y reste.
+        //
+        // L'ancien code appelait ici `user.ConfirmEmail(tokenHash, …)` — c'est-à-dire
+        // qu'il confirmait l'e-mail avec le jeton qu'il venait lui-même de fabriquer
+        // trois lignes plus haut. Le commentaire l'assumait comme un raccourci de
+        // démo, mais il avait deux conséquences fâcheuses : tout compte était actif
+        // instantanément, et la base affirmait `EmailVerified = true` pour des
+        // adresses que personne n'avait jamais vérifiées.
+        //
+        // Désormais l'activation est une DÉCISION, prise par un administrateur ou
+        // par la configuration — jamais une confirmation fabriquée.
+        var requiresApproval = command.CreatedByAdmin
+            ? _registrationPolicy.RequireApprovalForAdminCreated
+            : _registrationPolicy.RequireApprovalForBuyers;
+
+        if (!requiresApproval)
+        {
+            user.Approve();
+        }
 
         var buyerRole = await _roleRepository.GetByNameAsync(DefaultRoleName, cancellationToken);
         if (buyerRole is not null)
@@ -113,6 +138,9 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _security.Registration("unknown");
+        _business.UserRegistered();
 
         return user.Id.Value;
     }

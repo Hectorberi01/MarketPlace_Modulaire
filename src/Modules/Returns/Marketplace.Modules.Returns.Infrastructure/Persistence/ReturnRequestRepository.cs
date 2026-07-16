@@ -38,6 +38,25 @@ internal sealed class ReturnRequestRepository : IReturnRequestRepository
             .OrderBy(r => r.ResolvedAtUtc)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// La file d'attente des versements. Les plus anciens d'abord : ce sont les
+    /// clients qui patientent depuis le plus longtemps, et ceux qui ouvriront un
+    /// litige en premier.
+    /// </summary>
+    public async Task<IReadOnlyList<ReturnRequest>> ListPendingRefundsAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.ReturnRequests
+            .Where(r => r.Status == ReturnStatus.RefundPending)
+            .OrderBy(r => r.RefundApprovedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// ⚠️ RefundPending compte comme un retour OUVERT.
+    ///
+    /// Sans cette précision, un acheteur dont le remboursement est validé mais pas
+    /// encore versé pourrait ouvrir un SECOND retour sur la même ligne — et se faire
+    /// rembourser deux fois. Le filtre ne rejette explicitement que les états
+    /// terminaux : « rejeté » et « versé ».
+    /// </summary>
     public async Task<bool> ExistsOpenAsync(Guid orderId, Guid offerId, CancellationToken cancellationToken = default)
         => await _dbContext.ReturnRequests.AnyAsync(
             r => r.OrderId == orderId && r.OfferId == offerId

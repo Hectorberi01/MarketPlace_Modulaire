@@ -26,4 +26,6 @@ public sealed record CartSummary(
     decimal Subtotal,
     decimal TotalSellerDiscount,
     decimal TotalPlatformDiscount,
-    decimal GrandTotal);
+    decimal GrandTotal,
+    /// <summary>Code promo appliqué au panier, ou null. Ordering le fige dans la commande au checkout.</summary>
+    string? PromotionCode = null);

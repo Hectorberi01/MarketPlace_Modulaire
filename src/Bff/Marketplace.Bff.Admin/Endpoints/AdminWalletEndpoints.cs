@@ -17,6 +17,7 @@ public static class AdminWalletEndpoints
         wallet.MapGet("", WalletAsync);
         wallet.MapGet("/transactions", TransactionsAsync);
         wallet.MapGet("/withdrawals/pending", PendingWithdrawalsAsync);
+        wallet.MapGet("/withdrawals/processing", ProcessingWithdrawalsAsync);
         wallet.MapPost("/withdrawals/{id:guid}/approve", ApproveWithdrawalAsync);
         wallet.MapPost("/withdrawals/{id:guid}/reject", RejectWithdrawalAsync);
 
@@ -34,6 +35,13 @@ public static class AdminWalletEndpoints
     /// <summary>Liste des demandes de retrait vendeur en attente de validation.</summary>
     private static async Task<IResult> PendingWithdrawalsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListPendingWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
+
+    /// <summary>
+    /// Versements demandés au PSP et non encore confirmés. À surveiller : tant qu'un
+    /// retrait y reste, le vendeur est débité sans avoir reçu son argent.
+    /// </summary>
+    private static async Task<IResult> ProcessingWithdrawalsAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListProcessingWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
 
     /// <summary>Approuve une demande de retrait et déclenche le payout FedaPay.</summary>
     private static async Task<IResult> ApproveWithdrawalAsync(Guid id, ISender sender, CancellationToken ct)

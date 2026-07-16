@@ -1,4 +1,5 @@
 using System.Text;
+using Marketplace.Api.Extensions;
 using System.Threading.RateLimiting;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -49,8 +50,19 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
 // 3ter. CORS — la console d'administration est une application navigateur.
 //       Par sécurité, on n'ouvre PAS à toutes les origines par défaut ici :
 //       la console admin doit déclarer ses origines (Cors:Origins).
+//
+//       Deux écritures acceptées, et ce n'est pas du confort :
+//         • tableau      Cors__Origins__0, Cors__Origins__1…  (appsettings, compose)
+//         • liste simple Cors__Origins="https://a, http://b"  (une seule variable)
+//       La forme indexée oblige à connaître le NOMBRE d'origines au moment d'écrire
+//       le compose. Or ce nombre change selon l'environnement — un poste de dev en
+//       ajoute une, la prod n'en veut qu'une. Une variable unique, séparée par des
+//       virgules, se pilote depuis le vault sans toucher au compose.
 const string AdminCorsPolicy = "admin-console";
-var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? Array.Empty<string>();
+var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>()
+    ?? builder.Configuration["Cors:Origins"]?
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(AdminCorsPolicy, policy =>
@@ -74,6 +86,12 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]
     ?? throw new InvalidOperationException("Clé de signature JWT absente (Jwt:SigningKey).");
 
+// ⚠️ REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
+// committée dans le dépôt). Avec elle, n'importe qui forge un jeton « Admin ».
+// Le compose impose déjà l'override ; ceci est la seconde barrière — pour tous les
+// autres chemins de déploiement. Voir JwtKeyGuard.
+JwtKeyGuard.EnsureProductionKey(signingKey, builder.Environment);
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -91,24 +109,57 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
-
-// 4bis. Rate limiting — protège les endpoints d'authentification anonymes
-//       (login / refresh / mot de passe oublié / reset) contre le brute-force
-//       et l'énumération. Fenêtre fixe par adresse IP.
-builder.Services.AddRateLimiter(options =>
+builder.Services.AddAuthorization(options =>
 {
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
-            }));
+    // FILET DE SÉCURITÉ — inversion de la logique par défaut.
+    //
+    // Sans lui, un futur MapGroup/MapGet qui OUBLIE son RequireAuthorization est ANONYME
+    // en silence. Avec lui, l'oubli produit un 401 qu'on remarque tout de suite. Les
+    // routes réellement publiques (auth, webhooks, santé) déclarent AllowAnonymous, qui
+    // prime. L'API l'avait déjà ; les BFF, non — c'est là que la surface bouge le plus.
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
 });
+
+// Client HTTP court (supervision) : ping des /health des surfaces + Prometheus.
+builder.Services.AddHttpClient("monitoring", c => c.Timeout = TimeSpan.FromSeconds(6));
+
+// 4bis. Rate limiting.
+//
+// Cette politique était RECOPIÉE ici, à la main, au lieu d'utiliser l'extension
+// partagée. Elle portait donc le même défaut que les autres — partition sur l'IP de
+// Traefik — et il fallait la corriger à deux endroits. Un seul désormais.
+builder.Services.AddAuthRateLimiter();
+
+// Restaure la vraie IP du client derrière Traefik. Sans cela, le limiteur ci-dessus
+// range tous les utilisateurs du monde dans une seule partition.
+builder.Services.AddProxyForwardedHeaders();
+
+// Réponses d'erreur normalisées (ProblemDetails) — voir UseExceptionHandler plus bas.
+// Un conflit de verrou optimiste devient un 409 « réessayez », et non un 500 « nous
+// sommes cassés ». Enregistré AVANT AddProblemDetails : le premier handler qui traite
+// l'exception gagne.
+// ─────────────────────────────────────────────────────────────────────────────
+// COOKIE DE RAFRAÎCHISSEMENT (A11). Le jeton ne transite plus dans le corps JSON :
+// la console Blazor le rangeait dans localStorage, où une XSS pouvait le lire et
+// l'emporter — 30 jours d'accès administrateur depuis la machine de l'attaquant.
+//
+// SameSite=Strict par défaut : la console (admin.${ROOT_DOMAIN}) et l'API partagent
+// le même domaine racine, donc le même « site ». Si la console déménageait sur un
+// autre domaine racine, il faudrait Auth__RefreshCookie__SameSite=None — la garde
+// anti-CSRF par en-tête personnalisé tient dans les deux cas.
+// ─────────────────────────────────────────────────────────────────────────────
+builder.Services.AddSingleton(new AdminAuthCookieOptions
+{
+    SameSite = Enum.TryParse<SameSiteMode>(builder.Configuration["Auth:RefreshCookie:SameSite"], ignoreCase: true, out var sameSite)
+        ? sameSite
+        : SameSiteMode.Strict,
+});
+
+builder.Services.AddConcurrencyExceptionHandler();
+
+builder.Services.AddProblemDetails();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -152,6 +203,17 @@ var dbContextTypes = builder.Services
 
 var app = builder.Build();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠️ EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
+//
+// Restaure la vraie IP du client (Traefik la transmet en X-Forwarded-For). Tout ce qui
+// suit — journalisation, authentification, limitation de débit — lit RemoteIpAddress.
+// Placer ce middleware plus bas reviendrait à leur donner l'IP du proxy : la correction
+// serait sans effet, tout en paraissant appliquée.
+// ─────────────────────────────────────────────────────────────────────────────
+app.UseProxyForwardedHeaders();
+
+
 if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
 {
     using var scope = app.Services.CreateScope();
@@ -170,10 +232,38 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GESTIONNAIRE D'EXCEPTIONS — EN PREMIER, ET CE N'EST PAS UN DÉTAIL D'ORDRE.
+//
+// Sans lui, une exception non gérée remontait jusqu'à Kestrel, qui produisait un
+// 500 nu — et, ce faisant, N'EXÉCUTAIT PAS les rappels `OnStarting`. Or c'est
+// exactement par là que le middleware CORS pose son en-tête
+// `Access-Control-Allow-Origin` sur les requêtes non-preflight.
+//
+// Conséquence : la console d'administration ne voyait pas le 500. Elle voyait une
+// réponse sans en-tête CORS, et le navigateur lui répondait « blocked by CORS
+// policy ». On passait des heures à chercher un problème de configuration CORS
+// qui n'existait pas, pendant que la vraie erreur — celle du serveur — n'était
+// jamais affichée nulle part.
+//
+// Placé ici, en tête de pipeline, il intercepte l'exception, écrit une réponse
+// ProblemDetails propre, et la réponse REDÉMARRE : les rappels OnStarting jouent,
+// l'en-tête CORS revient, et le client reçoit enfin un message lisible.
+// ─────────────────────────────────────────────────────────────────────────────
+app.UseExceptionHandler();
+
 app.UseCors(AdminCorsPolicy);
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ⚠️ APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
+//
+// Le limiteur partitionne par IDENTIFIANT DE COMPTE quand l'utilisateur est
+// authentifié (mitigation du CGNAT). Or cette identité n'existe qu'APRÈS
+// UseAuthentication : placé avant, HttpContext.User est encore anonyme, la clé
+// retombe toujours sur l'IP, et le partitionnement par compte ne s'applique
+// jamais. C'était le cas — une régression silencieuse.
+app.UseRateLimiter();
 
 app.MapObservability();
 
@@ -188,5 +278,8 @@ app.MapAdminWalletEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapAdminProductEndpoints();
 app.MapAdminPlatformEndpoints();
+app.MapAdminMonitoringEndpoints();
+app.MapAdminRefundEndpoints();
+app.MapAdminOutboxEndpoints();
 
 await app.RunAsync();

@@ -24,12 +24,12 @@ public static class SellerInventoryEndpoints
 {
     public static IEndpointRouteBuilder MapSellerInventoryEndpoints(this IEndpointRouteBuilder app)
     {
-        var locations = app.MapGroup("/seller/locations").WithTags("Vendeur · Lieux").RequireAuthorization();
+        var locations = app.MapSellerGroup("/seller/locations", "Vendeur · Lieux");
         locations.MapGet("/", ListLocationsAsync);
         locations.MapPost("/", CreateLocationAsync);
         locations.MapDelete("/{id:guid}", DeleteLocationAsync);
 
-        var stock = app.MapGroup("/seller/inventory").WithTags("Vendeur · Stock").RequireAuthorization();
+        var stock = app.MapSellerGroup("/seller/inventory", "Vendeur · Stock");
         stock.MapPost("/items", CreateItemAsync);
         stock.MapPost("/items/{id:guid}/receive", ReceiveAsync);
         stock.MapPost("/items/{id:guid}/adjust", AdjustAsync);

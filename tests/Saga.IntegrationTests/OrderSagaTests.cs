@@ -41,7 +41,9 @@ public sealed class OrderSagaTests : IAsyncLifetime
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Marketplace"] = _postgres.GetConnectionString()
+                ["ConnectionStrings:Marketplace"] = _postgres.GetConnectionString(),
+                // Clé de test : le module Identity refuse de s'installer sans elle.
+                ["Jwt:SigningKey"] = "test-only-signing-key-at-least-32-bytes-long!!"
             })
             .Build();
 

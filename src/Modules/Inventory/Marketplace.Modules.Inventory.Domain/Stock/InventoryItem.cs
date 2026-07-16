@@ -39,6 +39,32 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
     public int OnHand { get; private set; }
     public int ReorderThreshold { get; private set; }
 
+    /// <summary>
+    /// Compteur de mouvements de stock. Incrémenté par TOUTE mutation de l'agrégat.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// CETTE COLONNE EXISTE POUR RENDRE LE VERROU OPTIMISTE EFFECTIF. NE PAS LA RETIRER.
+    ///
+    /// `Reserve()` et `ReleaseReservation()` ne modifient AUCUNE colonne de cette table :
+    /// ils ajoutent ou suppriment des lignes ENFANTS (stock_reservations). EF ne génère
+    /// donc, pour ces opérations, aucun `UPDATE inventory_items` — et un jeton de
+    /// concurrence n'est vérifié que dans la clause WHERE d'un UPDATE.
+    ///
+    /// Conséquence, sans ce compteur : le jeton `xmin` serait posé sur
+    /// l'agrégat, visible dans la configuration, rassurant à la relecture — et
+    /// TOTALEMENT INERTE sur le seul chemin qui compte. Deux acheteurs réservant le
+    /// dernier article au même instant liraient tous deux `Available = 1`, passeraient
+    /// tous deux le contrôle, insèreraient tous deux leur réservation. Survente.
+    ///
+    /// En incrémentant ce compteur, chaque mutation salit la ligne parente : EF émet
+    /// `UPDATE inventory_items SET "StockVersion" = … WHERE "Id" = … AND xmin = …`, le
+    /// second écrivain touche 0 ligne, et lève `DbUpdateConcurrencyException` → 409.
+    ///
+    /// La valeur elle-même n'est lue par personne. C'est le fait de l'écrire qui protège.
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public int StockVersion { get; private set; }
+
     public IReadOnlyCollection<StockReservation> Reservations => _reservations.AsReadOnly();
 
     /// <summary>Quantité réservée (somme des réservations en cours).</summary>
@@ -48,6 +74,13 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
     public int Available => OnHand - Reserved;
 
     public bool IsLowStock => Available <= ReorderThreshold;
+
+    /// <summary>
+    /// Salit la ligne parente pour que le verrou optimiste (`xmin`) soit RÉELLEMENT
+    /// vérifié — y compris quand la mutation ne touche que des lignes enfants.
+    /// Voir le commentaire de <see cref="StockVersion"/>. Appelé par TOUTE mutation.
+    /// </summary>
+    private void Touch() => StockVersion++;
 
     public static Result<InventoryItem> Create(Sku sku, Guid locationId, int onHand, int reorderThreshold)
     {
@@ -78,6 +111,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
         }
 
         OnHand += quantity;
+        Touch();
         return Result.Success();
     }
 
@@ -95,6 +129,13 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
         }
 
         _reservations.Add(new StockReservation(Guid.NewGuid(), orderId, quantity, expiresAtUtc));
+
+        // ⚠️ INDISPENSABLE. L'ajout ci-dessus est une INSERTION dans une table enfant :
+        // sans Touch(), EF n'émet aucun UPDATE sur inventory_items, la clause
+        // `AND xmin = …` n'est jamais évaluée, et deux réservations concurrentes du
+        // dernier article passent toutes les deux. C'est la survente.
+        Touch();
+
         Raise(new StockReservedDomainEvent(Id.Value, Sku.Value, orderId, quantity));
 
         if (Available == 0)
@@ -109,6 +150,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
     public Result ReleaseReservation(Guid orderId)
     {
         _reservations.RemoveAll(r => r.OrderId == orderId);
+        Touch(); // Suppression d'enfants uniquement : même piège que Reserve().
         return Result.Success();
     }
 
@@ -123,6 +165,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
 
         OnHand -= reserved;
         _reservations.RemoveAll(r => r.OrderId == orderId);
+        Touch();
         return Result.Success();
     }
 
@@ -135,6 +178,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
         }
 
         OnHand += delta;
+        Touch();
         return Result.Success();
     }
 
@@ -146,6 +190,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
         }
 
         ReorderThreshold = reorderThreshold;
+        Touch();
         return Result.Success();
     }
 }

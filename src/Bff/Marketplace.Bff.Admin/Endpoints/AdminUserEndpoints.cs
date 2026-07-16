@@ -7,7 +7,9 @@ using Marketplace.Modules.Identity.Application.Roles.Commands.SetRolePermissions
 using Marketplace.Modules.Identity.Application.Roles.Commands.UpdateRole;
 using Marketplace.Modules.Identity.Application.Roles.Queries.GetRole;
 using Marketplace.Modules.Identity.Application.Roles.Queries.ListRoles;
+using Marketplace.Modules.Identity.Application.Users.Commands.ApproveUser;
 using Marketplace.Modules.Identity.Application.Users.Commands.AssignRole;
+using Marketplace.Modules.Identity.Application.Users.Commands.MarkEmailVerified;
 using Marketplace.Modules.Identity.Application.Users.Commands.ReactivateUser;
 using Marketplace.Modules.Identity.Application.Users.Commands.RemoveRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.SuspendUser;
@@ -27,8 +29,17 @@ public static class AdminUserEndpoints
         users.MapPost("/register", RegisterUserAsync);
         users.MapGet("/{id:guid}", GetUserAsync);
         users.MapGet("/{id:guid}/cart", GetUserCartAsync);
+        // Validation d'un compte en attente. « Refuser » n'a pas d'endpoint dédié :
+        // c'est /suspend. Un refus doit rester réversible et laisser une trace —
+        // supprimer un compte douteux effacerait précisément ce qu'on veut garder.
+        users.MapPost("/{id:guid}/approve", ApproveUserAsync);
         users.MapPost("/{id:guid}/suspend", SuspendUserAsync);
         users.MapPost("/{id:guid}/reactivate", ReactivateUserAsync);
+
+        // Attestation d'e-mail par un administrateur. Route distincte d'/approve, parce
+        // que les deux gestes le sont : vérifier une adresse ne vaut pas autoriser
+        // l'accès, et autoriser l'accès ne prouve rien sur l'adresse.
+        users.MapPost("/{id:guid}/verify-email", MarkEmailVerifiedAsync);
         users.MapPost("/{id:guid}/roles", AssignRoleAsync);
         users.MapDelete("/{id:guid}/roles/{roleId:guid}", RemoveRoleAsync);
 
@@ -50,8 +61,12 @@ public static class AdminUserEndpoints
     /// <summary>Crée un compte (par ex. un administrateur) et lui attribue les rôles fournis.</summary>
     private static async Task<IResult> RegisterUserAsync(RegisterUserRequestBody request, ISender sender, CancellationToken ct)
     {
+        // `CreatedByAdmin: true` — le compte naît actif (sauf si la configuration
+        // exige explicitement une seconde relecture). C'est vous qui venez de le
+        // créer : vous auto-valider n'apporterait rien.
         var userResult = await sender.Send(new RegisterUserCommand(
-            request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty, request.Password), ct);
+            request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty,
+            request.Password, CreatedByAdmin: true), ct);
         if (userResult.IsFailure)
         {
             return userResult.Match(_ => Results.Ok()); // mappe l'échec (400/409) proprement
@@ -77,6 +92,19 @@ public static class AdminUserEndpoints
         => Results.Ok(await cart.GetActiveCartAsync(id, ct));
 
     /// <summary>Suspend un compte.</summary>
+    /// <summary>Valide un compte en attente : il devient actif et peut se connecter.</summary>
+    private static async Task<IResult> ApproveUserAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ApproveUserCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Marque l'e-mail comme vérifié, sur attestation de l'administrateur.
+    /// Tracé dans <c>EmailVerifiedByAdminOnUtc</c> : ce n'est pas une preuve, c'est
+    /// une confiance, et la base doit pouvoir le dire.
+    /// </summary>
+    private static async Task<IResult> MarkEmailVerifiedAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new MarkEmailVerifiedCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Suspend un compte — c'est aussi la forme que prend un refus.</summary>
     private static async Task<IResult> SuspendUserAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new SuspendUserCommand(id), ct)).Match(() => Results.NoContent());
 

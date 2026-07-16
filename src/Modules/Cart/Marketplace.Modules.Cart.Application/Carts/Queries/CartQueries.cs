@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Cart.Domain.Carts;
+using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Pricing.Contracts;
 
 namespace Marketplace.Modules.Cart.Application.Carts.Queries;
@@ -19,12 +20,15 @@ internal sealed class GetActiveCartQueryHandler : IQueryHandler<GetActiveCartQue
 
     private readonly ICartRepository _cartRepository;
     private readonly IPricingModuleApi _pricing;
+    private readonly IOrderingModuleApi _ordering;
     private readonly ICacheService _cache;
 
-    public GetActiveCartQueryHandler(ICartRepository cartRepository, IPricingModuleApi pricing, ICacheService cache)
+    public GetActiveCartQueryHandler(
+        ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering, ICacheService cache)
     {
         _cartRepository = cartRepository;
         _pricing = pricing;
+        _ordering = ordering;
         _cache = cache;
     }
 
@@ -49,7 +53,7 @@ internal sealed class GetActiveCartQueryHandler : IQueryHandler<GetActiveCartQue
                 Array.Empty<CartLineSummary>(), 0m, 0m, 0m, 0m);
         }
 
-        var summary = await CartPricer.PriceAsync(cart, _pricing, cancellationToken);
+        var summary = await CartPricer.PriceAsync(cart, _pricing, _ordering, cancellationToken);
         await _cache.SetAsync(key, summary, CacheTtl, cancellationToken);
         return summary;
     }
@@ -59,11 +63,13 @@ internal sealed class GetCartByIdQueryHandler : IQueryHandler<GetCartByIdQuery, 
 {
     private readonly ICartRepository _cartRepository;
     private readonly IPricingModuleApi _pricing;
+    private readonly IOrderingModuleApi _ordering;
 
-    public GetCartByIdQueryHandler(ICartRepository cartRepository, IPricingModuleApi pricing)
+    public GetCartByIdQueryHandler(ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering)
     {
         _cartRepository = cartRepository;
         _pricing = pricing;
+        _ordering = ordering;
     }
 
     public async Task<Result<CartSummary>> Handle(GetCartByIdQuery query, CancellationToken cancellationToken)
@@ -71,6 +77,6 @@ internal sealed class GetCartByIdQueryHandler : IQueryHandler<GetCartByIdQuery, 
         var cart = await _cartRepository.GetByIdAsync(new CartId(query.CartId), cancellationToken);
         return cart is null
             ? Error.NotFound("cart.not_found", "Panier introuvable.")
-            : await CartPricer.PriceAsync(cart, _pricing, cancellationToken);
+            : await CartPricer.PriceAsync(cart, _pricing, _ordering, cancellationToken);
     }
 }

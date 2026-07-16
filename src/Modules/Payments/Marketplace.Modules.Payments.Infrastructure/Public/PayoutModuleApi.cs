@@ -19,10 +19,43 @@ internal sealed class PayoutModuleApi : IPayoutModuleApi
             new PayoutInstruction(
                 instruction.Amount,
                 instruction.Currency,
-                new PayoutBeneficiary(instruction.BeneficiaryName, instruction.Msisdn, instruction.CountryCode, instruction.Provider),
+                new PayoutBeneficiary(instruction.BeneficiaryName, instruction.Msisdn, instruction.Provider),
                 instruction.Reference),
             cancellationToken);
 
-        return new PayoutOutcome(result.Success, result.ProviderReference, result.Error);
+        return new PayoutOutcome(Map(result.Kind), result.ProviderReference, result.Error);
     }
+
+    public async Task<PayoutProgress> GetPayoutProgressAsync(string providerReference, CancellationToken cancellationToken = default)
+    {
+        var status = await _gateway.GetStatusAsync(providerReference, cancellationToken);
+        return Map(status.Status);
+    }
+
+    public PayoutWebhookNotification ReadPayoutWebhook(string rawBody, string? signatureHeader)
+    {
+        var payoutEvent = _gateway.ParseWebhook(rawBody, signatureHeader);
+        return new PayoutWebhookNotification(
+            payoutEvent.IsPayoutEvent,
+            payoutEvent.Verified,
+            payoutEvent.ProviderReference,
+            Map(payoutEvent.Status));
+    }
+
+    private static PayoutProgress Map(PayoutStatus status) => status switch
+    {
+        PayoutStatus.Pending => PayoutProgress.Pending,
+        PayoutStatus.Started => PayoutProgress.Started,
+        PayoutStatus.Processing => PayoutProgress.Processing,
+        PayoutStatus.Sent => PayoutProgress.Sent,
+        PayoutStatus.Failed => PayoutProgress.Failed,
+        _ => PayoutProgress.Unknown
+    };
+
+    private static PayoutOutcomeStatus Map(PayoutOutcomeKind kind) => kind switch
+    {
+        PayoutOutcomeKind.Accepted => PayoutOutcomeStatus.Accepted,
+        PayoutOutcomeKind.Failed => PayoutOutcomeStatus.Failed,
+        _ => PayoutOutcomeStatus.Unknown
+    };
 }

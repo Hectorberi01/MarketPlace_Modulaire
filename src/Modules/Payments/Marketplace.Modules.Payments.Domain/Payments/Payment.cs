@@ -117,7 +117,7 @@ public sealed class Payment : AggregateRoot<PaymentId>
         Status = PaymentStatus.Captured;
         ProviderReference = providerReference;
         CapturedAtUtc = DateTime.UtcNow;
-        Raise(new PaymentCapturedDomainEvent(Id.Value, OrderId));
+        Raise(new PaymentCapturedDomainEvent(Id.Value, OrderId, Provider, Method.ToString(), Amount.Amount, Amount.Currency));
         return Result.Success();
     }
 
@@ -131,7 +131,7 @@ public sealed class Payment : AggregateRoot<PaymentId>
 
         Status = PaymentStatus.Failed;
         FailureReason = reason;
-        Raise(new PaymentFailedDomainEvent(Id.Value, OrderId, reason));
+        Raise(new PaymentFailedDomainEvent(Id.Value, OrderId, reason, Provider, Method.ToString(), Amount.Currency));
         return Result.Success();
     }
 
@@ -144,7 +144,7 @@ public sealed class Payment : AggregateRoot<PaymentId>
         }
 
         Status = PaymentStatus.Refunded;
-        Raise(new PaymentRefundedDomainEvent(Id.Value, OrderId));
+        Raise(new PaymentRefundedDomainEvent(Id.Value, OrderId, Provider, Amount.Amount, Amount.Currency));
         return Result.Success();
     }
 

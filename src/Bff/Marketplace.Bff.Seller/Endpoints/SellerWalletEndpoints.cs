@@ -17,7 +17,7 @@ public static class SellerWalletEndpoints
 {
     public static IEndpointRouteBuilder MapSellerWalletEndpoints(this IEndpointRouteBuilder app)
     {
-        var wallet = app.MapGroup("/seller/wallet").WithTags("Vendeur · Portefeuille").RequireAuthorization();
+        var wallet = app.MapSellerGroup("/seller/wallet", "Vendeur · Portefeuille");
 
         wallet.MapGet("", WalletAsync);
         wallet.MapGet("/transactions", TransactionsAsync);

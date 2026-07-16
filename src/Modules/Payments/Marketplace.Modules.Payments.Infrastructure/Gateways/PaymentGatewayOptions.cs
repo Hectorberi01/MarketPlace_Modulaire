@@ -112,6 +112,43 @@ public sealed class FedaPayOptions
     /// </summary>
     public bool EnablePayouts { get; set; }
 
+    /// <summary>Vrai si l'on parle à l'API bac à sable de FedaPay.</summary>
+    public bool IsSandbox =>
+        BaseUrl.Contains("sandbox", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Vrai si la clé et l'URL désignent le MÊME monde.
+    ///
+    /// Une clé <c>sk_live_…</c> envoyée à <c>sandbox-api.fedapay.com</c> est
+    /// inconnue du bac à sable : FedaPay répond « 403 Opération non autorisée ».
+    /// L'inverse est pire — une clé sandbox pointée sur l'API live échoue aussi,
+    /// mais la même erreur de configuration appliquée à une VRAIE clé enverrait
+    /// de l'argent réel là où on croyait faire un test.
+    /// </summary>
+    public bool KeyMatchesEnvironment
+    {
+        get
+        {
+            var keyIsSandbox = ApiKey.StartsWith("sk_sandbox", StringComparison.OrdinalIgnoreCase);
+            var keyIsLive = ApiKey.StartsWith("sk_live", StringComparison.OrdinalIgnoreCase);
+
+            // Clé d'un format inconnu : on ne peut rien affirmer, on laisse passer.
+            if (!keyIsSandbox && !keyIsLive) return true;
+
+            return keyIsSandbox == IsSandbox;
+        }
+    }
+
+    /// <summary>
+    /// Les VERSEMENTS réels ne sont possibles qu'en LIVE.
+    ///
+    /// Le bac à sable FedaPay n'exécute pas les dépôts Mobile Money : il refuse
+    /// la création (« 403 Opération non autorisée »). Activer les payouts en
+    /// sandbox ne produit donc qu'une chose — une file de retraits en échec,
+    /// remboursés, et un vendeur qui croit que la plateforme lui doit de l'argent.
+    /// </summary>
+    public bool CanPayout => IsConfigured && EnablePayouts && !IsSandbox && KeyMatchesEnvironment;
+
     /// <summary>
     /// Méthode de transfert FedaPay pour les payouts (champ « mode »). Valeurs
     /// valides : mtn_open (MTN Bénin), moov (Moov Bénin), mtn_ci, moov_tg,

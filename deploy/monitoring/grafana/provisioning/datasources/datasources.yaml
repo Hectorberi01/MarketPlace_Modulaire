@@ -1,0 +1,32 @@
+# Datasources Grafana pré-provisionnées : Prometheus, Loki, Tempo.
+# Corrélation traces ↔ logs activée (trace_id).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Lien log → trace : reconnaît un champ trace_id/TraceId dans les logs.
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"(?:trace_id|TraceId)":"(\w+)"'
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki

@@ -22,7 +22,7 @@ public static class SellerShopEndpoints
 {
     public static IEndpointRouteBuilder MapSellerShopEndpoints(this IEndpointRouteBuilder app)
     {
-        var shop = app.MapGroup("/seller/shop").WithTags("Vendeur · Boutique").RequireAuthorization();
+        var shop = app.MapSellerGroup("/seller/shop", "Vendeur · Boutique");
 
         shop.MapGet("/", MyShopAsync);
         shop.MapPost("/", OnboardAsync);
@@ -79,14 +79,20 @@ public static class SellerShopEndpoints
             return SellerBff.NotASeller();
         }
 
-        if (UploadValidation.ValidateImage(file) is { } invalid)
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
         {
             return invalid;
         }
 
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
-        var upload = await mediaStorage.UploadAsync(new MediaUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+
+        // Le type RÉEL, déduit des octets — jamais `file.ContentType`, qui n'est que
+        // la déclaration non vérifiée du client. C'est ce type qui sera stocké sur R2,
+        // renvoyé aux navigateurs, et remis aux processeurs d'image.
+        var upload = await mediaStorage.UploadAsync(
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
         if (upload.IsFailure)
         {
             return Results.BadRequest(new { error = upload.Error.Message });
@@ -126,15 +132,20 @@ public static class SellerShopEndpoints
             return SellerBff.NotASeller();
         }
 
-        if (UploadValidation.ValidateDocument(file) is { } invalid)
+        var check = await UploadValidation.CheckDocumentAsync(file, ct);
+        if (check.Error is { } invalid)
         {
             return invalid;
         }
 
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
-        // Stockage sécurisé sur Cloudflare R2 (pièces KYB sensibles).
-        var upload = await kybStorage.UploadAsync(new KybFileUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+
+        // Stockage sécurisé sur Cloudflare R2 (pièces KYB sensibles). Le type enregistré est
+        // le type RÉEL, pas celui déclaré : ce document sera ouvert par un agent de
+        // conformité.
+        var upload = await kybStorage.UploadAsync(
+            new KybFileUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
         if (upload.IsFailure)
         {
             return Results.BadRequest(new { error = upload.Error.Message });

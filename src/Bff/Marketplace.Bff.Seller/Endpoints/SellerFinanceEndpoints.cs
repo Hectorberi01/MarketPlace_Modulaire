@@ -15,7 +15,7 @@ public static class SellerFinanceEndpoints
 {
     public static IEndpointRouteBuilder MapSellerFinanceEndpoints(this IEndpointRouteBuilder app)
     {
-        var finance = app.MapGroup("/seller/finance").WithTags("Vendeur · Finances").RequireAuthorization();
+        var finance = app.MapSellerGroup("/seller/finance", "Vendeur · Finances");
 
         finance.MapGet("/statement", StatementAsync);
         finance.MapGet("/payouts", PayoutsAsync);

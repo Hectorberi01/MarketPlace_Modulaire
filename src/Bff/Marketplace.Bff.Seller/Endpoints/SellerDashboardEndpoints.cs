@@ -15,8 +15,11 @@ public static class SellerDashboardEndpoints
 {
     public static IEndpointRouteBuilder MapSellerDashboardEndpoints(this IEndpointRouteBuilder app)
     {
+        // Route isolée (pas de groupe) : le rôle est exigé ici directement, sinon
+        // elle passait à travers le verrouillage posé sur les 17 autres groupes.
         app.MapGet("/seller/dashboard", DashboardAsync)
-            .WithTags("Vendeur · Tableau de bord").RequireAuthorization();
+            .WithTags("Vendeur · Tableau de bord")
+            .RequireAuthorization(p => p.RequireRole(SellerBff.SellerRole));
 
         return app;
     }

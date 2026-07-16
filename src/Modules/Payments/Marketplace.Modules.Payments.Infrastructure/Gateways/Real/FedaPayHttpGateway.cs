@@ -121,6 +121,17 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
         {
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawBody) ? "{}" : rawBody);
             var root = doc.RootElement;
+
+            // GARDE : les événements de DÉPÔT (payout.*) arrivent sur la même URL et
+            // portent un id d'entité distinct — mais numériquement collisionnable avec
+            // celui d'une transaction. Sans ce filtre, un « payout.canceled » ferait
+            // échouer le PAIEMENT qui porte le même numéro. Ils sont traités ailleurs.
+            var eventName = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty;
+            if (eventName.StartsWith("payout", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new GatewayEvent(Verified: true, GatewayOutcome.Ignored, null, null));
+            }
+
             var entity = root.TryGetProperty("entity", out var e) ? e : root;
 
             var status = entity.TryGetProperty("status", out var s) ? s.GetString() ?? string.Empty : string.Empty;

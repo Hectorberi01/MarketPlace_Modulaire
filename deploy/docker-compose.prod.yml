@@ -35,7 +35,17 @@ x-app-env: &app-env
   Jwt__Issuer: "marketplace"
   Jwt__Audience: "marketplace"
   Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
-  # FedaPay (paiements).
+  # Validation des comptes par un administrateur — voir le compose de staging.
+  # Défaut strict : toute inscription publique attend un aval humain.
+  # Bascule sans redéploiement via le .env (puis `--tags deploy`).
+  Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
+  Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
+  # FedaPay (paiements ET versements).
+  #
+  # SANS cette ligne, la valeur d'appsettings.json s'appliquait — c'est-à-dire
+  # le BAC À SABLE. La production parlait au sandbox : aucun encaissement réel,
+  # aucun versement possible. C'était le bug.
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
   # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
@@ -57,6 +67,21 @@ x-app-env: &app-env
   # deploy/fcm/service-account.json, monté en RO (voir volumes de x-app-common).
   # Fichier absent -> NullPushSender (aucun push, pas d'erreur).
   Notifications__Fcm__ServiceAccountPath: "/run/secrets/fcm/service-account.json"
+  # E-mails transactionnels (Resend). SANS EUX, L'API REFUSE DE DÉMARRER EN PRODUCTION.
+  #
+  # Ce n'est pas une précaution excessive : sans canal e-mail, aucun compte ne peut être
+  # vérifié et AUCUN mot de passe oublié ne peut être récupéré — les utilisateurs se
+  # retrouvent définitivement enfermés dehors, et l'exploitant ne l'apprend que par les
+  # plaintes. C'est ce vide qui avait poussé quelqu'un à renvoyer le jeton de
+  # réinitialisation dans la réponse HTTP d'un endpoint anonyme (prise de contrôle de
+  # n'importe quel compte). Mieux vaut un démarrage refusé qu'une plateforme qui « tourne »
+  # dans cet état.
+  #
+  # From  : le domaine doit être VÉRIFIÉ chez Resend (SPF + DKIM), sinon 403 à chaque envoi.
+  # AppBaseUrl : base des liens cliquables, ex. https://${ROOT_DOMAIN}
+  Notifications__Email__ApiKey: "${RESEND_API_KEY:-}"
+  Notifications__Email__From: "${EMAIL_FROM:-}"
+  Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
 
 x-app-common: &app-common
   restart: always
@@ -94,6 +119,36 @@ services:
     logging: *logging
     networks: [marketplace-net]
 
+  # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
+  # ⚠️ AUCUN port publié : la base n'est JAMAIS joignable depuis Internet, seulement
+  # sur le réseau Docker interne par l'API et les BFF. Pour une base EXTERNE
+  # (Neon/Supabase), retire ce service + le depends_on postgres de l'API, et mets
+  # MARKETPLACE_CONNECTION sur l'endpoint externe.
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    shm_size: "256mb"          # évite les erreurs "could not resize shared memory" sur les gros tris/index
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
   # ---------------- Edge gateway (TLS) ----------------
   traefik:
     image: traefik:v3.1
@@ -129,12 +184,45 @@ services:
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "true"
+      # Amorçage du PREMIER administrateur (idempotent ; ignoré si ADMIN_EMAIL ou
+      # ADMIN_PASSWORD est vide). Ne réinitialise jamais un compte existant.
+      # Uniquement sur l'API : c'est le seul hôte qui migre/seed. Voir ENV-PROD.md.
+      Identity__Bootstrap__AdminEmail: "${ADMIN_EMAIL:-}"
+      Identity__Bootstrap__AdminPassword: "${ADMIN_PASSWORD:-}"
+      Identity__Bootstrap__AdminFirstName: "${ADMIN_FIRST_NAME:-Admin}"
+      Identity__Bootstrap__AdminLastName: "${ADMIN_LAST_NAME:-Plateforme}"
+      Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`)"
+
+      # ─────────────────────────────────────────────────────────────────────────
+      # SURFACE PUBLIQUE RÉDUITE AUX SEULS RAPPELS DES PSP.
+      #
+      # AVANT : `Host(`api.${ROOT_DOMAIN}`)` exposait l'API ENTIÈRE sur Internet.
+      # Combiné à l'absence de FallbackPolicy, cela laissait un anonyme supprimer le
+      # catalogue, changer les prix, manipuler le stock, créer des utilisateurs et
+      # toucher au règlement des vendeurs.
+      #
+      # Or AUCUN client n'appelle cette API : l'app cliente parle à `m.`, l'app
+      # vendeur à `seller.`, les consoles à `admin.` et `seller.`, le site à personne.
+      # La seule chose qui DOIT joindre l'API depuis l'extérieur, ce sont les webhooks
+      # des prestataires de paiement — et le retour de redirection du navigateur après
+      # le paiement.
+      #
+      # Tout le reste est désormais injoignable depuis Internet : Traefik répond 404
+      # sans même transmettre la requête. C'est une défense en profondeur : même si un
+      # `RequireAuthorization()` était oublié demain, la route ne serait pas atteignable.
+      #
+      # ⚠️ SI VOUS AJOUTEZ UN ENDPOINT QUI DOIT ÊTRE APPELÉ DE L'EXTÉRIEUR (un nouveau
+      # PSP, par exemple), il faut l'ajouter ICI, sinon il répondra 404 — et le
+      # symptôme (« le PSP ne nous rappelle jamais ») ne pointera pas vers ce fichier.
+      # ─────────────────────────────────────────────────────────────────────────
+      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`) && (PathPrefix(`/api/payments/webhooks`) || PathPrefix(`/api/payments/return`))"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.api.middlewares=edge-chain@file"
@@ -224,6 +312,11 @@ services:
     image: ${IMAGE_PREFIX:-marketplace}/bff-admin:${IMAGE_TAG:-latest}
     environment:
       <<: *app-env
+      # CORS : la console admin est une app navigateur servie depuis une autre
+      # origine. Sans déclaration, la politique reste FERMÉE et le navigateur
+      # bloque tout. En PRODUCTION : uniquement l'origine réelle de la console,
+      # jamais localhost.
+      Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
     depends_on:
@@ -242,5 +335,6 @@ networks:
     name: marketplace-prod-net
 
 volumes:
+  pgdata:
   redisdata:
   acme:

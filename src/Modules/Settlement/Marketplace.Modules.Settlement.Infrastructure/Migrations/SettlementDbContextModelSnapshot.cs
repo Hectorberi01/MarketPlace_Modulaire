@@ -29,12 +29,23 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("DeadLetteredOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Error")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("OccurredOnUtc")
                         .HasColumnType("timestamp with time zone");
@@ -49,7 +60,13 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProcessedOnUtc");
+                    b.HasIndex("DeadLetteredOnUtc")
+                        .HasDatabaseName("ix_outbox_messages_dead_letters")
+                        .HasFilter("\"DeadLetteredOnUtc\" IS NOT NULL");
+
+                    b.HasIndex("NextAttemptAtUtc", "OccurredOnUtc")
+                        .HasDatabaseName("ix_outbox_messages_pending")
+                        .HasFilter("\"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL");
 
                     b.ToTable("outbox_messages", "settlement");
                 });
@@ -83,7 +100,7 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.Property<Guid>("SellerId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("SettlementBatchId")
+                    b.Property<Guid>("SettlementBatchId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Status")
@@ -213,6 +230,12 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.ToTable("platform_wallet", "settlement");
@@ -242,6 +265,12 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -301,6 +330,11 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.HasIndex("OwnerId", "CreatedAtUtc");
 
+                    b.HasIndex("ReferenceType", "ReferenceId", "OwnerId", "Account")
+                        .IsUnique()
+                        .HasDatabaseName("ux_wallet_transactions_refund_reversal")
+                        .HasFilter("\"ReferenceType\" = 'refund'");
+
                     b.ToTable("wallet_transactions", "settlement");
                 });
 
@@ -334,6 +368,9 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.Property<Guid>("SellerId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("SentToPspAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -351,7 +388,8 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.HasOne("Marketplace.Modules.Settlement.Domain.Batches.SettlementBatch", null)
                         .WithMany("Payouts")
                         .HasForeignKey("SettlementBatchId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Batches.SettlementBatch", b =>

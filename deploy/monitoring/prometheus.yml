@@ -1,0 +1,51 @@
+# Prometheus — scrape les métriques exposées par l'OpenTelemetry Collector.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Règles d'alerte (évaluées toutes les evaluation_interval).
+rule_files:
+  - "/etc/prometheus/prometheus-rules.yml"
+
+# Envoi des alertes déclenchées vers Alertmanager (routage + notifications).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # Métriques applicatives (ASP.NET Core + runtime) via le collector.
+  - job_name: "otel-collector"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Prometheus lui-même (sanity check).
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Métriques par conteneur (cAdvisor).
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Métriques de l'hôte VPS (CPU, RAM, disque, réseau…).
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Métriques Redis.
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # Alertmanager lui-même (santé du routage d'alertes).
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # (Optionnel) Métriques Traefik : activez-les dans traefik.yml
+  # (metrics.prometheus) puis décommentez.
+  # - job_name: "traefik"
+  #   static_configs:
+  #     - targets: ["traefik:8080"]

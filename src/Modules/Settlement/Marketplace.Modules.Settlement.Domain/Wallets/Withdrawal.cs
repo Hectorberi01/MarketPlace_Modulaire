@@ -28,6 +28,12 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     /// <summary>Vrai tant que la demande attend la validation de l'admin.</summary>
     public bool IsPendingApproval => Status == WithdrawalStatus.Requested;
 
+    /// <summary>Versement demandé au PSP, en attente de confirmation (réconciliation).</summary>
+    public bool IsProcessing => Status == WithdrawalStatus.Processing;
+
+    /// <summary>Date de la demande de versement au PSP (sert au délai d'alerte).</summary>
+    public DateTime? SentToPspAtUtc { get; private set; }
+
     public Guid SellerId { get; private set; }
     public decimal Amount { get; private set; }
     public string Currency { get; private set; } = default!;
@@ -41,10 +47,29 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
         => new(WithdrawalId.New(), sellerId, amount,
             string.IsNullOrWhiteSpace(currency) ? "XOF" : currency.Trim().ToUpperInvariant());
 
+    /// <summary>
+    /// Le versement a été DEMANDÉ au PSP (créé + démarré), ou son issue est indéterminée.
+    /// Les fonds restent débités : on ne rembourse pas tant qu'on ne sait pas.
+    /// <paramref name="providerRef"/> peut être nul (cas d'un timeout avant d'obtenir
+    /// l'identifiant) — le retrait devra alors être tranché manuellement.
+    /// </summary>
+    public void MarkProcessing(string? providerRef, string? note = null)
+    {
+        Status = WithdrawalStatus.Processing;
+        ProviderRef = providerRef ?? ProviderRef;
+        FailureReason = note; // trace de l'anomalie éventuelle (timeout…)
+        SentToPspAtUtc ??= DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Versement CONFIRMÉ par le PSP (statut « sent »). C'est le seul chemin vers
+    /// Completed : on ne clôture jamais sur une simple acceptation de la demande.
+    /// </summary>
     public void Complete(string? providerRef)
     {
         Status = WithdrawalStatus.Completed;
-        ProviderRef = providerRef;
+        ProviderRef = providerRef ?? ProviderRef;
+        FailureReason = null;
         CompletedAtUtc = DateTime.UtcNow;
     }
 

@@ -14,7 +14,7 @@ public static class AnalyticsEndpoints
     /// <summary>Enregistre les routes de reporting.</summary>
     public static IEndpointRouteBuilder MapAnalyticsEndpoints(this IEndpointRouteBuilder app)
     {
-        var analytics = app.MapGroup("/api/analytics").WithTags("Analytics");
+        var analytics = app.MapAdminGroup("/api/analytics").WithTags("Analytics");
 
         analytics.MapGet("/platform", PlatformAsync).WithName("GetPlatformReport").RequireAuthorization(p => p.RequireRole("Admin"));
         analytics.MapGet("/sellers/{sellerId:guid}", SellerAsync).WithName("GetSellerReport").RequireAuthorization();

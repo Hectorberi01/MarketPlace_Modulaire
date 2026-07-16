@@ -15,7 +15,7 @@ public static class SellerReturnEndpoints
 {
     public static IEndpointRouteBuilder MapSellerReturnEndpoints(this IEndpointRouteBuilder app)
     {
-        var returns = app.MapGroup("/seller/returns").WithTags("Vendeur · Retours").RequireAuthorization();
+        var returns = app.MapSellerGroup("/seller/returns", "Vendeur · Retours");
 
         returns.MapGet("/", ListMineAsync);
         returns.MapGet("/{id:guid}", GetAsync);
@@ -64,7 +64,16 @@ public static class SellerReturnEndpoints
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkReturnReceivedCommand(id), ct));
 
     private static async Task<IResult> RefundAsync(ClaimsPrincipal user, Guid id, RefundRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
-        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new RefundReturnCommand(id, request.Amount), ct));
+        // VALIDE le remboursement — l'argent ne part PAS ici.
+        //
+        // Le vendeur décide et fixe le montant ; le versement, lui, est exécuté par un
+        // administrateur dans le tableau de bord FedaPay (aucune API de remboursement
+        // n'existe). Le retour passe donc en « attente de versement », et non en
+        // « remboursé ».
+        //
+        // C'est précisément la confusion d'hier : ce bouton marquait « remboursé » sans
+        // qu'un seul franc ne quitte le compte.
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new ApproveReturnRefundCommand(id, request.Amount), ct));
 
     /// <summary>Résout le vendeur, vérifie la propriété du retour, puis exécute la commande.</summary>
     private static async Task<IResult> GuardAsync(

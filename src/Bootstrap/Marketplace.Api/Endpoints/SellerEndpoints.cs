@@ -126,7 +126,7 @@ public static class SellerEndpoints
 
     private static void MapAdmin(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/sellers/admin")
+        var group = app.MapAdminGroup("/api/sellers/admin")
             .WithTags("Sellers · Admin")
             .RequireAuthorization(policy => policy.RequireRole("Admin"));
 

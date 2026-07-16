@@ -31,7 +31,7 @@ public static class SellerCatalogEndpoints
 {
     public static IEndpointRouteBuilder MapSellerCatalogEndpoints(this IEndpointRouteBuilder app)
     {
-        var products = app.MapGroup("/seller/products").WithTags("Vendeur · Catalogue").RequireAuthorization();
+        var products = app.MapSellerGroup("/seller/products", "Vendeur · Catalogue");
 
         products.MapGet("/", ListMineAsync);
         products.MapGet("/{id:guid}", GetAsync);
@@ -54,11 +54,11 @@ public static class SellerCatalogEndpoints
         products.MapDelete("/{id:guid}", DeleteAsync);
 
         // Catégories de la plateforme (pour le sélecteur de création produit).
-        var categories = app.MapGroup("/seller/categories").WithTags("Vendeur · Catalogue").RequireAuthorization();
+        var categories = app.MapSellerGroup("/seller/categories", "Vendeur · Catalogue");
         categories.MapGet("/", ListCategoriesAsync);
 
         // Marques de la plateforme (pour le sélecteur de création produit).
-        var brands = app.MapGroup("/seller/brands").WithTags("Vendeur · Catalogue").RequireAuthorization();
+        var brands = app.MapSellerGroup("/seller/brands", "Vendeur · Catalogue");
         brands.MapGet("/", ListBrandsAsync);
 
         return app;
@@ -72,13 +72,43 @@ public static class SellerCatalogEndpoints
     private static async Task<IResult> ListBrandsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListBrandsQuery(), ct)).Match(b => Results.Ok(b));
 
-    /// <summary>Produits de la boutique du jeton (l'id vendeur est déduit du token).</summary>
-    private static async Task<IResult> ListMineAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    /// <summary>
+    /// Produits de la boutique du jeton (l'id vendeur est déduit du token).
+    ///
+    /// PAGINÉE (<c>?page=&amp;pageSize=</c>) et filtrable (<c>?search=</c> sur le nom).
+    /// Sans paramètre, tout est renvoyé : les appelants existants ne cassent pas.
+    /// </summary>
+    private static async Task<IResult> ListMineAsync(
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct,
+        int? page = null, int? pageSize = null, string? search = null)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        return seller is null
-            ? SellerBff.NotASeller()
-            : (await sender.Send(new ListProductsBySellerQuery(seller.Id), ct)).Match(p => Results.Ok(p));
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var result = await sender.Send(new ListProductsBySellerQuery(seller.Id), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(p => Results.Ok(p));
+        }
+
+        var products = result.Value.ToList();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var needle = search.Trim();
+            products = products
+                .Where(p => p.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        // Tri stable AVANT le découpage : sans lui, deux pages successives
+        // pourraient renvoyer le même produit et en oublier un autre.
+        products = products.OrderBy(p => p.Name).ToList();
+
+        return Results.Ok(SellerBff.Paginate(products, page, pageSize));
     }
 
     /// <summary>Fiche produit (scopée : 404 si elle n'appartient pas au vendeur).</summary>
@@ -132,13 +162,19 @@ public static class SellerCatalogEndpoints
         var uploads = new List<ProductImageUpload>(images.Count);
         foreach (var file in images)
         {
-            if (UploadValidation.ValidateImage(file) is { } invalid)
+            var check = await UploadValidation.CheckImageAsync(file, ct);
+            if (check.Error is { } invalid)
             {
                 return invalid;
             }
+
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
-            uploads.Add(new ProductImageUpload(file.FileName, file.ContentType, ms.ToArray()));
+
+            // Le type RÉEL, déduit des octets — jamais `file.ContentType`, qui n'est que
+            // la déclaration non vérifiée du client. C'est ce type qui sera stocké sur R2,
+            // renvoyé aux navigateurs, et remis aux processeurs d'image.
+            uploads.Add(new ProductImageUpload(file.FileName, check.ContentType!, ms.ToArray()));
         }
 
         // Attributs envoyés sous forme d'objet JSON { "clé": "valeur", ... }.
@@ -183,7 +219,8 @@ public static class SellerCatalogEndpoints
             return SellerBff.NotASeller();
         }
 
-        if (UploadValidation.ValidateImage(image) is { } invalid)
+        var check = await UploadValidation.CheckImageAsync(image, ct);
+        if (check.Error is { } invalid)
         {
             return invalid;
         }
@@ -191,8 +228,11 @@ public static class SellerCatalogEndpoints
         using var ms = new MemoryStream();
         await image.CopyToAsync(ms, ct);
 
+        // ⚠️ Ce contenu part vers un PROCESSEUR D'IMAGE (Cloudinary). Livrer des octets
+        // arbitraires à un décodeur d'images en lui annonçant un format choisi par
+        // l'attaquant, c'est le vecteur classique des CVE de bibliothèques graphiques.
         var result = await sender.Send(
-            new ProcessImageCommand(image.FileName, image.ContentType, ms.ToArray()), ct);
+            new ProcessImageCommand(image.FileName, check.ContentType!, ms.ToArray()), ct);
 
         return result.Match(r => Results.File(r.Content, r.ContentType));
     }
@@ -252,15 +292,17 @@ public static class SellerCatalogEndpoints
             return SellerBff.NotFoundOrForbidden("product");
         }
 
-        if (UploadValidation.ValidateImage(file) is { } invalid)
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
         {
             return invalid;
         }
 
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
+
         return (await sender.Send(new UploadProductImageCommand(
-                id, file.FileName, file.ContentType, ms.ToArray(), alt, isPrimary), ct))
+                id, file.FileName, check.ContentType!, ms.ToArray(), alt, isPrimary), ct))
             .Match(url => Results.Ok(new { url }));
     }
 

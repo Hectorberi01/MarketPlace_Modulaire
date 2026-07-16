@@ -97,6 +97,19 @@ public sealed class Offer : AggregateRoot<OfferId>
             return Error.Validation("offers.offer.seller_required", "Le vendeur est obligatoire.");
         }
 
+        // ⚠️ PRIX STRICTEMENT POSITIF — invariant du domaine, pas simple validation d'entrée.
+        //
+        // `Money.Create` ne rejette que le NÉGATIF : un prix de 0 passait, en création comme
+        // en modification (ChangeOfferPrice n'avait d'ailleurs aucun validator). Un vendeur
+        // pouvait donc lister un article à 0 XOF — gratuit, tout en engageant la logistique,
+        // la commission et les points de fidélité. On barre ici, dans le domaine, parce que
+        // c'est le seul endroit qu'aucun appelant (BFF, API, futur import en masse) ne peut
+        // contourner.
+        if (sellerPrice <= 0m)
+        {
+            return Error.Validation("offers.offer.price_invalid", "Le prix vendeur doit être strictement positif.");
+        }
+
         if (shipFromLocationId == Guid.Empty)
         {
             return Error.Validation("offers.offer.location_required", "La localisation d'expédition est obligatoire.");
@@ -133,6 +146,15 @@ public sealed class Offer : AggregateRoot<OfferId>
 
     public Result ChangePrice(decimal sellerPrice, decimal commissionRate, decimal providerFeeRate)
     {
+        // Même invariant qu'à la création : pas de prix nul ou négatif. Cette méthode
+        // n'avait AUCUNE validation de prix — c'était le trou par lequel une offre passait
+        // à 0 après coup.
+        if (sellerPrice <= 0m)
+        {
+            return Result.Failure(Error.Validation(
+                "offers.offer.price_invalid", "Le prix vendeur doit être strictement positif."));
+        }
+
         var (commissionAmount, providerFeeAmount, productPrice) =
             ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate);
 

@@ -15,7 +15,7 @@ public static class MarketingEndpoints
     /// <summary>Enregistre les routes marketing et de contenu.</summary>
     public static IEndpointRouteBuilder MapMarketingEndpoints(this IEndpointRouteBuilder app)
     {
-        var campaigns = app.MapGroup("/api/marketing/campaigns").WithTags("Marketing")
+        var campaigns = app.MapAdminGroup("/api/marketing/campaigns").WithTags("Marketing")
             .RequireAuthorization(p => p.RequireRole("Admin"));
 
         campaigns.MapPost("/", CreateCampaignAsync).WithName("CreateCampaign");
@@ -26,7 +26,7 @@ public static class MarketingEndpoints
         campaigns.MapPost("/{id:guid}/activate", ActivateAsync).WithName("ActivateCampaign");
         campaigns.MapPost("/{id:guid}/end", EndAsync).WithName("EndCampaign");
 
-        var content = app.MapGroup("/api/marketing/content").WithTags("Marketing · CMS");
+        var content = app.MapAdminGroup("/api/marketing/content").WithTags("Marketing · CMS");
 
         content.MapPost("/", CreateContentAsync).WithName("CreateContentBlock").RequireAuthorization(p => p.RequireRole("Admin"));
         content.MapPost("/{id:guid}/publish", PublishContentAsync).WithName("PublishContentBlock").RequireAuthorization(p => p.RequireRole("Admin"));

@@ -15,7 +15,7 @@ public static class RecommendationsEndpoints
     /// <summary>Enregistre les routes de recommandation.</summary>
     public static IEndpointRouteBuilder MapRecommendationsEndpoints(this IEndpointRouteBuilder app)
     {
-        var reco = app.MapGroup("/api/recommendations").WithTags("Recommendations");
+        var reco = app.MapAdminGroup("/api/recommendations").WithTags("Recommendations");
 
         reco.MapPost("/", UpsertAsync).WithName("UpsertRecommendation").RequireAuthorization(p => p.RequireRole("Admin"));
         reco.MapGet("/product/{productId:guid}", ByProductAsync).WithName("GetProductRecommendations").AllowAnonymous();

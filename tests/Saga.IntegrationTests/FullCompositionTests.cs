@@ -39,7 +39,17 @@ public sealed class FullCompositionTests : IAsyncLifetime
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Marketplace"] = _postgres.GetConnectionString()
+                ["ConnectionStrings:Marketplace"] = _postgres.GetConnectionString(),
+
+                // Le module Identity REFUSE de s'installer sans clé de signature —
+                // c'est voulu : une clé absente en production signifierait des jetons
+                // signés avec un secret vide. Ce test compose les 25 modules, donc il
+                // doit fournir la clé comme le ferait un vrai hôte.
+                //
+                // Clé de test, jamais déployée. La longueur compte : HMAC-SHA256 exige
+                // au moins 32 octets, et un secret plus court fait lever la
+                // bibliothèque, pas notre code.
+                ["Jwt:SigningKey"] = "test-only-signing-key-at-least-32-bytes-long!!"
             })
             .Build();
 

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
+using Marketplace.BuildingBlocks.Infrastructure.Caching;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 
 namespace Marketplace.Modules.Reviews.Infrastructure.Persistence;
@@ -19,7 +20,11 @@ public sealed class ReviewsDbContextFactory : IDesignTimeDbContextFactory<Review
                 npgsql.MigrationsHistoryTable("__ef_migrations_history", ReviewsDbContext.SchemaName))
             .Options;
 
-        return new ReviewsDbContext(options, NoOpDomainEventDispatcher.Instance, new IntegrationEventQueue());
+        return new ReviewsDbContext(
+            options,
+            NoOpDomainEventDispatcher.Instance,
+            new IntegrationEventQueue(),
+            NoOpCacheService.Instance);
     }
 
     private sealed class NoOpDomainEventDispatcher : IDomainEventDispatcher

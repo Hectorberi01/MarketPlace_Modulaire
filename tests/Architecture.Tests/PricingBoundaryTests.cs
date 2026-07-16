@@ -36,6 +36,16 @@ public class PricingBoundaryTests
         result.IsSuccessful.Should().BeTrue(Failure(result));
     }
 
+    /// <summary>
+    /// Pricing consomme désormais `OrderConfirmedIntegrationEvent` (pour décompter les
+    /// coupons) : c'est une NOUVELLE arête vers Ordering, et elle doit rester cantonnée
+    /// aux **Contracts**.
+    ///
+    /// Ordering.Domain/Application/Infrastructure sont donc explicitement interdits ici.
+    /// Sans cette règle, la moindre facilité — « j'ai juste besoin de lire Order pour
+    /// vérifier un truc » — transformerait un couplage par contrat en couplage par modèle
+    /// interne, et le remaniement d'Ordering casserait Pricing sans prévenir.
+    /// </summary>
     [Fact]
     public void Pricing_Application_ne_depend_pas_des_internes_des_autres_modules()
     {
@@ -48,7 +58,10 @@ public class PricingBoundaryTests
                 "Marketplace.Modules.Sellers.Domain",
                 "Marketplace.Modules.Sellers.Application",
                 "Marketplace.Modules.Offers.Domain",
-                "Marketplace.Modules.Offers.Application")
+                "Marketplace.Modules.Offers.Application",
+                "Marketplace.Modules.Ordering.Domain",
+                "Marketplace.Modules.Ordering.Application",
+                "Marketplace.Modules.Ordering.Infrastructure")
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(Failure(result));

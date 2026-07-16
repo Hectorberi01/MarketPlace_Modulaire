@@ -22,6 +22,18 @@ public sealed record ListSellerReturnsQuery(Guid SellerId) : IQuery<IReadOnlyLis
 public sealed record ListSellerRefundsQuery(Guid SellerId, DateTime From, DateTime To)
     : IQuery<IReadOnlyList<SellerRefundLine>>;
 
+/// <summary>
+/// LA FILE DES VERSEMENTS À EXÉCUTER (back-office admin).
+///
+/// FedaPay n'expose aucune API de remboursement : un humain doit effectuer chaque
+/// versement depuis leur tableau de bord. Cette liste est sa file de travail.
+///
+/// Elle devrait être VIDE en fin de journée. Chaque ligne qui y traîne est un client
+/// à qui l'on a promis son argent et qui ne l'a pas reçu — c'est-à-dire un litige en
+/// préparation, et un avis à une étoile.
+/// </summary>
+public sealed record ListPendingRefundsQuery : IQuery<IReadOnlyList<PendingRefundLine>>;
+
 internal static class ReturnMapper
 {
     public static ReturnRequestSummary ToSummary(ReturnRequest r) => new(
@@ -66,6 +78,31 @@ internal sealed class ListSellerReturnsQueryHandler : IQueryHandler<ListSellerRe
         var items = await _repository.ListBySellerAsync(query.SellerId, cancellationToken);
         IReadOnlyList<ReturnRequestSummary> summaries = items.Select(ReturnMapper.ToSummary).ToList();
         return Result.Success(summaries);
+    }
+}
+
+internal sealed class ListPendingRefundsQueryHandler : IQueryHandler<ListPendingRefundsQuery, IReadOnlyList<PendingRefundLine>>
+{
+    private readonly IReturnRequestRepository _repository;
+    public ListPendingRefundsQueryHandler(IReturnRequestRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<PendingRefundLine>>> Handle(ListPendingRefundsQuery query, CancellationToken cancellationToken)
+    {
+        var items = await _repository.ListPendingRefundsAsync(cancellationToken);
+
+        IReadOnlyList<PendingRefundLine> lines = items
+            .Where(r => r.RefundAmount is > 0m && r.RefundApprovedAtUtc is not null)
+            .Select(r => new PendingRefundLine(
+                r.Id.Value,
+                r.OrderId,
+                r.BuyerId,
+                r.SellerId,
+                r.RefundAmount!.Value,
+                r.Currency,
+                r.RefundApprovedAtUtc!.Value))
+            .ToList();
+
+        return Result.Success(lines);
     }
 }
 

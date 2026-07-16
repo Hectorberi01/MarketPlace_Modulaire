@@ -4,18 +4,19 @@ target_env: prod
 compose_file: docker-compose.prod.yml
 app_dir: /opt/marketplace
 
+#postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
 # Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
-root_domain: example.com
-acme_email: admin@example.com
+root_domain: hba-express.org
+acme_email: hector.adjakpa@hbatechettrade.com
 
 # Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
 enable_portainer: true
 traefik_network: marketplace-prod-net
 
 # R2 — noms de buckets (non sensibles)
-r2_bucket_name: documents-pdf
+r2_bucket_name: hbaexpress-documents-pdf
 r2_public_base_url: ""
-r2_media_bucket_name: images
-r2_media_key_prefix: MarketPlace
+r2_media_bucket_name: habexpress-images
+r2_media_key_prefix: products-images
 # En prod, préférer un domaine personnalisé connecté au bucket public.
-r2_media_public_base_url: "https://pub-xxxxxxxx.r2.dev"
+r2_media_public_base_url: "https://images.hbamediacore.fr"

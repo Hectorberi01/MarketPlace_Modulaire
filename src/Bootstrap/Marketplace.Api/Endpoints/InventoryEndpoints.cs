@@ -25,7 +25,7 @@ public static class InventoryEndpoints
 
     private static void MapItems(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/inventory/items").WithTags("Inventory · Stock").RequireAuthorization();
+        var group = app.MapAdminGroup("/api/inventory/items").WithTags("Inventory · Stock").RequireAuthorization();
 
         group.MapPost("/", CreateItemAsync).WithName("CreateInventoryItem");
         group.MapGet("/{id:guid}", GetItemAsync).WithName("GetInventoryItem");
@@ -94,7 +94,7 @@ public static class InventoryEndpoints
 
     private static void MapReservations(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/inventory/reservations").WithTags("Inventory · Réservations").RequireAuthorization();
+        var group = app.MapAdminGroup("/api/inventory/reservations").WithTags("Inventory · Réservations").RequireAuthorization();
 
         group.MapPost("/", ReserveAsync).WithName("ReserveStock");
         group.MapPost("/release", ReleaseAsync).WithName("ReleaseReservation");
@@ -126,7 +126,7 @@ public static class InventoryEndpoints
 
     private static void MapLocations(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/inventory/locations").WithTags("Inventory · Lieux").RequireAuthorization();
+        var group = app.MapAdminGroup("/api/inventory/locations").WithTags("Inventory · Lieux").RequireAuthorization();
 
         group.MapPost("/", CreateLocationAsync).WithName("CreateFulfillmentLocation");
         group.MapPut("/{id:guid}/address", UpdateLocationAddressAsync).WithName("UpdateLocationAddress");

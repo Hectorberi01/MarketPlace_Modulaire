@@ -8,6 +8,18 @@ public interface IOrderRepository
 
     Task<IReadOnlyList<Order>> ListByBuyerAsync(Guid buyerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Cet acheteur a-t-il DÉJÀ acheté pour de bon ? (statut Paid, Confirmed ou Delivered)
+    ///
+    /// « Pour de bon » exclut Pending et AwaitingPayment à dessein : un panier abandonné au
+    /// moment de payer ne doit PAS brûler définitivement la promo de bienvenue de
+    /// l'acheteur. Le prix de ce choix est une fenêtre étroite — deux checkouts menés en
+    /// parallèle par la même personne pourraient tous deux se croire « premiers » et
+    /// obtenir la remise de bienvenue. Le dommage est borné (UNE remise de trop), là où
+    /// l'inverse punirait durablement un utilisateur honnête qui a hésité à payer.
+    /// </summary>
+    Task<bool> HasPurchasedAsync(Guid buyerId, CancellationToken cancellationToken = default);
+
     /// <summary>Commandes comportant au moins une ligne vendue par ce vendeur (back-office vendeur).</summary>
     Task<IReadOnlyList<Order>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default);
 

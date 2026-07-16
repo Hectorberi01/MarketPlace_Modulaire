@@ -14,7 +14,7 @@ public static class FraudEndpoints
     /// <summary>Enregistre les routes anti-fraude.</summary>
     public static IEndpointRouteBuilder MapFraudEndpoints(this IEndpointRouteBuilder app)
     {
-        var fraud = app.MapGroup("/api/fraud").WithTags("Fraud");
+        var fraud = app.MapAdminGroup("/api/fraud").WithTags("Fraud");
 
         fraud.MapPost("/assess", AssessAsync).WithName("AssessRisk").RequireAuthorization(p => p.RequireRole("Admin"));
         fraud.MapGet("/assessments/{subjectType}/{subjectId:guid}", LatestAsync).WithName("GetRiskAssessment").RequireAuthorization(p => p.RequireRole("Admin"));

@@ -22,6 +22,8 @@ public sealed class PricingDbContext : ModuleDbContext, IPricingUnitOfWork
 
     public DbSet<Promotion> Promotions => Set<Promotion>();
 
+    public DbSet<PromotionRedemption> PromotionRedemptions => Set<PromotionRedemption>();
+
     protected override string Schema => SchemaName;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -106,6 +106,86 @@ public sealed class WalletMutations
             WalletTransaction.ForPlatform(WalletAccount.Shipping, WalletDirection.Credit, amount, currency, "shipping_fee", "order", orderId), ct);
     }
 
+    /// <summary>
+    /// CONTRE-PASSATION : reprend au vendeur le gain d'une vente remboursée.
+    ///
+    /// Deux écritures distinctes au grand livre (solde à venir, puis solde principal),
+    /// et non une seule globale : c'est la seule façon de pouvoir expliquer plus tard,
+    /// ligne à ligne, POURQUOI le solde d'un vendeur a bougé. Un débit unique et opaque
+    /// se solde toujours par une discussion qu'on ne peut pas gagner.
+    ///
+    /// Le portefeuille est CRÉÉ s'il n'existe pas : un vendeur peut avoir été remboursé
+    /// avant d'avoir le moindre solde. Refuser le débit dans ce cas ferait disparaître
+    /// la dette au lieu de l'enregistrer.
+    /// </summary>
+    /// <summary>
+    /// ⚠️ LA RÉFÉRENCE EST LE REMBOURSEMENT, PAS LA COMMANDE.
+    ///
+    /// Ces écritures portaient `("order", orderId)`. C'était un défaut : deux retours
+    /// distincts sur une même commande produisaient des lignes INDISTINGUABLES au grand
+    /// livre — impossible d'y lire lequel avait déjà été contre-passé, ni d'expliquer à
+    /// un vendeur pourquoi son solde a bougé deux fois.
+    ///
+    /// Elles portent désormais `("refund", returnRequestId)`, ce qui les rend uniques
+    /// ET sert de registre d'idempotence (voir ExistsForReferenceAsync).
+    /// </summary>
+    public const string RefundReferenceType = "refund";
+
+    public async Task<bool> RefundAlreadyReversedAsync(Guid returnRequestId, CancellationToken ct)
+        => await _ledger.ExistsForReferenceAsync(RefundReferenceType, returnRequestId, ct);
+
+    public async Task DebitSellerForRefundAsync(
+        Guid sellerId, decimal netAmount, string currency, Guid returnRequestId, CancellationToken ct)
+    {
+        if (netAmount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreateSellerAsync(sellerId, currency, ct);
+        var (fromPending, fromAvailable) = wallet.DebitForRefund(netAmount);
+
+        if (fromPending > 0m)
+        {
+            await _ledger.AddAsync(
+                WalletTransaction.ForSeller(sellerId, WalletAccount.Pending, WalletDirection.Debit, fromPending, currency, "refund_reversal", RefundReferenceType, returnRequestId), ct);
+        }
+
+        if (fromAvailable > 0m)
+        {
+            await _ledger.AddAsync(
+                WalletTransaction.ForSeller(sellerId, WalletAccount.Available, WalletDirection.Debit, fromAvailable, currency, "refund_reversal", RefundReferenceType, returnRequestId), ct);
+        }
+    }
+
+    /// <summary>Restitue la commission de la plateforme sur une vente remboursée.</summary>
+    public async Task DebitPlatformCommissionAsync(decimal amount, string currency, Guid returnRequestId, CancellationToken ct)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreatePlatformAsync(currency, ct);
+        wallet.DebitCommission(amount);
+        await _ledger.AddAsync(
+            WalletTransaction.ForPlatform(WalletAccount.Commission, WalletDirection.Debit, amount, currency, "refund_reversal", RefundReferenceType, returnRequestId), ct);
+    }
+
+    /// <summary>Restitue les frais provider de la plateforme sur une vente remboursée.</summary>
+    public async Task DebitPlatformProviderFeeAsync(decimal amount, string currency, Guid returnRequestId, CancellationToken ct)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreatePlatformAsync(currency, ct);
+        wallet.DebitProviderFee(amount);
+        await _ledger.AddAsync(
+            WalletTransaction.ForPlatform(WalletAccount.Provider, WalletDirection.Debit, amount, currency, "refund_reversal", RefundReferenceType, returnRequestId), ct);
+    }
+
     private async Task<SellerWallet> GetOrCreateSellerAsync(Guid sellerId, string currency, CancellationToken ct)
     {
         if (_sellerCache.TryGetValue(sellerId, out var cached))

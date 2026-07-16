@@ -145,22 +145,36 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
                 Currency: withdrawal.Currency,
                 BeneficiaryName: string.IsNullOrWhiteSpace(account.AccountName) ? seller!.ShopName : account.AccountName,
                 Msisdn: account.AccountNumber,
-                CountryCode: "BJ",
-                // Opérateur Mobile Money du vendeur (MtnMomo/MoovMoney/Celtis…) : le
-                // gateway FedaPay le traduit en « mode » (mtn_open/moov/sbin). Tous
-                // les vendeurs n'utilisent pas MTN — on ne hardcode donc plus le mode.
+                // L'opérateur du vendeur détermine à lui seul le routage PSP (mode ET
+                // pays). On ne passe plus de code pays « en dur » : c'était le bug qui
+                // expédiait tous les numéros vers le Bénin.
                 Provider: account.Provider,
                 Reference: $"withdrawal:{withdrawal.Id}"),
             cancellationToken);
 
-        if (!outcome.Success)
+        switch (outcome.Status)
         {
-            return await FailAndRefundAsync(withdrawal, wallet, outcome.Error ?? "Échec du versement.", cancellationToken);
-        }
+            // Rejet DÉFINITIF du PSP : rien n'est parti → on peut recréditer sans risque.
+            case PayoutOutcomeStatus.Failed:
+                return await FailAndRefundAsync(withdrawal, wallet, outcome.Error ?? "Échec du versement.", cancellationToken);
 
-        withdrawal.Complete(outcome.ProviderReference);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return WalletMapper.ToView(withdrawal);
+            // Issue INDÉTERMINÉE (timeout, 5xx…) : le versement est peut-être parti.
+            // On NE REMBOURSE PAS — sinon l'admin pourrait re-valider et déclencher un
+            // SECOND versement. Le retrait passe « en cours » ; la réconciliation
+            // interrogera FedaPay et tranchera (Completed ou Failed + remboursement).
+            case PayoutOutcomeStatus.Unknown:
+                withdrawal.MarkProcessing(outcome.ProviderReference, outcome.Error);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return WalletMapper.ToView(withdrawal);
+
+            // Accepté = créé + démarré chez FedaPay. Ce n'est QUE « started » : l'argent
+            // n'est pas encore arrivé. On ne clôture donc PAS en Completed ici — c'est la
+            // réconciliation, sur le statut « sent », qui le fera.
+            default:
+                withdrawal.MarkProcessing(outcome.ProviderReference);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return WalletMapper.ToView(withdrawal);
+        }
     }
 
     // Échec du payout après retenue des fonds : marque Failed et recrédite le solde.
@@ -236,6 +250,19 @@ internal sealed class RejectWithdrawalCommandHandler : ICommandHandler<RejectWit
 /// <summary>Petit utilitaire partagé pour identifier un compte de versement Mobile Money.</summary>
 internal static class WalletPayout
 {
+    /// <summary>
+    /// Opérateurs que l'on sait RÉELLEMENT reverser via FedaPay (mode + pays connus).
+    /// Doit rester aligné sur <c>FedaPayPayoutGateway.ResolveRoute</c>.
+    ///
+    /// « wave » et « fedapay » ont été RETIRÉS volontairement : « fedapay » n'est pas
+    /// un opérateur, et « wave » est ambigu (FedaPay distingue wave_ci et wave_sn — sans
+    /// pays sur le compte du vendeur, impossible de trancher). Les accepter revenait à
+    /// router leurs numéros vers MTN Bénin. Mieux vaut refuser la demande de retrait tout
+    /// de suite que de débiter le vendeur pour échouer — ou pire, mal payer — ensuite.
+    ///
+    /// Pour les supporter : ajouter un pays au compte de versement du vendeur, puis
+    /// étendre la table de routage du gateway.
+    /// </summary>
     public static bool IsMobileMoney(string provider)
-        => provider.ToLowerInvariant() is "mtnmomo" or "moovmoney" or "wave" or "celtis" or "fedapay";
+        => provider.ToLowerInvariant() is "mtnmomo" or "moovmoney" or "celtis";
 }

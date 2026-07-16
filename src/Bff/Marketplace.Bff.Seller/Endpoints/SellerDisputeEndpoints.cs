@@ -15,7 +15,7 @@ public static class SellerDisputeEndpoints
 {
     public static IEndpointRouteBuilder MapSellerDisputeEndpoints(this IEndpointRouteBuilder app)
     {
-        var disputes = app.MapGroup("/seller/disputes").WithTags("Vendeur · Litiges").RequireAuthorization();
+        var disputes = app.MapSellerGroup("/seller/disputes", "Vendeur · Litiges");
 
         disputes.MapGet("/by-order/{orderId:guid}", ByOrderAsync);
         disputes.MapGet("/{id:guid}", GetAsync);

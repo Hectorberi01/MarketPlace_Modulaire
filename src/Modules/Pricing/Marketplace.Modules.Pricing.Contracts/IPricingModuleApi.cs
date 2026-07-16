@@ -8,4 +8,10 @@ namespace Marketplace.Modules.Pricing.Contracts;
 public interface IPricingModuleApi
 {
     Task<PriceBreakdownDto> CalculatePriceAsync(PriceRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Valide un code promo pour un acheteur, avant de l'attacher au panier.
+    /// Verdict indicatif — voir <see cref="CouponValidation"/>.
+    /// </summary>
+    Task<CouponValidation> ValidateCouponAsync(string code, Guid buyerId, CancellationToken cancellationToken = default);
 }

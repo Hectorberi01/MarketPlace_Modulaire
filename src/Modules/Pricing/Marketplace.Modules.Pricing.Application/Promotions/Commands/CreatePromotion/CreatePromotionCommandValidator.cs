@@ -13,6 +13,7 @@ public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePr
         RuleFor(c => c.ScopeType).Must(v => v is "Product" or "Category" or "Seller" or "Cart" or "Global").WithMessage("ScopeType invalide.");
         RuleFor(c => c.Value).GreaterThanOrEqualTo(0);
         RuleFor(c => c.UsageLimit).GreaterThanOrEqualTo(0);
+        RuleFor(c => c.PerUserLimit).GreaterThanOrEqualTo(0);
         RuleFor(c => c.EndUtc).GreaterThan(c => c.StartUtc).WithMessage("La date de fin doit être postérieure à la date de début.");
     }
 }

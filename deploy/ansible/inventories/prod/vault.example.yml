@@ -3,11 +3,25 @@
 #   cp vault.example.yml group_vars/marketplace/vault.yml
 #   ansible-vault encrypt group_vars/marketplace/vault.yml
 
-# Base Neon de PROD — endpoint DIRECT (sans -pooler), format Npgsql.
-marketplace_connection: "Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=CHANGE_ME;SSL Mode=Require;Channel Binding=Require"
+# ── BASE DE DONNÉES ──────────────────────────────────────────────────────────
+# OPTION A (par défaut) : Postgres CO-HÉBERGÉ sur le VPS. Définis SEULEMENT le mot
+# de passe ci-dessous — env.j2 construit MARKETPLACE_CONNECTION tout seul (host =
+# service `postgres`). Ne définis PAS marketplace_connection dans ce cas.
+postgres_password: "CHANGE_ME_STRONG_DB_PASSWORD"
+#
+# OPTION B : base EXTERNE managée (Neon/Supabase). Décommente et renseigne ;
+# elle est PRIORITAIRE sur la base locale. Endpoint DIRECT, format Npgsql.
+#   marketplace_connection: "Host=db.xxxx.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=CHANGE_ME;SSL Mode=Require;Trust Server Certificate=true"
 
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
+
+# E-mails transactionnels (Resend) — OBLIGATOIRE en prod (sinon l'API ne démarre pas).
+resend_api_key: "re_CHANGE_ME"
+
+# Amorçage du premier administrateur (créé au 1er démarrage, idempotent).
+# admin_email / email_from / email_app_base_url (non secrets) -> group_vars/marketplace/main.yml
+admin_password: "CHANGE_ME_STRONG_ADMIN_PASSWORD"
 
 # FedaPay LIVE en production.
 fedapay_api_key: "sk_live_xxx"
