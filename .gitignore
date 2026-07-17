@@ -32,6 +32,12 @@ appsettings.Local.json
 # avant chiffrement). Les gabarits *.example.yml restent suivis.
 **/vault.yml
 !**/vault.example.yml
+# EXCEPTION : les vaults CHIFFRÉS des inventaires staging/prod sont nécessaires au
+# déploiement depuis la CI (Ansible s'exécute sur un runner qui n'a que le dépôt).
+# Sûr car chiffrés AES-256 — inutiles sans le mot de passe (secret GitHub).
+# ⚠️ Ne committer QUE s'ils commencent bien par « $ANSIBLE_VAULT ».
+!deploy/ansible/inventories/staging/group_vars/marketplace/vault.yml
+!deploy/ansible/inventories/prod/group_vars/marketplace/vault.yml
 
 ## OS
 .DS_Store
