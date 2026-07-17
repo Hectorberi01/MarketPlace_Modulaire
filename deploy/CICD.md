@@ -33,9 +33,14 @@ Registre commun : `ghcr.io/hectorberi01`. Le VPS ne fait que **pull** (`use_regi
 - `ANSIBLE_VAULT_PASSWORD` — mot de passe du vault Ansible.
 
 **Admin_MP_Next** et **hbaexpress-site**
-- `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY` — accès SSH au VPS.
-- `DEPLOY_PATH` — dossier de la stack sur le VPS (où se trouvent les
-  `docker-compose.<env>.yml`, déployés par Ansible).
+- Secrets dans **deux environnements GitHub** : `staging` et `prod` (les jobs
+  utilisent `environment: <staging|prod>` selon la branche). Chacun contient :
+  `GHCR_TOKEN`, `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, et
+  éventuellement `DEPLOY_SSH_PORT` (défaut **8022**).
+- Pas de `DEPLOY_PATH` : le workflow calcule le dossier tout seul —
+  `/opt/marketplace` (prod) ou `/opt/marketplace-staging` (staging), là où Ansible
+  a déposé la stack. Le redeploy fait
+  `docker compose -f deploy/docker-compose.<env>.yml --env-file deploy/.env.<env> pull/up <service>`.
 
 Le push d'images sur GHCR utilise le `GITHUB_TOKEN` intégré **si** les packages sont
 liés au dépôt. Si les packages existent déjà (poussés en local sous ton compte), le
