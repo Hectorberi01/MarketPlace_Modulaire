@@ -340,6 +340,39 @@ services:
       - "traefik.http.routers.console.middlewares=edge-chain@file"
       - "traefik.http.services.console.loadbalancer.server.port=3000"
 
+  # ---------------------------------------------------------------------------
+  # SITE VITRINE (hbaexpress-site) — Next.js « standalone » (rendu serveur pour le
+  # formulaire /api/contact : Turnstile + Resend). Image construite depuis le dépôt
+  # hbaexpress-site et poussée au registre par sa CI (service « site »).
+  #
+  # NEXT_PUBLIC_TURNSTILE_SITE_KEY est une variable de BUILD (injectée au
+  # `docker build --build-arg`), pas ici. Les secrets ci-dessous sont au RUNTIME et
+  # proviennent du .env de la stack (vault → SITE_*).
+  # ---------------------------------------------------------------------------
+  site:
+    image: ${IMAGE_PREFIX:-marketplace}/site:${IMAGE_TAG:-staging}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      RESEND_API_KEY: "${SITE_RESEND_API_KEY:-}"
+      TURNSTILE_SECRET_KEY: "${SITE_TURNSTILE_SECRET_KEY:-}"
+      CONTACT_TO: "${SITE_CONTACT_TO:-}"
+      CONTACT_FROM: "${SITE_CONTACT_FROM:-}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.site.rule=Host(`${ROOT_DOMAIN}`) || Host(`www.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.site.entrypoints=websecure"
+      - "traefik.http.routers.site.tls.certresolver=letsencrypt"
+      - "traefik.http.services.site.loadbalancer.server.port=3000"
+
 networks:
   marketplace-net:
     name: marketplace-staging-net
