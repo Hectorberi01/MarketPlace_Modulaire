@@ -20,6 +20,11 @@ Registre commun : `ghcr.io/hectorberi01`. Le VPS ne fait que **pull** (`use_regi
 - **Site vitrine** (`hbaexpress-site` → `.github/workflows/deploy.yml`) : build +
   push `site:<tag>` → **SSH** `docker compose pull site && up -d site`.
 
+> Les secrets ci-dessous sont attendus dans un **environnement GitHub nommé
+> `deploy`** (Settings → Environments → deploy). Les workflows déclarent
+> `environment: deploy` sur les jobs concernés. (À défaut, les mettre en *Repository
+> secrets* et retirer les lignes `environment: deploy`.)
+
 ## Secrets GitHub par dépôt
 
 **marketPlace**
@@ -32,7 +37,12 @@ Registre commun : `ghcr.io/hectorberi01`. Le VPS ne fait que **pull** (`use_regi
 - `DEPLOY_PATH` — dossier de la stack sur le VPS (où se trouvent les
   `docker-compose.<env>.yml`, déployés par Ansible).
 
-Le push d'images sur GHCR utilise le `GITHUB_TOKEN` intégré (aucun secret à créer).
+Le push d'images sur GHCR utilise le `GITHUB_TOKEN` intégré **si** les packages sont
+liés au dépôt. Si les packages existent déjà (poussés en local sous ton compte), le
+`GITHUB_TOKEN` reçoit un **403 Forbidden** : soit donner au dépôt l'accès *Write* sur
+chaque package (Package settings → Manage Actions access), soit créer un PAT classique
+avec `write:packages` et l'ajouter en secret **`GHCR_TOKEN`** (les workflows le
+préfèrent au `GITHUB_TOKEN` s'il est présent).
 
 ## Prérequis (une fois)
 
