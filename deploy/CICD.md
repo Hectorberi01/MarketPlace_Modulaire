@@ -71,13 +71,42 @@ préfèrent au `GITHUB_TOKEN` s'il est présent).
 7. **Console** : le secret `ADMIN_SESSION_SECRET` (chiffrement de session) doit être
    dans le vault de chaque env (déjà prévu côté staging).
 
+## Vault chiffré versionné (obligatoire pour « Ansible depuis la CI »)
+
+La CI n'a que le dépôt : Ansible doit y trouver le **vault chiffré**, sinon toutes
+les variables secrètes (ex. `jwt_signing_key`) sont *undefined*. Le `.gitignore`
+bloque `**/vault.yml` par défaut, mais **dé-ignore** explicitement les deux vaults
+d'inventaire (staging/prod) : ils sont chiffrés AES-256, donc sûrs à versionner
+(inutiles sans le mot de passe, qui reste le secret GitHub `ANSIBLE_VAULT_PASSWORD`).
+
+> ⚠️ Ne versionner que si le fichier commence par `$ANSIBLE_VAULT` :
+> `head -1 deploy/ansible/inventories/<env>/group_vars/marketplace/vault.yml`.
+> Et s'assurer qu'aucune clé compromise (ex. l'ancienne clé Resend) n'y traîne —
+> révoquer/régénérer avant.
+
+Committer chaque vault sur SA branche :
+
+```bash
+# Prod → branche develop
+git checkout develop
+git add .gitignore deploy/ansible/inventories/prod/group_vars/marketplace/vault.yml
+git commit -m "ci(deploy): versionner le vault prod chiffré"
+git push origin develop
+
+# Staging → branche develop_staging
+git checkout develop_staging
+git add .gitignore deploy/ansible/inventories/staging/group_vars/marketplace/vault.yml
+git commit -m "ci(deploy): versionner le vault staging chiffré"
+git push origin develop_staging
+```
+
 ## Notes
 
 - Comme les 3 services partagent `IMAGE_TAG`, un déploiement **backend prod** tire
   `console:latest` et `site:latest` : veille à ce que ces images aient bien été
   poussées (leurs pipelines respectifs sur `develop`).
-- Le chemin/compose du redeploy SSH (`docker-compose.<env>.yml` dans `DEPLOY_PATH`)
-  doit correspondre à ce que le rôle Ansible dépose sur le serveur — ajuster si le
-  rôle nomme les fichiers autrement.
+- Le redeploy SSH (console/site) suppose l'arborescence posée par le rôle Ansible :
+  stack dans `/opt/marketplace` (prod) / `/opt/marketplace-staging` (staging), avec
+  `deploy/docker-compose.<env>.yml` et `deploy/.env.<env>`. Ajuster si le rôle change.
 - Le VPS est en `linux/amd64` : toutes les images sont buildées pour cette
   plateforme (déjà géré dans les workflows et `build-and-push.sh`).
