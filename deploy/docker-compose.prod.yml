@@ -1,0 +1,340 @@
+# =====================================================================
+#  PRODUCTION — Marketplace
+#  Traefik (TLS Let's Encrypt) → Marketplace.Api + 4 BFF, Redis managé en
+#  conteneur, base de données EXTERNE (Neon/Postgres managé).
+#
+#  Différences avec docker-compose.yml (dev) :
+#   • Pas de Postgres local : la base est fournie via MARKETPLACE_CONNECTION (Neon).
+#   • TLS automatique (Let's Encrypt, challenge TLS-ALPN) + redirection HTTP→HTTPS.
+#   • Routage par SOUS-DOMAINES réels (api./seller./admin./web./m.$ROOT_DOMAIN).
+#   • Aucun port applicatif exposé (seuls 80/443 de Traefik le sont).
+#   • Dashboard Traefik désactivé, Redis protégé par mot de passe.
+#   • Redémarrage automatique, limites de ressources, rotation des logs.
+#
+#  Lancement :
+#     cd deploy
+#     cp .env.prod.example .env.prod   # puis renseigner les secrets
+#     docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# =====================================================================
+
+name: marketplace-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-env: &app-env
+  ASPNETCORE_ENVIRONMENT: "Production"
+  # BASE DE DONNÉES EXTERNE (Neon) — OBLIGATOIRE en prod (pas de fallback local).
+  # Utiliser l'endpoint DIRECT (sans « -pooler ») pour les migrations EF.
+  ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon)}"
+  # Redis protégé par mot de passe (backplane SignalR + cache).
+  Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD requis},abortConnect=false"
+  Jwt__Issuer: "marketplace"
+  Jwt__Audience: "marketplace"
+  Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
+  # Validation des comptes par un administrateur — voir le compose de staging.
+  # Défaut strict : toute inscription publique attend un aval humain.
+  # Bascule sans redéploiement via le .env (puis `--tags deploy`).
+  Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
+  Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
+  # FedaPay (paiements ET versements).
+  #
+  # SANS cette ligne, la valeur d'appsettings.json s'appliquait — c'est-à-dire
+  # le BAC À SABLE. La production parlait au sandbox : aucun encaissement réel,
+  # aucun versement possible. C'était le bug.
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
+  Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
+  Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
+  # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
+  Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
+  # Cloudflare R2 — pièces KYB (bucket privé).
+  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2__BucketName: "${R2_BUCKET_NAME:-}"
+  Storage__CloudflareR2__PublicBaseUrl: "${R2_PUBLIC_BASE_URL:-}"
+  # Cloudflare R2 — images produit (bucket public).
+  Storage__CloudflareR2Media__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2Media__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2Media__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
+  Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
+  Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+  # Firebase Cloud Messaging (push). JSON écrit par Ansible depuis le vault dans
+  # deploy/fcm/service-account.json, monté en RO (voir volumes de x-app-common).
+  # Fichier absent -> NullPushSender (aucun push, pas d'erreur).
+  Notifications__Fcm__ServiceAccountPath: "/run/secrets/fcm/service-account.json"
+  # E-mails transactionnels (Resend). SANS EUX, L'API REFUSE DE DÉMARRER EN PRODUCTION.
+  #
+  # Ce n'est pas une précaution excessive : sans canal e-mail, aucun compte ne peut être
+  # vérifié et AUCUN mot de passe oublié ne peut être récupéré — les utilisateurs se
+  # retrouvent définitivement enfermés dehors, et l'exploitant ne l'apprend que par les
+  # plaintes. C'est ce vide qui avait poussé quelqu'un à renvoyer le jeton de
+  # réinitialisation dans la réponse HTTP d'un endpoint anonyme (prise de contrôle de
+  # n'importe quel compte). Mieux vaut un démarrage refusé qu'une plateforme qui « tourne »
+  # dans cet état.
+  #
+  # From  : le domaine doit être VÉRIFIÉ chez Resend (SPF + DKIM), sinon 403 à chaque envoi.
+  # AppBaseUrl : base des liens cliquables, ex. https://${ROOT_DOMAIN}
+  Notifications__Email__ApiKey: "${RESEND_API_KEY:-}"
+  Notifications__Email__From: "${EMAIL_FROM:-}"
+  Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
+
+x-app-common: &app-common
+  restart: always
+  logging: *logging
+  networks: [marketplace-net]
+  # Compte de service Firebase (push FCM) monté en lecture seule dans TOUS les
+  # hôtes (api + BFF, dont bff-admin qui envoie le push de test au vendeur).
+  volumes:
+    - ./fcm:/run/secrets/fcm:ro
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 40s
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 640M
+
+services:
+  # ---------------- Redis (backplane + cache) ----------------
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD requis}"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    networks: [marketplace-net]
+
+  # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
+  # ⚠️ AUCUN port publié : la base n'est JAMAIS joignable depuis Internet, seulement
+  # sur le réseau Docker interne par l'API et les BFF. Pour une base EXTERNE
+  # (Neon/Supabase), retire ce service + le depends_on postgres de l'API, et mets
+  # MARKETPLACE_CONNECTION sur l'endpoint externe.
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    shm_size: "256mb"          # évite les erreurs "could not resize shared memory" sur les gros tris/index
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+  # ---------------- Edge gateway (TLS) ----------------
+  traefik:
+    image: traefik:v3.1
+    restart: always
+    environment:
+      # Docker récent (Ubuntu 24.04+/26.04) refuse les vieilles API : on force une
+      # version d'API moderne pour le client Docker interne de Traefik.
+      DOCKER_API_VERSION: "1.44"
+    command:
+      # E-mail ACME injecté depuis l'environnement (le reste vient de traefik.prod.yml).
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL requis}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.prod.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic-prod:/etc/traefik/dynamic:ro
+      - acme:/acme
+    logging: *logging
+    networks: [marketplace-net]
+
+  # ---------------- Monolithe modulaire (migrateur) ----------------
+  api:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj
+        APP_DLL: Marketplace.Api.dll
+    image: ${IMAGE_PREFIX:-marketplace}/api:${IMAGE_TAG:-latest}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "true"
+      # Amorçage du PREMIER administrateur (idempotent ; ignoré si ADMIN_EMAIL ou
+      # ADMIN_PASSWORD est vide). Ne réinitialise jamais un compte existant.
+      # Uniquement sur l'API : c'est le seul hôte qui migre/seed. Voir ENV-PROD.md.
+      Identity__Bootstrap__AdminEmail: "${ADMIN_EMAIL:-}"
+      Identity__Bootstrap__AdminPassword: "${ADMIN_PASSWORD:-}"
+      Identity__Bootstrap__AdminFirstName: "${ADMIN_FIRST_NAME:-Admin}"
+      Identity__Bootstrap__AdminLastName: "${ADMIN_LAST_NAME:-Plateforme}"
+      Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+
+      # ─────────────────────────────────────────────────────────────────────────
+      # SURFACE PUBLIQUE RÉDUITE AUX SEULS RAPPELS DES PSP.
+      #
+      # AVANT : `Host(`api.${ROOT_DOMAIN}`)` exposait l'API ENTIÈRE sur Internet.
+      # Combiné à l'absence de FallbackPolicy, cela laissait un anonyme supprimer le
+      # catalogue, changer les prix, manipuler le stock, créer des utilisateurs et
+      # toucher au règlement des vendeurs.
+      #
+      # Or AUCUN client n'appelle cette API : l'app cliente parle à `m.`, l'app
+      # vendeur à `seller.`, les consoles à `admin.` et `seller.`, le site à personne.
+      # La seule chose qui DOIT joindre l'API depuis l'extérieur, ce sont les webhooks
+      # des prestataires de paiement — et le retour de redirection du navigateur après
+      # le paiement.
+      #
+      # Tout le reste est désormais injoignable depuis Internet : Traefik répond 404
+      # sans même transmettre la requête. C'est une défense en profondeur : même si un
+      # `RequireAuthorization()` était oublié demain, la route ne serait pas atteignable.
+      #
+      # ⚠️ SI VOUS AJOUTEZ UN ENDPOINT QUI DOIT ÊTRE APPELÉ DE L'EXTÉRIEUR (un nouveau
+      # PSP, par exemple), il faut l'ajouter ICI, sinon il répondra 404 — et le
+      # symptôme (« le PSP ne nous rappelle jamais ») ne pointera pas vers ce fichier.
+      # ─────────────────────────────────────────────────────────────────────────
+      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`) && (PathPrefix(`/api/payments/webhooks`) || PathPrefix(`/api/payments/return`))"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=edge-chain@file"
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+
+  # ---------------- BFF ----------------
+  bff-mobile:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj
+        APP_DLL: Marketplace.Bff.Mobile.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-mobile:${IMAGE_TAG:-latest}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mobile.rule=Host(`m.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.mobile.entrypoints=websecure"
+      - "traefik.http.routers.mobile.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.mobile.middlewares=edge-chain@file"
+      - "traefik.http.services.mobile.loadbalancer.server.port=8080"
+
+  bff-web:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj
+        APP_DLL: Marketplace.Bff.Web.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-web:${IMAGE_TAG:-latest}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`web.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.web.middlewares=edge-chain@file"
+      - "traefik.http.services.web.loadbalancer.server.port=8080"
+
+  bff-seller:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj
+        APP_DLL: Marketplace.Bff.Seller.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-seller:${IMAGE_TAG:-latest}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.seller.rule=Host(`seller.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.seller.entrypoints=websecure"
+      - "traefik.http.routers.seller.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.seller.middlewares=edge-chain@file"
+      - "traefik.http.services.seller.loadbalancer.server.port=8080"
+
+  bff-admin:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj
+        APP_DLL: Marketplace.Bff.Admin.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-admin:${IMAGE_TAG:-latest}
+    environment:
+      <<: *app-env
+      # CORS : la console admin est une app navigateur servie depuis une autre
+      # origine. Sans déclaration, la politique reste FERMÉE et le navigateur
+      # bloque tout. En PRODUCTION : uniquement l'origine réelle de la console,
+      # jamais localhost.
+      Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.rule=Host(`admin.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.admin.middlewares=edge-chain@file"
+      - "traefik.http.services.admin.loadbalancer.server.port=8080"
+
+networks:
+  marketplace-net:
+    name: marketplace-prod-net
+
+volumes:
+  pgdata:
+  redisdata:
+  acme:

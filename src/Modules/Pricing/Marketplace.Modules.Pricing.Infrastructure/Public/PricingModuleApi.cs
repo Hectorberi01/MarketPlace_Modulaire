@@ -12,9 +12,47 @@ namespace Marketplace.Modules.Pricing.Infrastructure.Public;
 internal sealed class PricingModuleApi : IPricingModuleApi
 {
     private readonly IPromotionRepository _promotionRepository;
+    private readonly IPromotionRedemptionRepository _redemptionRepository;
 
-    public PricingModuleApi(IPromotionRepository promotionRepository)
-        => _promotionRepository = promotionRepository;
+    public PricingModuleApi(
+        IPromotionRepository promotionRepository,
+        IPromotionRedemptionRepository redemptionRepository)
+    {
+        _promotionRepository = promotionRepository;
+        _redemptionRepository = redemptionRepository;
+    }
+
+    public async Task<CouponValidation> ValidateCouponAsync(string code, Guid buyerId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return CouponValidation.Invalid("pricing.coupon.required", "Le code promo est obligatoire.");
+        }
+
+        var promotion = await _promotionRepository.GetByCodeAsync(code, cancellationToken);
+
+        // Message VOLONTAIREMENT identique pour « inexistant » et « inactif/expiré ».
+        // Distinguer les deux transformerait cet endpoint en oracle : un attaquant
+        // énumérerait les codes valides mais expirés, puis les rejouerait au prochain
+        // renouvellement de campagne.
+        if (promotion is null || !promotion.IsActiveAt(DateTime.UtcNow))
+        {
+            return CouponValidation.Invalid("pricing.coupon.invalid", "Ce code promo est invalide ou expiré.");
+        }
+
+        if (promotion.PerUserLimit > 0)
+        {
+            var used = await _redemptionRepository.CountForBuyerAsync(promotion.Id, buyerId, cancellationToken);
+            if (used >= promotion.PerUserLimit)
+            {
+                return CouponValidation.Invalid(
+                    "pricing.coupon.per_user_limit_reached",
+                    "Vous avez déjà utilisé ce code le nombre de fois autorisé.");
+            }
+        }
+
+        return CouponValidation.Valid();
+    }
 
     public async Task<PriceBreakdownDto> CalculatePriceAsync(PriceRequest request, CancellationToken cancellationToken = default)
     {

@@ -1,0 +1,9 @@
+---
+# Répertoire de l'application sur l'hôte cible.
+app_dir: /opt/marketplace
+# Fichier compose à utiliser (surchargé par environnement).
+compose_file: docker-compose.yml
+# Si vrai, on NE synchronise PAS le code (cas dev local : app_dir = dépôt courant).
+skip_sync: false
+# Reconstruire les images au déploiement.
+compose_build: true

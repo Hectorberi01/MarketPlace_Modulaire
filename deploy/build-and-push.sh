@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# =====================================================================
+#  Build LOCAL des 5 images (API + 4 BFF) + push vers un registry, pour
+#  que le VPS ne fasse QUE « pull » (aucune compilation sur le serveur).
+#
+#  Le VPS est en linux/amd64 : on force cette plateforme (utile depuis un
+#  Mac Apple Silicon arm64) via docker buildx.
+#
+#  Prérequis :
+#    - docker buildx (inclus dans Docker Desktop)
+#    - être connecté au registry :   docker login ghcr.io   (ou docker.io)
+#
+#  Usage :
+#    IMAGE_PREFIX=ghcr.io/mon-user IMAGE_TAG=staging ./deploy/build-and-push.sh
+#    IMAGE_PREFIX=docker.io/mon-user IMAGE_TAG=staging ./deploy/build-and-push.sh
+# =====================================================================
+set -euo pipefail
+
+: "${IMAGE_PREFIX:?IMAGE_PREFIX requis (ex: ghcr.io/mon-user ou docker.io/mon-user)}"
+IMAGE_TAG="${IMAGE_TAG:-staging}"
+PLATFORM="${PLATFORM:-linux/amd64}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# service | projet .csproj | dll d'entrée
+SERVICES="
+api|src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj|Marketplace.Api.dll
+bff-mobile|src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj|Marketplace.Bff.Mobile.dll
+bff-web|src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj|Marketplace.Bff.Web.dll
+bff-seller|src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj|Marketplace.Bff.Seller.dll
+bff-admin|src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj|Marketplace.Bff.Admin.dll
+"
+
+# Un builder buildx dédié (multi-plateforme).
+docker buildx inspect mp-builder >/dev/null 2>&1 || docker buildx create --name mp-builder >/dev/null
+docker buildx use mp-builder
+
+echo "$SERVICES" | while IFS='|' read -r svc proj dll; do
+  [ -z "${svc:-}" ] && continue
+  img="${IMAGE_PREFIX}/${svc}:${IMAGE_TAG}"
+  echo "==> Build+push  $img   ($PLATFORM)"
+  docker buildx build \
+    --platform "$PLATFORM" \
+    -f "$ROOT/deploy/Dockerfile" \
+    --build-arg PROJECT="$proj" \
+    --build-arg APP_DLL="$dll" \
+    -t "$img" \
+    --push \
+    "$ROOT"
+done
+
+echo ""
+echo "OK — 5 images poussées : ${IMAGE_PREFIX}/{api,bff-mobile,bff-web,bff-seller,bff-admin}:${IMAGE_TAG}"
+echo "Déploie ensuite sur le serveur (mode pull) :"
+echo "  cd deploy/ansible && ansible-playbook -i inventories/staging/hosts.ini site.yml --tags deploy"

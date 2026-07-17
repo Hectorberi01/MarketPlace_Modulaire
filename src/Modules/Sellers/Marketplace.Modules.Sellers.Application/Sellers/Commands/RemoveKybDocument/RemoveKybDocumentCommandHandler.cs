@@ -4,20 +4,20 @@ using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Sellers.Domain.Sellers;
 
-namespace Marketplace.Modules.Sellers.Application.Sellers.Commands.SetCommissionRate;
+namespace Marketplace.Modules.Sellers.Application.Sellers.Commands.RemoveKybDocument;
 
-internal sealed class SetCommissionRateCommandHandler : ICommandHandler<SetCommissionRateCommand>
+internal sealed class RemoveKybDocumentCommandHandler : ICommandHandler<RemoveKybDocumentCommand>
 {
     private readonly ISellerRepository _sellerRepository;
     private readonly ISellerUnitOfWork _unitOfWork;
 
-    public SetCommissionRateCommandHandler(ISellerRepository sellerRepository, ISellerUnitOfWork unitOfWork)
+    public RemoveKybDocumentCommandHandler(ISellerRepository sellerRepository, ISellerUnitOfWork unitOfWork)
     {
         _sellerRepository = sellerRepository;
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result> Handle(SetCommissionRateCommand command, CancellationToken cancellationToken)
+    public async Task<Result> Handle(RemoveKybDocumentCommand command, CancellationToken cancellationToken)
     {
         var seller = await _sellerRepository.GetByIdAsync(new SellerId(command.SellerId), cancellationToken);
         if (seller is null)
@@ -25,10 +25,10 @@ internal sealed class SetCommissionRateCommandHandler : ICommandHandler<SetCommi
             return Result.Failure(Error.NotFound("sellers.seller.not_found", $"Vendeur {command.SellerId} introuvable."));
         }
 
-        var result = seller.SetCommissionRate(command.CommissionRate);
+        var result = seller.RemoveKybDocument(command.DocumentId);
         if (result.IsFailure)
         {
-            return result;
+            return Result.Failure(result.Error);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

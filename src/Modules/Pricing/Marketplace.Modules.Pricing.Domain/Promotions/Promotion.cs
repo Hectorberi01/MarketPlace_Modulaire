@@ -30,7 +30,8 @@ public sealed class Promotion : AggregateRoot<PromotionId>
         PromotionConditions conditions,
         string? code,
         DateRange period,
-        int usageLimit)
+        int usageLimit,
+        int perUserLimit)
         : base(id)
     {
         OwnerType = ownerType;
@@ -44,6 +45,7 @@ public sealed class Promotion : AggregateRoot<PromotionId>
         Code = code;
         Period = period;
         UsageLimit = usageLimit;
+        PerUserLimit = perUserLimit;
         UsedCount = 0;
         Status = PromotionStatus.Draft;
 
@@ -60,7 +62,20 @@ public sealed class Promotion : AggregateRoot<PromotionId>
     public PromotionConditions Conditions { get; private set; } = PromotionConditions.None;
     public string? Code { get; private set; }
     public DateRange Period { get; private set; } = default!;
+
+    /// <summary>Plafond GLOBAL d'utilisations. 0 = illimité.</summary>
     public int UsageLimit { get; private set; }
+
+    /// <summary>
+    /// Plafond d'utilisations PAR ACHETEUR. 0 = illimité.
+    ///
+    /// Sans ce plafond, un coupon « BIENVENUE10 » plafonné à 1 000 usages globaux était
+    /// consommé 1 000 fois par la MÊME personne. Le plafond global protège la
+    /// plateforme du volume, jamais de l'abus individuel — ce sont deux limites
+    /// distinctes, et il en fallait deux.
+    /// </summary>
+    public int PerUserLimit { get; private set; }
+
     public int UsedCount { get; private set; }
     public PromotionStatus Status { get; private set; }
 
@@ -75,7 +90,8 @@ public sealed class Promotion : AggregateRoot<PromotionId>
         PromotionConditions conditions,
         string? code,
         DateRange period,
-        int usageLimit)
+        int usageLimit,
+        int perUserLimit = 0)
     {
         if (ownerId == Guid.Empty)
         {
@@ -97,6 +113,11 @@ public sealed class Promotion : AggregateRoot<PromotionId>
             return Error.Validation("pricing.promotion.usage_invalid", "Le plafond d'utilisation ne peut pas être négatif.");
         }
 
+        if (perUserLimit < 0)
+        {
+            return Error.Validation("pricing.promotion.per_user_limit_invalid", "Le plafond par acheteur ne peut pas être négatif.");
+        }
+
         var requiresTargets = scopeType is PromotionScopeType.Product or PromotionScopeType.Category or PromotionScopeType.Seller;
         var targetList = targets?.Where(t => t != Guid.Empty).Distinct().ToList() ?? new List<Guid>();
         if (requiresTargets && targetList.Count == 0)
@@ -108,7 +129,7 @@ public sealed class Promotion : AggregateRoot<PromotionId>
             PromotionId.New(), ownerType, ownerId, fundedBy, type, value, scopeType,
             targetList, conditions ?? PromotionConditions.None,
             string.IsNullOrWhiteSpace(code) ? null : code.Trim().ToUpperInvariant(),
-            period, usageLimit);
+            period, usageLimit, perUserLimit);
     }
 
     public Result Activate()
@@ -135,7 +156,51 @@ public sealed class Promotion : AggregateRoot<PromotionId>
         return Result.Success();
     }
 
-    /// <summary>Incrémente le compteur d'utilisation, dans la limite du plafond.</summary>
+    /// <summary>
+    /// Consomme une utilisation de la promotion pour un acheteur donné.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// LE SEUL POINT OÙ UNE PROMOTION EST RÉELLEMENT DÉCOMPTÉE. ET IL SÉRIALISE.
+    ///
+    /// Cette méthode incrémente TOUJOURS `UsedCount` en cas de succès — donc elle
+    /// salit TOUJOURS la ligne `promotions`. Combiné au jeton de concurrence `xmin`
+    /// posé sur cet agrégat, cela a une conséquence décisive :
+    ///
+    ///   **toutes les rédemptions d'une même promotion se sérialisent sur sa ligne.**
+    ///
+    /// Deux commandes qui tentent de consommer le dernier exemplaire d'un coupon au
+    /// même instant ne peuvent pas commiter toutes les deux : la seconde voit son
+    /// UPDATE toucher 0 ligne et lève `DbUpdateConcurrencyException`. C'est ce qui
+    /// rend le contrôle `buyerPriorRedemptions` ci-dessous FIABLE malgré le fait
+    /// qu'il repose sur un COUNT lu juste avant : le COUNT et l'UPDATE sont dans la
+    /// même transaction, et la ligne de promotion en est le point de rendez-vous
+    /// obligé. Sans le jeton, ce contrôle serait un vœu pieux.
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="buyerPriorRedemptions">
+    /// Nombre de fois que CET acheteur a DÉJÀ consommé cette promotion — compté dans la
+    /// même transaction (voir IPromotionRedemptionRepository.CountForBuyerAsync).
+    /// </param>
+    public Result Redeem(int buyerPriorRedemptions)
+    {
+        if (Status != PromotionStatus.Active)
+        {
+            return Result.Failure(Error.Conflict("pricing.promotion.not_active", "La promotion n'est pas active."));
+        }
+
+        if (PerUserLimit > 0 && buyerPriorRedemptions >= PerUserLimit)
+        {
+            return Result.Failure(Error.Conflict("pricing.promotion.per_user_limit_reached", "Vous avez déjà utilisé cette promotion le nombre de fois autorisé."));
+        }
+
+        return RecordUsage();
+    }
+
+    /// <summary>
+    /// Incrémente le compteur global d'utilisation, dans la limite du plafond.
+    /// Primitive : passer par <see cref="Redeem"/>, qui applique aussi la limite par
+    /// acheteur et le contrôle de statut.
+    /// </summary>
     public Result RecordUsage()
     {
         if (UsageLimit > 0 && UsedCount >= UsageLimit)

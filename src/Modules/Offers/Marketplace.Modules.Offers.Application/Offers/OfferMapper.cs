@@ -16,5 +16,9 @@ internal static class OfferMapper
         offer.FulfillmentType.ToString(),
         offer.ShipFromLocationId,
         offer.HandlingTime,
-        offer.Status.ToString());
+        offer.Status.ToString(),
+        offer.SellerPrice,
+        offer.CommissionAmount,
+        offer.ProviderFeeAmount,
+        offer.BasePrice.Amount);
 }

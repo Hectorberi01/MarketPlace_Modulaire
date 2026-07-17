@@ -12,4 +12,8 @@ public sealed record OfferSummary(
     string FulfillmentType,
     Guid ShipFromLocationId,
     int HandlingTime,
-    string Status);
+    string Status,
+    decimal SellerPrice,
+    decimal CommissionAmount,
+    decimal ProviderFeeAmount,
+    decimal ProductPrice);

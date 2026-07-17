@@ -29,6 +29,9 @@ internal sealed class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserSumm
             user.Status.ToString(),
             user.EmailVerified,
             user.MfaEnabled,
-            user.RoleIds.ToList());
+            user.RoleIds.ToList(),
+            user.AcceptedTermsVersion,
+            user.AcceptedTermsOnUtc,
+            user.EmailVerifiedByAdminOnUtc);
     }
 }

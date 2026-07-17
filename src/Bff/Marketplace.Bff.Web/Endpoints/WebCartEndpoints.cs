@@ -19,13 +19,56 @@ public static class WebCartEndpoints
         cart.MapPatch("/items/{offerId:guid}", UpdateItemAsync);
         cart.MapDelete("/items/{offerId:guid}", RemoveItemAsync);
 
-        // Code promo au niveau panier : nécessite une commande Cart dédiée (le cumul
-        // de promos vit dans Pricing ; l'application au panier reste à exposer).
-        cart.MapPost("/coupon", () => WebBff.NotImplemented("cart.apply_coupon"));
-        cart.MapDelete("/coupon", () => WebBff.NotImplemented("cart.apply_coupon"));
+        cart.MapPost("/coupon", ApplyCouponAsync);
+        cart.MapDelete("/coupon", RemoveCouponAsync);
 
         return app;
     }
+
+    /// <summary>
+    /// Attache un code promo au panier, puis renvoie le panier revalorisé.
+    ///
+    /// Le BFF Web renvoyait ici un 501 — et c'était, paradoxalement, plus honnête que le
+    /// BFF Mobile, qui affichait une remise fictive que l'acheteur ne recevait jamais.
+    /// Un 501 dit « pas encore » ; l'autre disait « c'est fait » alors que rien n'était fait.
+    /// </summary>
+    private static async Task<IResult> ApplyCouponAsync(
+        ClaimsPrincipal user, CouponRequest request, ISender sender, CancellationToken ct)
+    {
+        if (WebBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var applied = await sender.Send(new ApplyCouponCommand(buyerId, request.Code ?? string.Empty), ct);
+        if (applied.IsFailure)
+        {
+            return applied.Match(() => Results.NoContent());
+        }
+
+        var cart = await sender.Send(new GetActiveCartQuery(buyerId), ct);
+        return cart.Match(c => Results.Ok(c));
+    }
+
+    /// <summary>Retire le code promo du panier et renvoie le panier revalorisé.</summary>
+    private static async Task<IResult> RemoveCouponAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+    {
+        if (WebBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var removed = await sender.Send(new RemoveCouponCommand(buyerId), ct);
+        if (removed.IsFailure)
+        {
+            return removed.Match(() => Results.NoContent());
+        }
+
+        var cart = await sender.Send(new GetActiveCartQuery(buyerId), ct);
+        return cart.Match(c => Results.Ok(c));
+    }
+
+    public sealed record CouponRequest(string Code);
 
     /// <summary>Panier courant valorisé (multi-vendeur, sous-total, promos appliquées).</summary>
     private static async Task<IResult> GetAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)

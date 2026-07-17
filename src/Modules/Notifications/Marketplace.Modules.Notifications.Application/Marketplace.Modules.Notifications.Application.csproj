@@ -5,13 +5,18 @@
     <ProjectReference Include="..\Marketplace.Modules.Notifications.Contracts\Marketplace.Modules.Notifications.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
     <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <!-- Traduction SellerId -> UserId : un push s'adresse a un COMPTE, pas a une boutique. -->
+    <ProjectReference Include="..\..\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
     <ProjectReference Include="..\..\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
     <ProjectReference Include="..\..\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />
+    <ProjectReference Include="..\..\Returns\Marketplace.Modules.Returns.Contracts\Marketplace.Modules.Returns.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>

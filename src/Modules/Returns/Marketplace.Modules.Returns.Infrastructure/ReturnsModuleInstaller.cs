@@ -36,6 +36,10 @@ public sealed class ReturnsModuleInstaller : IModuleInstaller
 
         services.AddScoped<IReturnRequestRepository, ReturnRequestRepository>();
 
+        // Deux événements distincts, et la distinction est TOUT le correctif :
+        // « validé » (décision, aucun argent) et « versé » (argent parti, référence
+        // FedaPay à l'appui). Seul le second engage la comptabilité.
+        services.AddScoped<IDomainEventHandler<ReturnRefundApprovedDomainEvent>, ReturnRefundApprovedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ReturnRefundedDomainEvent>, ReturnRefundedDomainEventHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);

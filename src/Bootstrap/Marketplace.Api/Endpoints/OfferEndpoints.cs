@@ -17,7 +17,7 @@ public static class OfferEndpoints
     /// <summary>Enregistre les routes des offres.</summary>
     public static IEndpointRouteBuilder MapOfferEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/offers").WithTags("Offers");
+        var group = app.MapAdminGroup("/api/offers").WithTags("Offers");
 
         group.MapGet("/{id:guid}", GetAsync).WithName("GetOffer").AllowAnonymous();
         group.MapGet("/by-product/{productId:guid}", ListByProductAsync).WithName("ListOffersByProduct").AllowAnonymous();
@@ -35,7 +35,7 @@ public static class OfferEndpoints
     private static async Task<IResult> CreateAsync(CreateOfferRequest request, ISender sender, CancellationToken ct)
     {
         var command = new CreateOfferCommand(
-            request.ProductId, request.SellerId, request.Sku, request.BasePriceAmount, request.Currency,
+            request.ProductId, request.SellerId, request.Sku, request.SellerPrice, request.Currency,
             request.Condition, request.FulfillmentType, request.ShipFromLocationId, request.HandlingTime);
 
         var result = await sender.Send(command, ct);
@@ -63,10 +63,10 @@ public static class OfferEndpoints
         return result.Match(offers => Results.Ok(offers));
     }
 
-    /// <summary>Change le prix de base d'une offre.</summary>
+    /// <summary>Change le prix VENDEUR (net) d'une offre ; la plateforme recalcule le prix produit.</summary>
     private static async Task<IResult> ChangePriceAsync(Guid id, PriceRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new ChangeOfferPriceCommand(id, request.Amount, request.Currency), ct);
+        var result = await sender.Send(new ChangeOfferPriceCommand(id, request.SellerPrice), ct);
         return result.Match(() => Results.NoContent());
     }
 
@@ -85,10 +85,10 @@ public static class OfferEndpoints
     }
 
     public sealed record CreateOfferRequest(
-        Guid ProductId, Guid SellerId, string Sku, decimal BasePriceAmount, string Currency,
+        Guid ProductId, Guid SellerId, string Sku, decimal SellerPrice, string Currency,
         string Condition, string FulfillmentType, Guid ShipFromLocationId, int HandlingTime);
 
-    public sealed record PriceRequest(decimal Amount, string Currency);
+    public sealed record PriceRequest(decimal SellerPrice);
     public sealed record StatusRequest(string Status);
     public sealed record HandlingTimeRequest(int HandlingTime);
 }

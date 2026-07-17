@@ -31,6 +31,31 @@ internal sealed class PromotionRepository : IPromotionRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Promotion?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        return await _dbContext.Promotions.FirstOrDefaultAsync(p => p.Code == normalized, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Promotion>> ListAsync(CancellationToken cancellationToken = default)
         => await _dbContext.Promotions.OrderByDescending(p => p.Period.StartUtc).ToListAsync(cancellationToken);
+}
+
+internal sealed class PromotionRedemptionRepository : IPromotionRedemptionRepository
+{
+    private readonly PricingDbContext _dbContext;
+
+    public PromotionRedemptionRepository(PricingDbContext dbContext)
+        => _dbContext = dbContext;
+
+    public async Task AddAsync(PromotionRedemption redemption, CancellationToken cancellationToken = default)
+        => await _dbContext.PromotionRedemptions.AddAsync(redemption, cancellationToken);
+
+    public async Task<bool> ExistsAsync(PromotionId promotionId, Guid orderId, CancellationToken cancellationToken = default)
+        => await _dbContext.PromotionRedemptions
+            .AnyAsync(r => r.PromotionId == promotionId && r.OrderId == orderId, cancellationToken);
+
+    public async Task<int> CountForBuyerAsync(PromotionId promotionId, Guid buyerId, CancellationToken cancellationToken = default)
+        => await _dbContext.PromotionRedemptions
+            .CountAsync(r => r.PromotionId == promotionId && r.BuyerId == buyerId, cancellationToken);
 }

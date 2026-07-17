@@ -37,7 +37,8 @@ public sealed class DisputeResolvedDomainEventHandler : IDomainEventHandler<Disp
             {
                 DisputeId = domainEvent.DisputeId,
                 OrderId = domainEvent.OrderId,
-                Resolution = domainEvent.Resolution
+                Resolution = domainEvent.Resolution,
+                RefundAmount = domainEvent.RefundAmount
             },
             cancellationToken);
 }

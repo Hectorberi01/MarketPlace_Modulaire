@@ -58,62 +58,150 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         services.AddSingleton(moovOptions);
         services.AddSingleton(fedapayOptions);
 
-        // Chaque PSP : adaptateur HTTP réel si configuré, sinon stub sandbox
-        // (build/run fonctionnels sans compte PSP).
-        if (stripeOptions.IsConfigured)
+        // ─────────────────────────────────────────────────────────────────────────
+        // ⚠️ LE GARDE-FOU LE PLUS IMPORTANT DE TOUT LE PROJET.
+        //
+        // AVANT : chaque PSP non configuré retombait SILENCIEUSEMENT sur une passerelle
+        // SIMULÉE. Or les clés sont vides par défaut dans appsettings.json. Un
+        // déploiement qui oubliait d'injecter les secrets démarrait donc normalement…
+        // et simulait TOUS les paiements :
+        //
+        //   • SimulatedPaymentGateway.GetStatusAsync() renvoie TOUJOURS « Captured » ;
+        //   • RefundAsync() renvoie TOUJOURS « Success » ;
+        //   • la vérification de signature des webhooks est court-circuitée.
+        //
+        // Autrement dit : la plateforme encaissait des commandes marquées PAYÉES sans
+        // qu'un seul franc ne bouge, et acceptait n'importe quel faux webhook. Aucune
+        // erreur, aucun log, aucun symptôme — jusqu'à ce qu'un vendeur réclame l'argent
+        // d'une vente qui n'a jamais été payée.
+        //
+        // DÉSORMAIS : en PRODUCTION, une passerelle simulée n'est JAMAIS enregistrée.
+        // Un PSP non configuré est simplement ABSENT du conteneur, et le résolveur
+        // renvoie une erreur franche (« Prestataire de paiement non pris en charge »).
+        // Un paiement impossible vaut infiniment mieux qu'un paiement imaginaire.
+        //
+        // Et si AUCUNE passerelle réelle n'est configurée en production, on refuse de
+        // démarrer (voir plus bas). Une plateforme qui ne boote pas se répare en cinq
+        // minutes ; une plateforme qui simule ses encaissements, jamais tout à fait.
+        // ─────────────────────────────────────────────────────────────────────────
+        var isProduction = IsProduction(configuration);
+        var realGateways = new List<string>();
+        var simulatedGateways = new List<string>();
+
+        RegisterGateway(
+            services, isProduction, stripeOptions.IsConfigured, "Stripe", realGateways, simulatedGateways,
+            registerReal: () =>
+            {
+                services.AddHttpClient(StripeHttpGateway.ClientName, client =>
+                    client.BaseAddress = new Uri(EnsureTrailingSlash(stripeOptions.BaseUrl)));
+                services.AddSingleton<IPaymentGateway, StripeHttpGateway>();
+            },
+            registerSimulated: () => services.AddSingleton<IPaymentGateway, StripePaymentGateway>());
+
+        RegisterGateway(
+            services, isProduction, paypalOptions.IsConfigured, "PayPal", realGateways, simulatedGateways,
+            registerReal: () =>
+            {
+                services.AddHttpClient(PayPalHttpGateway.ClientName, client =>
+                    client.BaseAddress = new Uri(EnsureTrailingSlash(paypalOptions.BaseUrl)));
+                services.AddSingleton<IPaymentGateway, PayPalHttpGateway>();
+            },
+            registerSimulated: () => services.AddSingleton<IPaymentGateway, PayPalPaymentGateway>());
+
+        RegisterGateway(
+            services, isProduction, mtnOptions.IsConfigured, "MtnMomo", realGateways, simulatedGateways,
+            registerReal: () =>
+            {
+                services.AddHttpClient(MtnMomoHttpGateway.ClientName, client =>
+                    client.BaseAddress = new Uri(EnsureTrailingSlash(mtnOptions.BaseUrl)));
+                services.AddSingleton<IPaymentGateway, MtnMomoHttpGateway>();
+            },
+            registerSimulated: () => services.AddSingleton<IPaymentGateway, MtnMomoPaymentGateway>());
+
+        RegisterGateway(
+            services, isProduction, moovOptions.IsConfigured, "Moov", realGateways, simulatedGateways,
+            registerReal: () =>
+            {
+                services.AddHttpClient(MoovHttpGateway.ClientName, client =>
+                    client.BaseAddress = new Uri(EnsureTrailingSlash(moovOptions.BaseUrl)));
+                services.AddSingleton<IPaymentGateway, MoovHttpGateway>();
+            },
+            registerSimulated: () => services.AddSingleton<IPaymentGateway, MoovPaymentGateway>());
+
+        RegisterGateway(
+            services, isProduction, fedapayOptions.IsConfigured, "FedaPay", realGateways, simulatedGateways,
+            registerReal: () =>
+            {
+                services.AddHttpClient(FedaPayHttpGateway.ClientName, client =>
+                    client.BaseAddress = new Uri(EnsureTrailingSlash(fedapayOptions.BaseUrl)));
+                services.AddSingleton<IPaymentGateway, FedaPayHttpGateway>();
+            },
+            registerSimulated: () => services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>());
+
+        // En production, une plateforme SANS aucun moyen d'encaisser n'est pas une
+        // plateforme : c'est un catalogue. On refuse de démarrer plutôt que d'accepter
+        // des commandes qu'on ne saura jamais faire payer.
+        if (isProduction && realGateways.Count == 0)
         {
-            services.AddHttpClient(StripeHttpGateway.ClientName, client =>
-                client.BaseAddress = new Uri(EnsureTrailingSlash(stripeOptions.BaseUrl)));
-            services.AddSingleton<IPaymentGateway, StripeHttpGateway>();
-        }
-        else
-        {
-            services.AddSingleton<IPaymentGateway, StripePaymentGateway>();
+            throw new InvalidOperationException(
+                "PRODUCTION SANS AUCUN PRESTATAIRE DE PAIEMENT CONFIGURÉ.\n\n" +
+                "Aucune clé PSP n'a été trouvée (Payments:FedaPay:ApiKey, Payments:Stripe:ApiKey, …).\n" +
+                "Le démarrage est refusé DÉLIBÉRÉMENT : sans ce garde-fou, la plateforme retomberait sur des " +
+                "passerelles SIMULÉES qui marquent toute commande comme « payée » sans qu'aucun argent ne bouge.\n\n" +
+                "Vérifiez l'injection des secrets (vault Ansible / variables d'environnement du conteneur).");
         }
 
-        if (paypalOptions.IsConfigured)
+        // Bruyant, et volontairement. En production ce cas est impossible (voir
+        // ci-dessus) ; ailleurs, il faut qu'un développeur qui teste un paiement sache
+        // qu'il teste une FICTION — sans quoi il conclura que « ça marche ».
+        if (simulatedGateways.Count > 0)
         {
-            services.AddHttpClient(PayPalHttpGateway.ClientName, client =>
-                client.BaseAddress = new Uri(EnsureTrailingSlash(paypalOptions.BaseUrl)));
-            services.AddSingleton<IPaymentGateway, PayPalHttpGateway>();
-        }
-        else
-        {
-            services.AddSingleton<IPaymentGateway, PayPalPaymentGateway>();
-        }
-
-        if (mtnOptions.IsConfigured)
-        {
-            services.AddHttpClient(MtnMomoHttpGateway.ClientName, client =>
-                client.BaseAddress = new Uri(EnsureTrailingSlash(mtnOptions.BaseUrl)));
-            services.AddSingleton<IPaymentGateway, MtnMomoHttpGateway>();
-        }
-        else
-        {
-            services.AddSingleton<IPaymentGateway, MtnMomoPaymentGateway>();
+            Console.WriteLine(
+                $"[Payments] ⚠️  PASSERELLES SIMULÉES ACTIVES : {string.Join(", ", simulatedGateways)}. " +
+                "Ces prestataires acceptent TOUT paiement sans qu'aucun argent ne bouge. " +
+                (realGateways.Count > 0
+                    ? $"Passerelles réelles : {string.Join(", ", realGateways)}."
+                    : "AUCUNE passerelle réelle configurée."));
         }
 
-        if (moovOptions.IsConfigured)
+        // Une clé et une URL qui ne désignent pas le même monde, c'est le pire des
+        // cas : soit tout échoue en 403 sans qu'on comprenne pourquoi, soit — si la
+        // clé est live — de l'argent RÉEL part alors qu'on croyait tester. On refuse
+        // de démarrer. Une plateforme de paiement qui ne boote pas se répare en cinq
+        // minutes ; une plateforme qui paie au mauvais endroit, jamais tout à fait.
+        if (fedapayOptions.IsConfigured && !fedapayOptions.KeyMatchesEnvironment)
         {
-            services.AddHttpClient(MoovHttpGateway.ClientName, client =>
-                client.BaseAddress = new Uri(EnsureTrailingSlash(moovOptions.BaseUrl)));
-            services.AddSingleton<IPaymentGateway, MoovHttpGateway>();
-        }
-        else
-        {
-            services.AddSingleton<IPaymentGateway, MoovPaymentGateway>();
+            throw new InvalidOperationException(
+                "Configuration FedaPay incohérente : la clé API et Payments:FedaPay:BaseUrl ne désignent pas le même environnement " +
+                $"(BaseUrl = « {fedapayOptions.BaseUrl} »). Une clé sk_live_… exige https://api.fedapay.com/v1 ; " +
+                "une clé sk_sandbox_… exige https://sandbox-api.fedapay.com/v1.");
         }
 
-        if (fedapayOptions.IsConfigured)
+        // Versements (payouts vendeur) : réels via FedaPay UNIQUEMENT en LIVE, clé
+        // configurée et flag activé — voir FedaPayOptions.CanPayout.
+        //
+        // Le bac à sable FedaPay N'EXÉCUTE PAS les dépôts Mobile Money : il refuse la
+        // création avec « 403 Opération non autorisée ». Y activer les payouts ne
+        // produisait qu'une file de retraits en échec, remboursés, et un vendeur
+        // persuadé que la plateforme lui devait de l'argent. On simule donc, et on le
+        // DIT — plutôt que d'échouer en silence.
+        if (fedapayOptions.CanPayout)
         {
-            services.AddHttpClient(FedaPayHttpGateway.ClientName, client =>
-                client.BaseAddress = new Uri(EnsureTrailingSlash(fedapayOptions.BaseUrl)));
-            services.AddSingleton<IPaymentGateway, FedaPayHttpGateway>();
             services.AddSingleton<IPayoutGateway, FedaPayPayoutGateway>();
         }
         else
         {
-            services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>();
+            if (fedapayOptions.EnablePayouts && fedapayOptions.IsSandbox)
+            {
+                // Cette combinaison est une erreur de configuration, pas un choix :
+                // elle mérite une trace explicite au démarrage.
+                Console.Error.WriteLine(
+                    "[FedaPay] EnablePayouts=true avec l'API bac à sable : les versements réels sont IMPOSSIBLES " +
+                    "en sandbox (403). Les retraits seront SIMULÉS. Pour des versements réels, passez " +
+                    "Payments:FedaPay:BaseUrl sur https://api.fedapay.com/v1 avec une clé sk_live_…, et faites " +
+                    "activer les dépôts sur le compte marchand par FedaPay.");
+            }
+
             services.AddSingleton<IPayoutGateway, SimulatedPayoutGateway>();
         }
 
@@ -210,7 +298,10 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         {
             ApiKey = section["ApiKey"] ?? string.Empty,
             WebhookSecret = section["WebhookSecret"] ?? string.Empty,
-            CallbackUrl = section["CallbackUrl"] ?? string.Empty
+            CallbackUrl = section["CallbackUrl"] ?? string.Empty,
+            // Active les versements réels FedaPay (sinon payout simulé). Clé lue
+            // depuis Payments__FedaPay__EnablePayouts (« true »/« false »).
+            EnablePayouts = bool.TryParse(section["EnablePayouts"], out var enablePayouts) && enablePayouts
         };
         if (!string.IsNullOrWhiteSpace(section["BaseUrl"]))
         {
@@ -220,11 +311,78 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         {
             options.Currency = section["Currency"]!;
         }
+        // Méthode de transfert payout (« mode » FedaPay). Lue depuis
+        // Payments__FedaPay__PayoutMode. Défaut mtn_open (MTN Mobile Money Bénin).
+        if (!string.IsNullOrWhiteSpace(section["PayoutMode"]))
+        {
+            options.PayoutMode = section["PayoutMode"]!;
+        }
         return options;
     }
 
     // BaseAddress doit finir par « / » pour que les URI relatifs des requêtes se concatènent correctement.
     private static string EnsureTrailingSlash(string url) => url.EndsWith('/') ? url : url + "/";
+
+    /// <summary>
+    /// Enregistre un PSP : l'adaptateur RÉEL s'il est configuré ; sinon la simulation —
+    /// et UNIQUEMENT hors production.
+    ///
+    /// En production, un PSP non configuré n'est pas remplacé : il est ABSENT. Le
+    /// résolveur renverra alors « Prestataire de paiement non pris en charge », ce qui
+    /// est une erreur honnête. Le remplacer par une simulation produirait, à l'inverse,
+    /// un encaissement fictif — un mensonge silencieux, et le pire bug possible pour
+    /// une plateforme qui manipule de l'argent.
+    /// </summary>
+    private static void RegisterGateway(
+        IServiceCollection services,
+        bool isProduction,
+        bool isConfigured,
+        string providerName,
+        List<string> realGateways,
+        List<string> simulatedGateways,
+        Action registerReal,
+        Action registerSimulated)
+    {
+        if (isConfigured)
+        {
+            registerReal();
+            realGateways.Add(providerName);
+            return;
+        }
+
+        if (isProduction)
+        {
+            // Non configuré ET en production : on n'enregistre RIEN. Ce prestataire
+            // n'existe tout simplement pas pour cette instance.
+            return;
+        }
+
+        registerSimulated();
+        simulatedGateways.Add(providerName);
+    }
+
+    /// <summary>
+    /// Sommes-nous en production ?
+    ///
+    /// L'installer ne reçoit qu'un <see cref="IConfiguration"/> — pas d'IHostEnvironment,
+    /// car les modules s'installent avant que l'hôte ne soit construit. On lit donc la
+    /// variable d'environnement standard, qu'ASP.NET expose dans la configuration.
+    ///
+    /// ⚠️ FAIL-SAFE : les deux variables sont lues, et l'inconnu est traité comme
+    /// « pas la production » — sinon un environnement mal nommé refuserait de démarrer
+    /// en développement. Le risque assumé est l'inverse : une PROD dont
+    /// ASPNETCORE_ENVIRONMENT serait mal renseigné retomberait sur des simulations.
+    /// C'est pourquoi le message d'avertissement ci-dessus est aussi bruyant : il doit
+    /// être visible dans les logs de démarrage, même quand personne ne les cherche.
+    /// </summary>
+    private static bool IsProduction(IConfiguration configuration)
+    {
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"]
+            ?? configuration["DOTNET_ENVIRONMENT"]
+            ?? string.Empty;
+
+        return string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static MoovOptions BindMoovOptions(IConfiguration configuration)
     {

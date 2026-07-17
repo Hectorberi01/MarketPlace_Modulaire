@@ -44,7 +44,12 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
             l.OfferId, l.ProductId, l.SellerId, l.Sku, l.ShipFromLocationId, l.Quantity,
             l.UnitBaseAmount, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice));
 
-        var orderResult = Order.Create(command.BuyerId, cart.CartId, cart.Currency, drafts);
+        // Le code promo du panier est FIGÉ dans la commande. C'est indispensable : le
+        // panier est clôturé juste après, et le coupon n'est décompté qu'à la
+        // CONFIRMATION (paiement encaissé). Sans ce report, Pricing recevrait un
+        // « commande confirmée » sans savoir quel coupon consommer — et le coupon
+        // resterait éternellement disponible. C'est exactement le bug d'origine.
+        var orderResult = Order.Create(command.BuyerId, cart.CartId, cart.Currency, drafts, cart.PromotionCode);
         if (orderResult.IsFailure)
         {
             return Result.Failure<Guid>(orderResult.Error);

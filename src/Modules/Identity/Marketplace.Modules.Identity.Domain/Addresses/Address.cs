@@ -81,6 +81,35 @@ public sealed class Address : AggregateRoot<AddressId>
             isDefault));
     }
 
+    /// <summary>
+    /// Met à jour les champs modifiables de l'adresse. Applique les mêmes règles de
+    /// validation et de normalisation que <see cref="Create"/>. Le statut « par défaut »
+    /// n'est pas géré ici (voir <see cref="MarkDefault"/> / <see cref="ClearDefault"/>).
+    /// </summary>
+    public Result Update(
+        string? label, string? recipient, string line1, string? line2,
+        string city, string? country, string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(line1))
+        {
+            return Result.Failure(Error.Validation("identity.address.line_required", "L'adresse est obligatoire."));
+        }
+
+        if (string.IsNullOrWhiteSpace(city))
+        {
+            return Result.Failure(Error.Validation("identity.address.city_required", "La ville est obligatoire."));
+        }
+
+        Label = (label ?? "Adresse").Trim();
+        Recipient = (recipient ?? string.Empty).Trim();
+        Line1 = line1.Trim();
+        Line2 = string.IsNullOrWhiteSpace(line2) ? null : line2!.Trim();
+        City = city.Trim();
+        Country = (country ?? string.Empty).Trim();
+        Phone = (phone ?? string.Empty).Trim();
+        return Result.Success();
+    }
+
     public void MarkDefault() => IsDefault = true;
 
     public void ClearDefault() => IsDefault = false;

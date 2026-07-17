@@ -14,7 +14,7 @@ public static class SettlementEndpoints
     /// <summary>Enregistre les routes de reversement.</summary>
     public static IEndpointRouteBuilder MapSettlementEndpoints(this IEndpointRouteBuilder app)
     {
-        var settlement = app.MapGroup("/api/settlement").WithTags("Settlement")
+        var settlement = app.MapAdminGroup("/api/settlement").WithTags("Settlement")
             .RequireAuthorization(p => p.RequireRole("Admin"));
 
         settlement.MapPost("/run", RunAsync).WithName("RunSettlement");

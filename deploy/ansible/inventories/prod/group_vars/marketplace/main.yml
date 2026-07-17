@@ -1,0 +1,39 @@
+---
+# Variables NON sensibles de la production (les secrets sont dans vault.yml).
+target_env: prod
+compose_file: docker-compose.prod.yml
+app_dir: /opt/marketplace
+
+#postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
+# Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
+root_domain: hba-express.org
+acme_email: hector.adjakpa@hbatechettrade.com
+
+# Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
+enable_portainer: true
+traefik_network: marketplace-prod-net
+
+# R2 — noms de buckets (non sensibles)
+r2_bucket_name: hbaexpress-documents-pdf
+r2_public_base_url: ""
+r2_media_bucket_name: habexpress-images
+r2_media_key_prefix: products-images
+# En prod, préférer un domaine personnalisé connecté au bucket public.
+r2_media_public_base_url: "https://images.hbamediacore.fr"
+
+# FedaPay — DOIT correspondre à ta clé : sk_live_… ⇒ URL live (ci-dessous),
+# sk_sandbox_… ⇒ https://sandbox-api.fedapay.com/v1. Sinon l'API refuse de démarrer.
+fedapay_base_url: "https://api.fedapay.com/v1"
+# Versements réels (retraits vendeur) : garde false tant que FedaPay n'a pas activé
+# les DÉPÔTS sur ton compte marchand (sinon 403 à chaque payout).
+fedapay_enable_payouts: false
+
+# E-mails transactionnels (Resend) — OBLIGATOIRE, sinon l'API refuse de démarrer.
+# ⚠️ Le domaine de email_from DOIT être vérifié chez Resend (SPF + DKIM), sinon
+# les envois échouent en 403 (le démarrage, lui, passe). Ajuste si ton domaine
+# vérifié n'est pas hba-express.org. resend_api_key → vault.
+email_from: "no-reply@hba-express.org"
+email_app_base_url: "https://hba-express.org"
+
+# Amorçage du 1er admin : compte créé au 1er démarrage (admin_password → vault).
+admin_email: "hector.adjakpa@hbatechettrade.com"

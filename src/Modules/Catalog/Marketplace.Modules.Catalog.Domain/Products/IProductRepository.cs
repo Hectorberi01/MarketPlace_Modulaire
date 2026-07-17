@@ -19,5 +19,13 @@ public interface IProductRepository
     /// <summary>Liste tous les produits de la plateforme (gouvernance admin).</summary>
     Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Page de produits pour la console admin : recherche par nom, filtre par statut,
+    /// tri par date de création décroissante. Renvoie le total filtré + la répartition
+    /// par statut (calculée avant le filtre statut).
+    /// </summary>
+    Task<(IReadOnlyList<Product> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+        int page, int pageSize, string? search, ProductStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
+
     Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default);
 }

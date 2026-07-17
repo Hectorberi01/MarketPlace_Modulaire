@@ -31,3 +31,18 @@ public sealed record SellerStatementSummary(
     decimal NetPayout,
     string Currency,
     int LineCount);
+
+/// <summary>
+/// Ligne détaillée d'un gain vendeur sur la période (une par gain comptabilisé) :
+/// sert à produire les écritures détaillées d'un relevé (vente + commission).
+/// </summary>
+public sealed record SellerStatementLine(
+    Guid EarningId,
+    Guid OrderId,
+    DateTime CreatedAtUtc,
+    decimal GrossAmount,
+    decimal CommissionAmount,
+    decimal ProviderFeeAmount,
+    decimal NetAmount,
+    string Currency,
+    string Status);

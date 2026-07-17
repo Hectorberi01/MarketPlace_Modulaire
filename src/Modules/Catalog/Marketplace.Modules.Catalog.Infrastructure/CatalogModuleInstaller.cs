@@ -97,6 +97,21 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
             services.AddScoped<IMediaStorage, SimulatedMediaStorage>();
         }
 
+        // Traitement d'image (détourage IA + fond blanc) via Cloudinary s'il est
+        // configuré. Cloudinary ne sert qu'au traitement : l'image finale est
+        // rapatriée dans R2 par le flux de création. Sinon, no-op (image inchangée).
+        var cloudinary = BindCloudinaryOptions(configuration);
+        services.AddSingleton(cloudinary);
+        if (cloudinary.IsConfigured)
+        {
+            services.AddHttpClient(CloudinaryImageProcessor.ClientName);
+            services.AddScoped<IImageProcessor, CloudinaryImageProcessor>();
+        }
+        else
+        {
+            services.AddScoped<IImageProcessor, NullImageProcessor>();
+        }
+
         // Handlers de domain events (résolus par le DomainEventDispatcher).
         services.AddScoped<IDomainEventHandler<ProductCreatedDomainEvent>, ProductCreatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ProductStatusChangedDomainEvent>, ProductStatusChangedDomainEventHandler>();
@@ -122,11 +137,28 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
             AccessKeyId = section["AccessKeyId"] ?? string.Empty,
             SecretAccessKey = section["SecretAccessKey"] ?? string.Empty,
             BucketName = section["BucketName"] ?? string.Empty,
-            PublicBaseUrl = section["PublicBaseUrl"] ?? string.Empty
+            PublicBaseUrl = section["PublicBaseUrl"] ?? string.Empty,
+            KeyPrefix = section["KeyPrefix"] ?? string.Empty
         };
         if (!string.IsNullOrWhiteSpace(section["Region"]))
         {
             options.Region = section["Region"]!;
+        }
+        return options;
+    }
+
+    private static CloudinaryOptions BindCloudinaryOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Media:Cloudinary");
+        var options = new CloudinaryOptions
+        {
+            CloudName = section["CloudName"] ?? string.Empty,
+            ApiKey = section["ApiKey"] ?? string.Empty,
+            ApiSecret = section["ApiSecret"] ?? string.Empty,
+        };
+        if (int.TryParse(section["MaxWaitSeconds"], out var wait) && wait > 0)
+        {
+            options.MaxWaitSeconds = wait;
         }
         return options;
     }

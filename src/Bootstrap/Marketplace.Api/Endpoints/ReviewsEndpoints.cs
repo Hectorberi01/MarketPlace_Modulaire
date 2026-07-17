@@ -16,7 +16,7 @@ public static class ReviewsEndpoints
     /// <summary>Enregistre les routes des avis.</summary>
     public static IEndpointRouteBuilder MapReviewsEndpoints(this IEndpointRouteBuilder app)
     {
-        var reviews = app.MapGroup("/api/reviews").WithTags("Reviews");
+        var reviews = app.MapAuthenticatedGroup("/api/reviews").WithTags("Reviews");
 
         reviews.MapPost("/", SubmitAsync).WithName("SubmitReview").RequireAuthorization();
         reviews.MapGet("/{id:guid}", GetAsync).WithName("GetReview").AllowAnonymous();

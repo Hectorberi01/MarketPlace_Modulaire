@@ -59,16 +59,34 @@ public static class OrderingEndpoints
         return result.Match(orders => Results.Ok(orders));
     }
 
-    /// <summary>Récupère une commande par son identifiant.</summary>
-    private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
+    /// <summary>Récupère une commande par son identifiant (propriétaire ou admin).</summary>
+    private static async Task<IResult> GetAsync(ClaimsPrincipal principal, Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new GetOrderQuery(id), ct);
-        return result.Match(order => Results.Ok(order));
+        if (result.IsFailure)
+        {
+            return result.Match(order => Results.Ok(order));
+        }
+        // Anti-IDOR : seul le propriétaire (ou un admin) peut lire la commande.
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
+        {
+            return Results.NotFound();
+        }
+        return Results.Ok(result.Value);
     }
 
-    /// <summary>Annule une commande et libère ses réservations (compensation).</summary>
-    private static async Task<IResult> CancelAsync(Guid id, CancelRequest? request, ISender sender, CancellationToken ct)
+    /// <summary>Annule une commande et libère ses réservations (propriétaire ou admin).</summary>
+    private static async Task<IResult> CancelAsync(ClaimsPrincipal principal, Guid id, CancelRequest? request, ISender sender, CancellationToken ct)
     {
+        var orderResult = await sender.Send(new GetOrderQuery(id), ct);
+        if (orderResult.IsFailure)
+        {
+            return orderResult.Match(order => Results.Ok(order));
+        }
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != orderResult.Value.BuyerId)
+        {
+            return Results.NotFound();
+        }
         var result = await sender.Send(new CancelOrderCommand(id, request?.Reason ?? string.Empty), ct);
         return result.Match(() => Results.NoContent());
     }

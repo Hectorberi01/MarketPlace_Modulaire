@@ -15,6 +15,9 @@ public sealed record ListSettlementBatchesQuery : IQuery<IReadOnlyList<Settlemen
 /// <summary>Relevé d'un vendeur sur une période (ventes, commissions, net).</summary>
 public sealed record GetSellerStatementQuery(Guid SellerId, DateTime PeriodStartUtc, DateTime PeriodEndUtc) : IQuery<SellerStatementSummary>;
 
+/// <summary>Lignes détaillées du relevé d'un vendeur sur une période (un gain = une ligne), triées par date.</summary>
+public sealed record GetSellerStatementLinesQuery(Guid SellerId, DateTime PeriodStartUtc, DateTime PeriodEndUtc) : IQuery<IReadOnlyList<SellerStatementLine>>;
+
 internal static class SettlementMapper
 {
     public static SettlementBatchSummary ToSummary(SettlementBatch b) => new(
@@ -62,5 +65,22 @@ internal sealed class GetSellerStatementQueryHandler : IQueryHandler<GetSellerSt
     {
         var s = await _repository.GetSellerStatementAsync(query.SellerId, query.PeriodStartUtc, query.PeriodEndUtc, cancellationToken);
         return new SellerStatementSummary(s.SellerId, s.GrossSales, s.Commissions, s.NetPayout, s.Currency, s.LineCount);
+    }
+}
+
+internal sealed class GetSellerStatementLinesQueryHandler : IQueryHandler<GetSellerStatementLinesQuery, IReadOnlyList<SellerStatementLine>>
+{
+    private readonly ISellerEarningRepository _repository;
+
+    public GetSellerStatementLinesQueryHandler(ISellerEarningRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<SellerStatementLine>>> Handle(GetSellerStatementLinesQuery query, CancellationToken cancellationToken)
+    {
+        var earnings = await _repository.ListSellerEarningsAsync(query.SellerId, query.PeriodStartUtc, query.PeriodEndUtc, cancellationToken);
+        IReadOnlyList<SellerStatementLine> lines = earnings
+            .Select(e => new SellerStatementLine(
+                e.Id.Value, e.OrderId, e.CreatedAtUtc, e.GrossAmount, e.CommissionAmount, e.ProviderFeeAmount, e.NetAmount, e.Currency, e.Status.ToString()))
+            .ToList();
+        return Result.Success(lines);
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
+using Marketplace.BuildingBlocks.Infrastructure.Caching;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 
 namespace Marketplace.Modules.Catalog.Infrastructure.Persistence;
@@ -23,7 +24,11 @@ public sealed class CatalogDbContextFactory : IDesignTimeDbContextFactory<Catalo
                 npgsql.MigrationsHistoryTable("__ef_migrations_history", CatalogDbContext.SchemaName))
             .Options;
 
-        return new CatalogDbContext(options, NoOpDomainEventDispatcher.Instance, new IntegrationEventQueue());
+        return new CatalogDbContext(
+            options,
+            NoOpDomainEventDispatcher.Instance,
+            new IntegrationEventQueue(),
+            NoOpCacheService.Instance);
     }
 
     /// <summary>Dispatcher inerte : aucun event n'est dispatché au design-time.</summary>

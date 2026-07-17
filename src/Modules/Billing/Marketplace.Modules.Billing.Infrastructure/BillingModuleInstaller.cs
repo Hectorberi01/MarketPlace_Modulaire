@@ -25,6 +25,17 @@ public sealed class BillingModuleInstaller : IModuleInstaller
 
     public void Install(IServiceCollection services, IConfiguration configuration)
     {
+        // Taux de commission plateforme par défaut (section « Billing »), lié
+        // manuellement (même pattern que Payments : aucune dépendance IOptions).
+        var billingOptions = new BillingOptions();
+        var rateRaw = configuration.GetSection("Billing")["DefaultCommissionRate"];
+        if (decimal.TryParse(rateRaw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsedRate))
+        {
+            billingOptions.DefaultCommissionRate = parsedRate;
+        }
+        services.AddSingleton(billingOptions);
+
         var connectionString = configuration.GetConnectionString("Marketplace")
             ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");
 

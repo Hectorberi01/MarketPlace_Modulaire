@@ -9,7 +9,10 @@ public sealed class CreateOfferCommandValidator : AbstractValidator<CreateOfferC
         RuleFor(c => c.ProductId).NotEmpty();
         RuleFor(c => c.SellerId).NotEmpty();
         RuleFor(c => c.Sku).NotEmpty().MaximumLength(64);
-        RuleFor(c => c.BasePriceAmount).GreaterThanOrEqualTo(0);
+        // > 0, et non >= 0 : une offre gratuite n'a pas de sens (elle engage logistique,
+        // commission et fidélité). L'invariant est aussi posé dans le domaine ; ce validator
+        // donne juste un message d'erreur immédiat.
+        RuleFor(c => c.SellerPrice).GreaterThan(0);
         RuleFor(c => c.ShipFromLocationId).NotEmpty();
         RuleFor(c => c.HandlingTime).GreaterThanOrEqualTo(0);
         RuleFor(c => c.Condition).Must(v => v is "New" or "Used" or "Refurbished")

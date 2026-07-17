@@ -1,0 +1,37 @@
+# Portainer CE — console de visualisation/gestion des conteneurs.
+# Déployé séparément de la stack applicative, mais branché sur le MÊME réseau
+# Traefik (externe) pour être exposé en HTTPS sur ${PORTAINER_HOST}.
+#
+# Variables attendues (fournies par le rôle Ansible « portainer ») :
+#   PORTAINER_HOST   ex. portainer.marketplace-staging.hba-marketplace.fr
+#   TRAEFIK_NETWORK  ex. marketplace-staging-net (réseau créé par la stack app)
+
+name: portainer
+
+services:
+  portainer:
+    image: ${PORTAINER_IMAGE:-portainer/portainer-ce:latest}
+    restart: always
+    command: -H unix:///var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    networks: [edge]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`${PORTAINER_HOST}`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portainer.middlewares=edge-chain@file"
+      # Portainer sert l'UI en HTTP sur 9000 (Traefik termine le TLS).
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+networks:
+  edge:
+    name: ${TRAEFIK_NETWORK}
+    external: true
+
+volumes:
+  portainer_data:

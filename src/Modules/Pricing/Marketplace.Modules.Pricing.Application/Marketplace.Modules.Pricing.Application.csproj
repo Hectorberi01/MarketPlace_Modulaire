@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Marketplace.Modules.Pricing.Domain\Marketplace.Modules.Pricing.Domain.csproj" />
     <ProjectReference Include="..\Marketplace.Modules.Pricing.Contracts\Marketplace.Modules.Pricing.Contracts.csproj" />
+    <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
   </ItemGroup>

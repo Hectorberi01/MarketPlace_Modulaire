@@ -1,0 +1,119 @@
+---
+# Installe Docker Engine + plugin Compose v2 (Debian/Ubuntu). Idempotent.
+
+- name: Vérifier la famille d'OS supportée
+  ansible.builtin.assert:
+    that: ansible_os_family == 'Debian'
+    fail_msg: "Ce rôle ne supporte que Debian/Ubuntu. OS détecté : {{ ansible_os_family }}."
+
+- name: Installer les prérequis APT
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg, rsync]
+    state: present
+    update_cache: true
+
+- name: Créer le répertoire des clés APT
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Ajouter la clé GPG Docker
+  ansible.builtin.get_url:
+    url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Ajouter le dépôt Docker
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+
+- name: Installer Docker Engine + plugin Compose
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Activer et démarrer Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+# Le Docker d'Ubuntu 26.04 refuse les API < 1.40, mais le provider Docker de
+# Traefik v3 parle en 1.24 (et n'honore pas DOCKER_API_VERSION). On abaisse la
+# version d'API minimale acceptée par le daemon pour rétablir la compatibilité.
+- name: Créer le répertoire d'override systemd de Docker
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: "0755"
+
+- name: Autoriser les anciennes API Docker (Traefik utilise 1.24)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker.service.d/min-api.conf
+    content: |
+      [Service]
+      Environment=DOCKER_MIN_API_VERSION=1.24
+    mode: "0644"
+  register: docker_minapi
+
+- name: Recharger systemd + redémarrer Docker si l'override a changé
+  ansible.builtin.systemd:
+    name: docker
+    daemon_reload: true
+    state: restarted
+  when: docker_minapi.changed
+
+- name: Ajouter l'utilisateur de déploiement au groupe docker
+  ansible.builtin.user:
+    name: "{{ ansible_user | default(ansible_user_id) }}"
+    groups: docker
+    append: true
+  when: (ansible_user | default(ansible_user_id)) != 'root'
+
+# Le build .NET (5 images) est gourmand en RAM. Si le serveur n'a pas de swap,
+# on en crée un pour éviter que le compilateur/restore soit tué (OOM).
+- name: Configurer un fichier de swap (aide au build .NET sur petit VPS)
+  when: (ansible_swaptotal_mb | default(0) | int) == 0
+  block:
+    - name: Allouer le swapfile (4 Go)
+      ansible.builtin.command: fallocate -l 4G /swapfile
+      args:
+        creates: /swapfile
+
+    - name: Permissions du swapfile
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Formater le swap
+      ansible.builtin.command: mkswap /swapfile
+      register: mkswap_r
+      changed_when: "'Setting up swapspace' in mkswap_r.stdout"
+      failed_when: mkswap_r.rc != 0 and 'exists' not in (mkswap_r.stderr | lower)
+
+    - name: Activer le swap
+      ansible.builtin.command: swapon /swapfile
+      register: swapon_r
+      changed_when: swapon_r.rc == 0
+      failed_when: swapon_r.rc != 0 and 'already' not in (swapon_r.stderr | lower)
+
+    - name: Persister le swap dans fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+        state: present

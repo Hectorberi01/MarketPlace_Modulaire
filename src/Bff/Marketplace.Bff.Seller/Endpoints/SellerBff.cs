@@ -17,6 +17,66 @@ namespace Marketplace.Bff.Seller.Endpoints;
 /// </summary>
 internal static class SellerBff
 {
+    /// <summary>
+    /// Rôle exigé sur TOUTE la surface /seller (sauf /seller/auth, anonyme).
+    ///
+    /// Ce contrôle n'est pas redondant avec <see cref="ResolveSellerAsync"/> — il
+    /// le rend simplement inutile comme barrière de sécurité, ce qu'il n'aurait
+    /// jamais dû être.
+    ///
+    /// Les quatre BFF partagent le MÊME Issuer, la MÊME Audience et la MÊME clé
+    /// de signature. Un jeton obtenu sur /mobile/auth/login — donc par n'importe
+    /// quel acheteur — était par conséquent accepté tel quel ici : les groupes ne
+    /// demandaient qu'un `RequireAuthorization()` sans rôle. Rien ne fuyait, car
+    /// `ResolveSellerAsync` ne trouvait aucune boutique et l'endpoint répondait
+    /// 403. Mais cette protection reposait sur la discipline de CHAQUE endpoint :
+    /// le premier qui oubliait d'appeler le résolveur ouvrait le trou en silence.
+    ///
+    /// La barrière doit être à la porte, pas dans chaque pièce.
+    /// </summary>
+    public const string SellerRole = "Seller";
+
+    /// <summary>
+    /// Groupe protégé de la surface vendeur : authentifié ET porteur du rôle Seller.
+    ///
+    /// Le rôle est attribué à la création du compte par la console d'administration,
+    /// en même temps que la boutique. Aucun vendeur légitime n'est donc laissé
+    /// dehors par ce verrou — y compris sur POST /seller/shop.
+    /// </summary>
+    public static RouteGroupBuilder MapSellerGroup(this IEndpointRouteBuilder app, string prefix, string tag)
+        => app.MapGroup(prefix).WithTags(tag).RequireAuthorization(p => p.RequireRole(SellerRole));
+
+    /// <summary>Taille de page par défaut quand seul <c>page</c> est fourni.</summary>
+    public const int DefaultPageSize = 30;
+
+    /// <summary>
+    /// Plafond ABSOLU. Sans lui, un client pourrait demander pageSize=100000 et
+    /// annuler tout le bénéfice de la pagination — voire saturer la mémoire.
+    /// </summary>
+    public const int MaxPageSize = 100;
+
+    /// <summary>
+    /// Découpe une liste déjà triée. Aucun paramètre = liste entière : les
+    /// appelants existants (dashboard MAUI) ne cassent pas.
+    ///
+    /// Le découpage se fait EN MÉMOIRE, après remontée complète depuis le module.
+    /// Cela protège le réseau mobile et divise les appels inter-modules, mais PAS
+    /// la base : la vraie pagination devra descendre dans les requêtes des modules.
+    /// C'est un compromis assumé, pas un oubli.
+    /// </summary>
+    public static List<T> Paginate<T>(List<T> items, int? page, int? pageSize)
+    {
+        if (page is null && pageSize is null)
+        {
+            return items;
+        }
+
+        var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
+        var index = Math.Max(page ?? 1, 1);
+
+        return items.Skip((index - 1) * size).Take(size).ToList();
+    }
+
     /// <summary>Identifiant de l'utilisateur courant, extrait du JWT.</summary>
     public static Guid? CurrentUserId(ClaimsPrincipal principal)
     {

@@ -32,5 +32,6 @@ public enum PayoutProvider
     MtnMomo = 0,
     MoovMoney = 1,
     Wave = 2,
-    BankAccount = 3
+    BankAccount = 3,
+    Celtis = 4
 }

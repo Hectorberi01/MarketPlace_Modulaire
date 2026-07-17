@@ -74,15 +74,17 @@ public static class WebCatalogEndpoints
             : Results.Ok(Array.Empty<object>());
     }
 
-    /// <summary>Vitrine vendeur : profil + note. (Liste produits du vendeur : query Search par vendeur à ajouter.)</summary>
+    /// <summary>Vitrine vendeur : profil PUBLIC + note. Route anonyme.</summary>
     private static async Task<IResult> ShopAsync(Guid sellerId, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await sellers.GetSellerAsync(sellerId, ct);
+        // .ToPublic() : même fuite que côté mobile si on renvoyait le SellerSummary complet
+        // (RIB, commission, KYB) sur cette route anonyme. Voir SellerSummary.
         return seller is null
             ? Results.NotFound(new { error = "shop_not_found" })
-            : Results.Ok(new WebShop(seller, Array.Empty<object>()));
+            : Results.Ok(new WebShop(seller.ToPublic(), Array.Empty<object>()));
     }
 
     public sealed record WebProductDetail(ProductSummary Product, IReadOnlyList<OfferSummary> Offers, ProductRatingSummary? Rating);
-    public sealed record WebShop(SellerSummary Seller, IReadOnlyList<object> Products);
+    public sealed record WebShop(SellerPublicSummary Seller, IReadOnlyList<object> Products);
 }

@@ -44,6 +44,30 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
             .Where(w => w.SellerId == sellerId)
             .OrderByDescending(w => w.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    // Suivi activé : l'entité est mutée puis persistée (validation/refus admin).
+    public async Task<Withdrawal?> GetByIdAsync(WithdrawalId id, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<Withdrawal>> ListByStatusAsync(WithdrawalStatus status, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals
+            .AsNoTracking()
+            .Where(w => w.Status == status)
+            .OrderBy(w => w.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    // SUIVI activé (pas de AsNoTracking) : la réconciliation mute ces entités.
+    public async Task<IReadOnlyList<Withdrawal>> ListProcessingForReconciliationAsync(int take, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals
+            .Where(w => w.Status == WithdrawalStatus.Processing)
+            .OrderBy(w => w.CreatedAtUtc)
+            .Take(take <= 0 ? 50 : take)
+            .ToListAsync(cancellationToken);
+
+    // SUIVI activé : le webhook mute l'entité juste après la corrélation.
+    public async Task<Withdrawal?> GetByProviderRefAsync(string providerRef, CancellationToken cancellationToken = default)
+        => await _dbContext.Withdrawals
+            .FirstOrDefaultAsync(w => w.ProviderRef == providerRef, cancellationToken);
 }
 
 internal sealed class WalletTransactionRepository : IWalletTransactionRepository
@@ -62,4 +86,27 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
             .OrderByDescending(t => t.CreatedAtUtc)
             .Take(take <= 0 ? 50 : take)
             .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// Le grand livre a-t-il déjà une écriture pour cette référence ?
+    ///
+    /// ⚠️ On interroge le CHANGE TRACKER autant que la base (pas d'AsNoTracking, et
+    /// `Local` d'abord) : dans une même transaction, les écritures précédentes ne sont
+    /// pas encore commitées. Sans cela, deux handlers du même message se croiraient
+    /// tous deux « premiers ».
+    /// </summary>
+    public async Task<bool> ExistsForReferenceAsync(
+        string referenceType, Guid referenceId, CancellationToken cancellationToken = default)
+    {
+        var pending = _dbContext.WalletTransactions.Local
+            .Any(t => t.ReferenceType == referenceType && t.ReferenceId == referenceId);
+
+        if (pending)
+        {
+            return true;
+        }
+
+        return await _dbContext.WalletTransactions
+            .AnyAsync(t => t.ReferenceType == referenceType && t.ReferenceId == referenceId, cancellationToken);
+    }
 }

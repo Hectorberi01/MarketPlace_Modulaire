@@ -17,7 +17,7 @@ public static class SellerReviewEndpoints
 {
     public static IEndpointRouteBuilder MapSellerReviewEndpoints(this IEndpointRouteBuilder app)
     {
-        var reviews = app.MapGroup("/seller/reviews").WithTags("Vendeur · Avis").RequireAuthorization();
+        var reviews = app.MapSellerGroup("/seller/reviews", "Vendeur · Avis");
 
         reviews.MapGet("/", ListMineAsync);
         reviews.MapGet("/products/{productId:guid}", ByProductAsync);

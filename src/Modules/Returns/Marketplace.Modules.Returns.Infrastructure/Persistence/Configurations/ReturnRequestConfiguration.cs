@@ -30,9 +30,23 @@ internal sealed class ReturnRequestConfiguration : IEntityTypeConfiguration<Retu
         builder.Property(r => r.CreatedAtUtc).IsRequired();
         builder.Property(r => r.ResolvedAtUtc);
 
+        // Traçabilité du remboursement : QUAND il a été décidé, QUAND l'argent est
+        // parti, et sous quelle référence. Les trois sont nullables : un retour rejeté
+        // n'en aura jamais aucune.
+        builder.Property(r => r.RefundApprovedAtUtc);
+        builder.Property(r => r.RefundExecutedAtUtc);
+
+        // La PREUVE que l'argent est parti. Le jour où un client affirme n'avoir rien
+        // reçu, c'est cette référence qui permet de retrouver l'opération chez FedaPay.
+        builder.Property(r => r.RefundReference).HasMaxLength(120);
+
         builder.HasIndex(r => r.BuyerId);
         builder.HasIndex(r => r.SellerId);
         builder.HasIndex(r => new { r.OrderId, r.OfferId });
+
+        // La file des versements à exécuter est relue en permanence par le back-office.
+        // Sans cet index, elle scanne toute la table des retours à chaque affichage.
+        builder.HasIndex(r => r.Status);
 
         builder.Ignore(r => r.DomainEvents);
     }

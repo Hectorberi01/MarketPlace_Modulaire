@@ -85,7 +85,7 @@ public static class ReturnsEndpoints
 
     /// <summary>Déclenche le remboursement du retour.</summary>
     private static async Task<IResult> RefundAsync(Guid id, RefundBody body, ISender sender, CancellationToken ct)
-        => (await sender.Send(new RefundReturnCommand(id, body.Amount), ct)).Match(() => Results.NoContent());
+        => (await sender.Send(new ApproveReturnRefundCommand(id, body.Amount), ct)).Match(() => Results.NoContent());
 
     private static Guid? CurrentUserId(ClaimsPrincipal principal)
     {

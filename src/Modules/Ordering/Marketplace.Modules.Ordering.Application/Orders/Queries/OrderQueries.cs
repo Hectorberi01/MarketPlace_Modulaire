@@ -1,4 +1,5 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Application.Pagination;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Ordering.Domain.Orders;
@@ -14,20 +15,31 @@ public sealed record ListMyOrdersQuery(Guid BuyerId) : IQuery<IReadOnlyList<Orde
 /// <summary>Liste les commandes comportant au moins une ligne d'un vendeur (back-office vendeur).</summary>
 public sealed record ListOrdersBySellerQuery(Guid SellerId) : IQuery<IReadOnlyList<OrderSummary>>;
 
-/// <summary>Liste toutes les commandes de la plateforme (back-office admin).</summary>
-public sealed record ListAllOrdersQuery : IQuery<IReadOnlyList<OrderSummary>>;
+/// <summary>Page de commandes pour la console admin (filtre statut, recherche par identifiant).</summary>
+public sealed record ListAllOrdersQuery(
+    int Page = 1,
+    int PageSize = PageRequest.DefaultPageSize,
+    string? Search = null,
+    string? Status = null,
+    string? Sort = null,
+    string? Dir = null) : IQuery<PagedResult<OrderSummary>>;
 
-internal sealed class ListAllOrdersQueryHandler : IQueryHandler<ListAllOrdersQuery, IReadOnlyList<OrderSummary>>
+internal sealed class ListAllOrdersQueryHandler : IQueryHandler<ListAllOrdersQuery, PagedResult<OrderSummary>>
 {
     private readonly IOrderRepository _repository;
 
     public ListAllOrdersQueryHandler(IOrderRepository repository) => _repository = repository;
 
-    public async Task<Result<IReadOnlyList<OrderSummary>>> Handle(ListAllOrdersQuery query, CancellationToken cancellationToken)
+    public async Task<Result<PagedResult<OrderSummary>>> Handle(ListAllOrdersQuery query, CancellationToken cancellationToken)
     {
-        var orders = await _repository.ListAllAsync(cancellationToken: cancellationToken);
-        IReadOnlyList<OrderSummary> summaries = orders.Select(OrderMapper.ToSummary).ToList();
-        return Result.Success(summaries);
+        var (page, pageSize) = PageRequest.Normalize(query.Page, query.PageSize);
+        OrderStatus? status = Enum.TryParse<OrderStatus>(query.Status, ignoreCase: true, out var parsed) ? parsed : null;
+        Guid? id = Guid.TryParse(query.Search, out var g) ? g : null;
+        bool desc = !string.Equals(query.Dir, "asc", StringComparison.OrdinalIgnoreCase);
+
+        var (orders, total, statusCounts) = await _repository.ListPagedAsync(page, pageSize, id, status, query.Sort, desc, cancellationToken);
+        var items = orders.Select(OrderMapper.ToSummary).ToList();
+        return Result.Success(new PagedResult<OrderSummary>(items, total, page, pageSize, statusCounts));
     }
 }
 

@@ -22,6 +22,11 @@ public static class MobileMessagingEndpoints
         conv.MapGet("/{id:guid}/messages", MessagesAsync);
         conv.MapPost("/{id:guid}/messages", SendAsync);
 
+        // Réactions et suppression — mêmes règles que côté vendeur (le domaine tranche).
+        conv.MapPost("/{id:guid}/messages/{messageId:guid}/reactions", ReactAsync);
+        conv.MapDelete("/{id:guid}/messages/{messageId:guid}", DeleteForEveryoneAsync);
+        conv.MapDelete("/{id:guid}/messages/{messageId:guid}/for-me", HideForMeAsync);
+
         return app;
     }
 
@@ -147,6 +152,8 @@ public static class MobileMessagingEndpoints
             readAtUtc = m.ReadAtUtc,
             createdAtUtc = m.CreatedAtUtc,
             fromMe = m.SenderId == userId,
+            isDeleted = m.IsDeleted,
+            reactions = m.Reactions.Select(r => new { emoji = r.Emoji, count = r.Count, mine = r.Mine }),
         });
 
         return Results.Ok(messages);
@@ -184,6 +191,80 @@ public static class MobileMessagingEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>
+    /// Réagit à un message (emoji de la palette autorisée). Bascule : le même emoji
+    /// retire la réaction, un autre la remplace. L'emoji est validé par le domaine —
+    /// on n'accepte jamais une chaîne libre venue du client.
+    /// </summary>
+    private static async Task<IResult> ReactAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId, ReactRequest request,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new ReactToMessageCommand(id, messageId, userId, request.Emoji), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Supprime un message POUR TOUT LE MONDE. Le domaine n'autorise que l'auteur et
+    /// conserve le corps en base (preuve en cas de litige) : c'est la projection qui
+    /// renvoie « Message supprimé ».
+    /// </summary>
+    private static async Task<IResult> DeleteForEveryoneAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new DeleteMessageForEveryoneCommand(id, messageId, userId), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>Masque un message pour SOI seulement (l'autre participant le voit toujours).</summary>
+    private static async Task<IResult> HideForMeAsync(
+        ClaimsPrincipal user, Guid id, Guid messageId,
+        ISender sender, IHubContext<ChatHub> hub, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new HideMessageForMeCommand(id, messageId, userId), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(() => Results.NoContent());
+        }
+
+        await NotifyAsync(hub, id, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>Signale au fil que son contenu a changé (les clients rechargent).</summary>
+    private static Task NotifyAsync(IHubContext<ChatHub> hub, Guid conversationId, CancellationToken ct)
+        => hub.Clients.Group(ChatHub.Group(conversationId))
+            .SendAsync("message", new { conversationId = conversationId.ToString() }, ct);
+
     public sealed record SendRequest(string Body, IReadOnlyList<string>? Attachments);
     public sealed record StartWithSellerRequest(string? Message);
+    public sealed record ReactRequest(string Emoji);
 }

@@ -17,4 +17,7 @@ public sealed record DisputeResolvedIntegrationEvent : IntegrationEvent
     public required Guid DisputeId { get; init; }
     public required Guid OrderId { get; init; }
     public required string Resolution { get; init; }
+
+    /// <summary>Montant à rembourser (remboursement partiel) ; null pour les autres décisions.</summary>
+    public decimal? RefundAmount { get; init; }
 }

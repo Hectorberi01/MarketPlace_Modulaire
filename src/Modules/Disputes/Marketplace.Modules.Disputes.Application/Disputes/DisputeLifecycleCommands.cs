@@ -11,8 +11,9 @@ public sealed record AddDisputeMessageCommand(Guid DisputeId, Guid AuthorId, str
 /// <summary>Passe le litige en examen (modérateur).</summary>
 public sealed record StartDisputeReviewCommand(Guid DisputeId) : ICommand;
 
-/// <summary>Tranche le litige (RefundBuyer / ReleaseToSeller / PartialRefund).</summary>
-public sealed record ResolveDisputeCommand(Guid DisputeId, string Resolution) : ICommand;
+/// <summary>Tranche le litige (RefundBuyer / ReleaseToSeller / PartialRefund).
+/// <paramref name="RefundAmount"/> est requis (et &gt; 0) pour un remboursement partiel.</summary>
+public sealed record ResolveDisputeCommand(Guid DisputeId, string Resolution, decimal? RefundAmount = null) : ICommand;
 
 /// <summary>Escalade le litige.</summary>
 public sealed record EscalateDisputeCommand(Guid DisputeId) : ICommand;
@@ -74,7 +75,7 @@ internal sealed class ResolveDisputeCommandHandler : DisputeMutationHandlerBase,
             return Task.FromResult(Result.Failure(Error.Validation("disputes.resolution_invalid", "Décision inconnue.")));
         }
 
-        return MutateAsync(c.DisputeId, d => d.Resolve(resolution), ct);
+        return MutateAsync(c.DisputeId, d => d.Resolve(resolution, c.RefundAmount), ct);
     }
 }
 

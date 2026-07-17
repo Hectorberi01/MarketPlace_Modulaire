@@ -6,7 +6,6 @@ using Marketplace.Modules.Cart.Application.Carts.Commands;
 using Marketplace.Modules.Cart.Application.Carts.Commands.AddItem;
 using Marketplace.Modules.Cart.Application.Carts.Queries;
 using Marketplace.Modules.Catalog.Contracts;
-using Marketplace.Modules.Pricing.Contracts;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
 
@@ -22,70 +21,84 @@ public static class MobileCartEndpoints
         cart.MapPatch("/items/{offerId:guid}", UpdateItemAsync);
         cart.MapDelete("/items/{offerId:guid}", RemoveItemAsync);
 
-        // Code promo : validation via le moteur Pricing (sans état serveur).
         cart.MapPost("/coupon", ApplyCouponAsync);
-        cart.MapDelete("/coupon", () => Results.NoContent());
+        cart.MapDelete("/coupon", RemoveCouponAsync);
 
         return app;
     }
 
     /// <summary>
-    /// Valide un code promo sur le panier courant via le moteur Pricing et renvoie
-    /// la remise applicable. Sans état : le client ré-applique le code au paiement.
+    /// Attache un code promo au PANIER, puis renvoie le panier revalorisé.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CETTE ROUTE MENTAIT À L'ACHETEUR. C'EST LA CORRECTION LA PLUS IMPORTANTE DU LOT.
+    ///
+    /// Avant, elle calculait une remise, répondait « Code promo appliqué. » avec un total
+    /// réduit… et NE PERSISTAIT RIEN. Le commentaire s'en justifiait — « sans état : le
+    /// client ré-applique le code au paiement » — mais AUCUN chemin de paiement n'acceptait
+    /// de code : ni le panier, ni la commande, ni le checkout n'avaient de champ pour le
+    /// recevoir.
+    ///
+    /// L'acheteur voyait donc s'afficher une réduction qu'il ne recevrait jamais, puis
+    /// payait le plein tarif. Ce n'est pas une fonctionnalité manquante : c'est un prix
+    /// affiché faux. Le pire genre de bug — celui qui a l'air de marcher.
+    ///
+    /// Désormais le code est ATTACHÉ au panier, transporté jusqu'à la commande, et
+    /// réellement décompté à la confirmation du paiement.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static async Task<IResult> ApplyCouponAsync(
-        ClaimsPrincipal user, CouponRequest request, ISender sender, IPricingModuleApi pricing, CancellationToken ct)
+        ClaimsPrincipal user, CouponRequest request, ISender sender, CancellationToken ct)
     {
         if (MobileBff.CurrentUserId(user) is not { } buyerId)
         {
             return Results.Unauthorized();
         }
 
-        var code = request.Code?.Trim();
-        if (string.IsNullOrWhiteSpace(code))
+        var applied = await sender.Send(new ApplyCouponCommand(buyerId, request.Code ?? string.Empty), ct);
+        if (applied.IsFailure)
         {
-            return Results.BadRequest(new { error = "coupon_required" });
+            // Le message vient du domaine (code invalide, expiré, déjà utilisé) : il est
+            // destiné à être affiché tel quel.
+            return applied.Match(() => Results.NoContent());
         }
 
-        var cartResult = await sender.Send(new GetActiveCartQuery(buyerId), ct);
-        if (cartResult.IsFailure)
+        // On renvoie le panier REVALORISÉ, pas un simple 204 : le client doit voir le
+        // nouveau total immédiatement, et ce total doit être celui qu'il paiera vraiment.
+        var cart = await sender.Send(new GetActiveCartQuery(buyerId), ct);
+        return cart.Match(c => Results.Ok(new
         {
-            return Results.BadRequest(new { error = "cart_unavailable" });
+            promotionCode = c.PromotionCode,
+            subtotal = c.Subtotal,
+            totalSellerDiscount = c.TotalSellerDiscount,
+            totalPlatformDiscount = c.TotalPlatformDiscount,
+            grandTotal = c.GrandTotal,
+            currency = c.Currency,
+        }));
+    }
+
+    /// <summary>Retire le code promo du panier et renvoie le panier revalorisé.</summary>
+    private static async Task<IResult> RemoveCouponAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
         }
 
-        var cart = cartResult.Value;
-        if (cart.Lines.Count == 0)
+        var removed = await sender.Send(new RemoveCouponCommand(buyerId), ct);
+        if (removed.IsFailure)
         {
-            return Results.BadRequest(new { error = "cart_empty" });
+            return removed.Match(() => Results.NoContent());
         }
 
-        // Le code global s'applique au sous-total ; on fournit une ligne de
-        // référence pour les promos ciblées (catégorie/vendeur/produit).
-        var first = cart.Lines[0];
-        var breakdown = await pricing.CalculatePriceAsync(new PriceRequest(
-            BaseAmount: cart.Subtotal,
-            Currency: cart.Currency,
-            ProductId: first.ProductId,
-            CategoryId: first.CategoryId,
-            SellerId: first.SellerId,
-            Quantity: 1,
-            Subtotal: cart.Subtotal,
-            Code: code,
-            IsFirstOrder: false), ct);
-
-        var discount = cart.Subtotal - breakdown.FinalAmount;
-        var valid = discount > 0m;
-
-        return Results.Ok(new
+        var cart = await sender.Send(new GetActiveCartQuery(buyerId), ct);
+        return cart.Match(c => Results.Ok(new
         {
-            valid,
-            code = code.ToUpperInvariant(),
-            discount = valid ? discount : 0m,
-            subtotal = cart.Subtotal,
-            total = valid ? breakdown.FinalAmount : cart.Subtotal,
-            currency = cart.Currency,
-            message = valid ? "Code promo appliqué." : "Code promo invalide ou expiré.",
-        });
+            promotionCode = c.PromotionCode,
+            subtotal = c.Subtotal,
+            grandTotal = c.GrandTotal,
+            currency = c.Currency,
+        }));
     }
 
     public sealed record CouponRequest(string Code);
@@ -150,6 +163,11 @@ public static class MobileCartEndpoints
             totalSellerDiscount = cart.TotalSellerDiscount,
             totalPlatformDiscount = cart.TotalPlatformDiscount,
             grandTotal = cart.GrandTotal,
+
+            // Le code attaché au panier : l'app peut ainsi l'afficher (« BIENVENUE10
+            // appliqué ») et proposer de le retirer, au lieu de l'oublier au moindre
+            // rechargement d'écran.
+            promotionCode = cart.PromotionCode,
         });
     }
 

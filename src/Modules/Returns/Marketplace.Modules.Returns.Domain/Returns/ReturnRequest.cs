@@ -47,6 +47,21 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? ResolvedAtUtc { get; private set; }
 
+    /// <summary>Quand le remboursement a été DÉCIDÉ (l'argent n'était pas encore parti).</summary>
+    public DateTime? RefundApprovedAtUtc { get; private set; }
+
+    /// <summary>Quand l'argent a réellement été VERSÉ.</summary>
+    public DateTime? RefundExecutedAtUtc { get; private set; }
+
+    /// <summary>
+    /// Référence du versement chez FedaPay. C'est la PREUVE que l'argent est parti.
+    ///
+    /// Le jour où un client affirme n'avoir rien reçu, c'est cette référence qui
+    /// permet de retrouver l'opération et de trancher. Un statut « Remboursé » sans
+    /// référence ne prouve rien du tout — c'est exactement l'état d'où l'on vient.
+    /// </summary>
+    public string? RefundReference { get; private set; }
+
     public static Result<ReturnRequest> Create(
         Guid orderId, Guid offerId, Guid buyerId, Guid sellerId, ReturnReason reason, string currency)
     {
@@ -106,8 +121,20 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
         return Result.Success();
     }
 
-    /// <summary>Déclenche le remboursement (impacte l'escrow / le payout vendeur).</summary>
-    public Result Refund(decimal amount)
+    /// <summary>
+    /// ÉTAPE 1 — Le vendeur (ou l'admin) valide le remboursement et son montant.
+    ///
+    /// ⚠️ AUCUN ARGENT NE BOUGE ICI, et c'est délibéré.
+    ///
+    /// Cette méthode s'appelait <c>Refund()</c> et passait directement à
+    /// « Remboursé ». Elle mentait : rien n'appelait la banque. Le client n'était
+    /// jamais payé, mais la base affirmait le contraire.
+    ///
+    /// Elle ne fait plus qu'une chose — enregistrer une DÉCISION. Le versement,
+    /// lui, est confirmé par <see cref="ConfirmRefundExecuted"/>, et seulement une
+    /// fois l'argent réellement parti.
+    /// </summary>
+    public Result ApproveRefund(decimal amount)
     {
         if (Status != ReturnStatus.Received)
         {
@@ -119,11 +146,53 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
             return Result.Failure(Error.Validation("returns.amount_invalid", "Le montant remboursé doit être positif."));
         }
 
-        Status = ReturnStatus.Refunded;
+        Status = ReturnStatus.RefundPending;
         RefundAmount = amount;
         RefundId = Guid.NewGuid();
-        ResolvedAtUtc = DateTime.UtcNow;
-        Raise(new ReturnRefundedDomainEvent(Id.Value, OrderId, SellerId, amount, Currency));
+        RefundApprovedAtUtc = DateTime.UtcNow;
+
+        Raise(new ReturnRefundApprovedDomainEvent(Id.Value, OrderId, BuyerId, SellerId, amount, Currency));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// ÉTAPE 2 — L'argent est PARTI. Un administrateur l'a versé depuis le tableau
+    /// de bord FedaPay et en apporte la référence.
+    ///
+    /// ⚠️ C'EST LA SEULE PORTE VERS « REMBOURSÉ », et elle exige une preuve.
+    ///
+    /// La référence n'est pas décorative : c'est elle qui permet, le jour où le
+    /// client affirme n'avoir rien reçu, de retrouver l'opération chez FedaPay et
+    /// de trancher. Sans elle, votre parole contre la sienne.
+    ///
+    /// C'est aussi ici — et ici seulement — que l'on émet l'événement qui
+    /// contre-passe les gains du vendeur. Le déclencher à la validation aurait
+    /// débité un vendeur pour un versement qui pouvait encore échouer.
+    /// </summary>
+    public Result ConfirmRefundExecuted(string providerReference, DateTime nowUtc)
+    {
+        if (Status != ReturnStatus.RefundPending)
+        {
+            return Result.Failure(Error.Conflict(
+                "returns.refund_not_pending",
+                "Seul un remboursement validé et en attente de versement peut être confirmé."));
+        }
+
+        if (string.IsNullOrWhiteSpace(providerReference))
+        {
+            return Result.Failure(Error.Validation(
+                "returns.reference_required",
+                "La référence du versement (FedaPay) est obligatoire : elle prouve que l'argent est parti."));
+        }
+
+        Status = ReturnStatus.Refunded;
+        RefundReference = providerReference.Trim();
+        RefundExecutedAtUtc = nowUtc;
+        ResolvedAtUtc = nowUtc;
+
+        Raise(new ReturnRefundedDomainEvent(
+            Id.Value, OrderId, BuyerId, SellerId, RefundAmount!.Value, Currency, RefundReference));
+
         return Result.Success();
     }
 }

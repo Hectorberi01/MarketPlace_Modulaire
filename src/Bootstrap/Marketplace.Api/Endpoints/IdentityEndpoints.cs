@@ -183,7 +183,7 @@ public static class IdentityEndpoints
 
     private static void MapAdminUsers(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/identity/users")
+        var group = app.MapAdminGroup("/api/identity/users")
             .WithTags("Identity · Admin Users")
             .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
@@ -233,7 +233,7 @@ public static class IdentityEndpoints
 
     private static void MapRoles(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/identity/roles")
+        var group = app.MapAdminGroup("/api/identity/roles")
             .WithTags("Identity · Roles")
             .RequireAuthorization(policy => policy.RequireRole("Admin"));
 

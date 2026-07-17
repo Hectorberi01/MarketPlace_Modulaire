@@ -19,5 +19,6 @@ internal static class PromotionMapper
         p.Period.EndUtc,
         p.UsageLimit,
         p.UsedCount,
-        p.Status.ToString());
+        p.Status.ToString(),
+        p.PerUserLimit);
 }

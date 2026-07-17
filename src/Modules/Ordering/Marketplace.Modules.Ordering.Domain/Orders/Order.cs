@@ -18,12 +18,13 @@ public sealed class Order : AggregateRoot<OrderId>
     {
     }
 
-    private Order(OrderId id, Guid buyerId, Guid cartId, string currency)
+    private Order(OrderId id, Guid buyerId, Guid cartId, string currency, string? promotionCode)
         : base(id)
     {
         BuyerId = buyerId;
         CartId = cartId;
         Currency = currency;
+        PromotionCode = promotionCode;
         Status = OrderStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
     }
@@ -31,6 +32,18 @@ public sealed class Order : AggregateRoot<OrderId>
     public Guid BuyerId { get; private set; }
     public Guid CartId { get; private set; }
     public string Currency { get; private set; } = default!;
+
+    /// <summary>
+    /// Code promo appliqué au panier, FIGÉ au moment de la commande. Null si aucun.
+    ///
+    /// La commande doit s'en souvenir : le panier est clôturé juste après le checkout,
+    /// et c'est seulement à la CONFIRMATION (paiement encaissé) que la promotion est
+    /// réellement décomptée. Sans ce snapshot, le module Pricing recevrait un événement
+    /// « commande confirmée » sans savoir quel coupon consommer — et le coupon resterait
+    /// éternellement disponible. C'est très exactement le bug qu'on corrige.
+    /// </summary>
+    public string? PromotionCode { get; private set; }
+
     public OrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
@@ -60,7 +73,12 @@ public sealed class Order : AggregateRoot<OrderId>
 
     public IReadOnlyCollection<OrderLine> Lines => _lines.AsReadOnly();
 
-    public static Result<Order> Create(Guid buyerId, Guid cartId, string currency, IEnumerable<OrderLineDraft> drafts)
+    public static Result<Order> Create(
+        Guid buyerId,
+        Guid cartId,
+        string currency,
+        IEnumerable<OrderLineDraft> drafts,
+        string? promotionCode = null)
     {
         if (buyerId == Guid.Empty)
         {
@@ -78,7 +96,12 @@ public sealed class Order : AggregateRoot<OrderId>
             return Error.Validation("ordering.line_quantity_invalid", "Chaque ligne doit avoir une quantité positive.");
         }
 
-        var order = new Order(OrderId.New(), buyerId, cartId, currency.Trim().ToUpperInvariant());
+        var order = new Order(
+            OrderId.New(),
+            buyerId,
+            cartId,
+            currency.Trim().ToUpperInvariant(),
+            string.IsNullOrWhiteSpace(promotionCode) ? null : promotionCode.Trim().ToUpperInvariant());
 
         foreach (var draft in draftList)
         {
@@ -162,9 +185,33 @@ public sealed class Order : AggregateRoot<OrderId>
         }
 
         Status = OrderStatus.Confirmed;
-        Raise(new OrderConfirmedDomainEvent(Id.Value, BuyerId));
+        Raise(new OrderConfirmedDomainEvent(Id.Value, BuyerId, Currency, PromotionCode, BuildSellerShares()));
         return Result.Success();
     }
+
+    /// <summary>
+    /// Répartit la commande entre ses vendeurs : combien d'articles, pour quel montant.
+    ///
+    /// C'est la commande — et elle seule — qui détient cette vérité : elle connaît ses
+    /// lignes, donc leurs vendeurs et leurs prix. La reconstituer ailleurs (dans le
+    /// module Notifications, par exemple) obligerait à relire les lignes depuis un
+    /// autre schéma, ce que l'architecture modulaire interdit précisément.
+    ///
+    /// Le montant est la somme des <c>LineTotal</c> du vendeur : le prix FINAL payé,
+    /// remises comprises. Ce n'est pas encore ce qu'il touchera — la commission de la
+    /// plateforme se retire plus loin, dans Settlement. La notification annonce donc
+    /// « voici ce qui a été acheté chez vous », et non « voici ce que vous toucherez ».
+    /// Confondre les deux ferait attendre au vendeur un virement plus élevé que celui
+    /// qui arrivera.
+    /// </summary>
+    private List<OrderSellerShare> BuildSellerShares()
+        => _lines
+            .GroupBy(line => line.SellerId)
+            .Select(g => new OrderSellerShare(
+                g.Key,
+                g.Sum(line => line.Quantity),
+                g.Sum(line => line.LineTotal)))
+            .ToList();
 
     /// <summary>
     /// Livraison confirmée (toutes les expéditions reçues). Déclenche, en aval,

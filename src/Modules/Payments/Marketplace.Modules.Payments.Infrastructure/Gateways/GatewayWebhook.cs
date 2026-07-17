@@ -13,6 +13,15 @@ public static class GatewayWebhook
 {
     private static readonly JsonDocumentOptions JsonOptions = new() { AllowTrailingCommas = true };
 
+    /// <summary>
+    /// Autorise l'acceptation d'un webhook NON signé uniquement lorsqu'aucun secret
+    /// n'est configuré (tests locaux / sandbox). <c>false</c> par défaut : en
+    /// production, un secret manquant fait REJETER le webhook (pas de fail-open,
+    /// qui permettrait de créditer une commande via un faux webhook). À positionner
+    /// une seule fois au démarrage, à <c>true</c> en environnement Development.
+    /// </summary>
+    public static bool AllowUnsignedWhenSecretMissing { get; set; }
+
     /// <summary>Signature HMAC-SHA256 du corps brut, en hexadécimal minuscule.</summary>
     public static string ComputeSignature(string rawBody, string secret)
     {
@@ -22,14 +31,15 @@ public static class GatewayWebhook
     }
 
     /// <summary>
-    /// Vérifie la signature. Secret vide = sandbox permissif (on accepte sans
-    /// signature pour faciliter les tests locaux).
+    /// Vérifie la signature. Secret vide : accepté SANS signature uniquement si
+    /// <see cref="AllowUnsignedWhenSecretMissing"/> est activé (Development). En
+    /// production (défaut), un secret manquant fait rejeter le webhook.
     /// </summary>
     public static bool VerifySignature(string rawBody, string? signatureHeader, string secret)
     {
         if (string.IsNullOrEmpty(secret))
         {
-            return true;
+            return AllowUnsignedWhenSecretMissing;
         }
 
         if (string.IsNullOrWhiteSpace(signatureHeader))

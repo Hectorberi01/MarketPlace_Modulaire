@@ -16,7 +16,7 @@ public static class PricingEndpoints
     /// <summary>Enregistre les routes des promotions et du calcul de prix.</summary>
     public static IEndpointRouteBuilder MapPricingEndpoints(this IEndpointRouteBuilder app)
     {
-        var promos = app.MapGroup("/api/pricing/promotions").WithTags("Pricing · Promotions").RequireAuthorization();
+        var promos = app.MapAdminGroup("/api/pricing/promotions").WithTags("Pricing · Promotions").RequireAuthorization();
 
         promos.MapPost("/", CreateAsync).WithName("CreatePromotion");
         promos.MapGet("/", ListAsync).WithName("ListPromotions").RequireAuthorization(p => p.RequireRole("Admin"));

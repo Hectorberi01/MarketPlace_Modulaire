@@ -9,8 +9,35 @@ using Xunit;
 
 namespace Payments.UnitTests;
 
-public class HttpGatewayTests
+/// <summary>
+/// ⚠️ Cette classe manipule <see cref="GatewayWebhook.AllowUnsignedWhenSecretMissing"/>,
+/// qui est un état STATIQUE MUTABLE. xUnit exécute les classes de test en parallèle :
+/// sans collection dédiée, une autre classe de ce projet (MobileMoneyGatewayTests,
+/// PaymentGatewayTests) pourrait lire le drapeau pendant qu'on le bascule, et échouer
+/// une fois sur trois sans qu'on comprenne pourquoi.
+///
+/// La collection sérialise. Ce n'est pas une précaution théorique : un test
+/// intermittent sur la vérification de signature d'un webhook de paiement est
+/// exactement le genre de rouge qu'on finit par ignorer.
+/// </summary>
+[Collection("GatewayWebhook state")]
+public class HttpGatewayTests : IDisposable
 {
+    private readonly bool _previousAllowUnsigned = GatewayWebhook.AllowUnsignedWhenSecretMissing;
+
+    /// <summary>
+    /// Le défaut de production est FERMÉ (false) : un webhook non signé, alors
+    /// qu'aucun secret n'est configuré, est REJETÉ. Sans quoi n'importe qui pourrait
+    /// créditer une commande en postant un faux webhook.
+    ///
+    /// Les tests ci-dessous simulent le bac à sable, où l'hôte (Program.cs) active
+    /// explicitement le mode permissif en Development. Ils doivent donc poser le
+    /// drapeau eux-mêmes — et le remettre après, d'où le Dispose.
+    /// </summary>
+    public HttpGatewayTests() => GatewayWebhook.AllowUnsignedWhenSecretMissing = true;
+
+    public void Dispose() => GatewayWebhook.AllowUnsignedWhenSecretMissing = _previousAllowUnsigned;
+
     private sealed class StubHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
@@ -89,7 +116,44 @@ public class HttpGatewayTests
 
         GatewayWebhook.VerifySignature(body, GatewayWebhook.ComputeSignature(body, secret), secret).Should().BeTrue();
         GatewayWebhook.VerifySignature(body, "mauvaise", secret).Should().BeFalse();
-        // Secret vide => sandbox permissif.
+
+        // Secret vide + mode permissif (posé par le constructeur) => accepté.
+        // C'est le cas du bac à sable, pas celui de la production.
         GatewayWebhook.VerifySignature(body, null, string.Empty).Should().BeTrue();
     }
+
+    /// <summary>
+    /// LE test qui compte vraiment, et qui manquait.
+    ///
+    /// En production, aucun secret n'est parfois configuré — par oubli, par erreur de
+    /// vault, par variable d'environnement mal nommée. Ce jour-là, le webhook DOIT
+    /// être rejeté. Un fail-open silencieux permettrait à quiconque connaît l'URL de
+    /// marquer une commande comme payée en postant un JSON.
+    ///
+    /// Ce test verrouille le défaut. Si quelqu'un remet un jour la valeur à `true`
+    /// « pour débloquer le sandbox », c'est ici que ça cassera.
+    /// </summary>
+    [Fact]
+    public void Sans_secret_ET_sans_mode_permissif_le_webhook_est_REJETE()
+    {
+        var previous = GatewayWebhook.AllowUnsignedWhenSecretMissing;
+        try
+        {
+            GatewayWebhook.AllowUnsignedWhenSecretMissing = false; // le défaut de production
+            var body = "{\"status\":\"SUCCESSFUL\",\"referenceId\":\"MTN-1\"}";
+
+            GatewayWebhook.VerifySignature(body, signatureHeader: null, secret: string.Empty)
+                .Should().BeFalse("un webhook non signé sans secret configuré ne doit JAMAIS créditer une commande");
+        }
+        finally
+        {
+            GatewayWebhook.AllowUnsignedWhenSecretMissing = previous;
+        }
+    }
 }
+
+/// <summary>
+/// Sérialise les classes qui touchent au drapeau statique de GatewayWebhook.
+/// </summary>
+[CollectionDefinition("GatewayWebhook state", DisableParallelization = true)]
+public sealed class GatewayWebhookCollection;

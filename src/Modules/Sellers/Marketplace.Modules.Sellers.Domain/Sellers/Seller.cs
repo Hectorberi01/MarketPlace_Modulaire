@@ -38,6 +38,13 @@ public sealed class Seller : AggregateRoot<SellerId>
     public string? Description { get; private set; }
     public SellerStatus Status { get; private set; }
     public KybStatus KybStatus { get; private set; }
+
+    /// <summary>
+    /// ⚠️ Neutralisé : la commission est désormais un taux fixe plateforme
+    /// (Billing:DefaultCommissionRate). Ce champ n'est plus utilisé pour le calcul
+    /// et n'est plus modifiable. Conservé en lecture seule (colonne EF, affichage
+    /// dashboards/API) : ne pas supprimer pour éviter une migration.
+    /// </summary>
     public decimal CommissionRate { get; private set; }
     public PayoutAccount? PayoutAccount { get; private set; }
     public decimal Rating { get; private set; }
@@ -84,6 +91,12 @@ public sealed class Seller : AggregateRoot<SellerId>
         return Result.Success();
     }
 
+    /// <summary>
+    /// ⚠️ Neutralisé : la commission est désormais un taux fixe plateforme
+    /// (Billing:DefaultCommissionRate). Ce champ n'est plus utilisé pour le calcul
+    /// et n'est plus modifiable. Méthode conservée sans appelant (aucun endpoint /
+    /// commande ne l'invoque) ; ne pas rebrancher.
+    /// </summary>
     public Result SetCommissionRate(decimal commissionRate)
     {
         if (commissionRate is < 0m or > 1m)
@@ -121,6 +134,27 @@ public sealed class Seller : AggregateRoot<SellerId>
             KybStatus = KybStatus.InReview;
         }
 
+        return document;
+    }
+
+    /// <summary>
+    /// Retire une pièce KYB de la boutique (le vendeur supprime un document qu'il a
+    /// téléversé). La pièce est identifiée par son id ; l'appartenance à la boutique
+    /// est garantie par la relation (la pièce est enfant de cet agrégat). Retourne
+    /// l'entité retirée pour permettre à l'Application de nettoyer le stockage si
+    /// besoin. Le retrait ne change pas le statut KYB de la boutique (une pièce
+    /// vérifiée restée en base n'est pas re-demandée ; la re-validation admin reste
+    /// possible via l'ajout d'une nouvelle pièce).
+    /// </summary>
+    public Result<KybDocument> RemoveKybDocument(Guid documentId)
+    {
+        var document = _kybDocuments.FirstOrDefault(d => d.Id == documentId);
+        if (document is null)
+        {
+            return Error.NotFound("sellers.kyb.not_found", "Pièce KYB introuvable pour cette boutique.");
+        }
+
+        _kybDocuments.Remove(document);
         return document;
     }
 

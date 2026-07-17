@@ -112,8 +112,12 @@ internal sealed class UpdateLocationAddressCommandHandler : ICommandHandler<Upda
 
 // ---- Suppression d'un lieu -------------------------------------------------
 
-/// <summary>Supprime un lieu d'expédition (back-office admin).</summary>
-public sealed record DeleteFulfillmentLocationCommand(Guid LocationId) : ICommand;
+/// <summary>
+/// Supprime un lieu d'expédition. <see cref="OwnerId"/> optionnel : s'il est fourni
+/// (mutation vendeur), la suppression n'aboutit que si le lieu appartient bien à ce
+/// propriétaire (anti-IDOR). Null pour le back-office admin (aucun filtre).
+/// </summary>
+public sealed record DeleteFulfillmentLocationCommand(Guid LocationId, Guid? OwnerId = null) : ICommand;
 
 internal sealed class DeleteFulfillmentLocationCommandHandler : ICommandHandler<DeleteFulfillmentLocationCommand>
 {
@@ -130,6 +134,13 @@ internal sealed class DeleteFulfillmentLocationCommandHandler : ICommandHandler<
     {
         var location = await _repository.GetByIdAsync(new FulfillmentLocationId(command.LocationId), cancellationToken);
         if (location is null)
+        {
+            return Result.Failure(Error.NotFound("inventory.location.not_found", "Lieu d'expédition introuvable."));
+        }
+
+        // Scoping vendeur : on ne révèle pas la différence « inexistant » / « pas le vôtre »
+        // (même NotFound), pour ne pas divulguer les ids d'autres boutiques.
+        if (command.OwnerId is { } ownerId && location.OwnerId != ownerId)
         {
             return Result.Failure(Error.NotFound("inventory.location.not_found", "Lieu d'expédition introuvable."));
         }

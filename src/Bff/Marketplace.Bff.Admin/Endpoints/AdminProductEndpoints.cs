@@ -3,6 +3,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Application.Products.Commands.ChangeProductStatus;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListAllProducts;
+using Marketplace.Modules.Offers.Contracts;
 
 namespace Marketplace.Bff.Admin.Endpoints;
 
@@ -18,6 +19,7 @@ public static class AdminProductEndpoints
 
         products.MapGet("/", ListAsync);
         products.MapGet("/{id:guid}", GetAsync);
+        products.MapGet("/{id:guid}/offers", GetOffersAsync);
         products.MapPost("/{id:guid}/approve", ApproveAsync);
         products.MapPost("/{id:guid}/reject", RejectAsync);
         products.MapPatch("/{id:guid}/status", ChangeStatusAsync);
@@ -25,9 +27,11 @@ public static class AdminProductEndpoints
         return app;
     }
 
-    /// <summary>Tous les produits de la plateforme.</summary>
-    private static async Task<IResult> ListAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListAllProductsQuery(), ct)).Match(p => Results.Ok(p));
+    /// <summary>Page de produits (pagination, recherche par nom, filtre statut).</summary>
+    private static async Task<IResult> ListAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListAllProductsQuery(page, pageSize, search, status, sort, dir), ct)).Match(p => Results.Ok(p));
 
     /// <summary>Détail d'un produit (fiche + médias + variantes).</summary>
     private static async Task<IResult> GetAsync(Guid id, ICatalogModuleApi catalog, CancellationToken ct)
@@ -35,6 +39,10 @@ public static class AdminProductEndpoints
         var product = await catalog.GetProductAsync(id, ct);
         return product is null ? Results.NotFound() : Results.Ok(product);
     }
+
+    /// <summary>Offres (tarification) rattachées à un produit : prix, breakdown commission/frais, statut.</summary>
+    private static async Task<IResult> GetOffersAsync(Guid id, IOfferModuleApi offers, CancellationToken ct)
+        => Results.Ok(await offers.GetOffersByProductAsync(id, ct));
 
     /// <summary>Valide un produit (le publie : statut Active).</summary>
     private static async Task<IResult> ApproveAsync(Guid id, ISender sender, CancellationToken ct)

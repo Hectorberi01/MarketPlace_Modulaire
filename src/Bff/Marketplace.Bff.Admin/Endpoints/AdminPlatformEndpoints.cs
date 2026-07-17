@@ -3,6 +3,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Tax.Application.Taxes;
 using Marketplace.Modules.Marketing.Application.Content;
 using Marketplace.Modules.Marketing.Application.Campaigns;
+using Marketplace.Modules.Pricing.Application.Promotions.Queries;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Fraud.Application.Risk;
 using Marketplace.Modules.Analytics.Application.Metrics;
@@ -42,6 +43,7 @@ public static class AdminPlatformEndpoints
 
         var campaigns = app.MapAdminGroup("/admin/campaigns", "Admin · Campagnes");
         campaigns.MapGet("/", ListCampaignsAsync);
+        campaigns.MapGet("/promotions", ListPromotionsAsync);
         campaigns.MapGet("/{id:guid}", GetCampaignAsync);
         campaigns.MapPost("/", CreateCampaignAsync);
         campaigns.MapPut("/{id:guid}", UpdateCampaignAsync);
@@ -134,6 +136,10 @@ public static class AdminPlatformEndpoints
     // --- Campagnes ---
     private static async Task<IResult> ListCampaignsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListCampaignsQuery(), ct)).Match(c => Results.Ok(c));
+
+    /// <summary>Liste des promotions disponibles (pour rattachement à une campagne).</summary>
+    private static async Task<IResult> ListPromotionsAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListPromotionsQuery(), ct)).Match(p => Results.Ok(p));
 
     private static async Task<IResult> GetCampaignAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new GetCampaignQuery(id), ct)).Match(c => Results.Ok(c));

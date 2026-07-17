@@ -21,6 +21,9 @@ public sealed class Offer : AggregateRoot<OfferId>
         Guid productId,
         Guid sellerId,
         Sku variantSku,
+        decimal sellerPrice,
+        decimal commissionAmount,
+        decimal providerFeeAmount,
         Money basePrice,
         OfferCondition condition,
         FulfillmentType fulfillmentType,
@@ -31,6 +34,9 @@ public sealed class Offer : AggregateRoot<OfferId>
         ProductId = productId;
         SellerId = sellerId;
         VariantSku = variantSku;
+        SellerPrice = sellerPrice;
+        CommissionAmount = commissionAmount;
+        ProviderFeeAmount = providerFeeAmount;
         BasePrice = basePrice;
         Condition = condition;
         FulfillmentType = fulfillmentType;
@@ -39,12 +45,27 @@ public sealed class Offer : AggregateRoot<OfferId>
         Status = OfferStatus.Active;
         CreatedOnUtc = DateTime.UtcNow;
 
+        // L'événement porte le PRIX PRODUIT (payé par l'acheteur), pas le prix vendeur.
         Raise(new OfferCreatedDomainEvent(id.Value, productId, sellerId, variantSku.Value, basePrice.Amount, basePrice.Currency));
     }
 
     public Guid ProductId { get; private set; }
     public Guid SellerId { get; private set; }
     public Sku VariantSku { get; private set; } = default!;
+
+    /// <summary>Prix NET saisi par le vendeur (hors majoration plateforme).</summary>
+    public decimal SellerPrice { get; private set; }
+
+    /// <summary>Commission plateforme empilée sur le prix vendeur.</summary>
+    public decimal CommissionAmount { get; private set; }
+
+    /// <summary>Frais provider empilés sur le prix vendeur.</summary>
+    public decimal ProviderFeeAmount { get; private set; }
+
+    /// <summary>
+    /// PRIX PRODUIT payé par l'acheteur = prix vendeur + commission + frais provider.
+    /// Inchangé pour le reste du système (cart, pricing, order l'utilisent).
+    /// </summary>
     public Money BasePrice { get; private set; } = default!;
     public OfferCondition Condition { get; private set; }
     public FulfillmentType FulfillmentType { get; private set; }
@@ -57,7 +78,10 @@ public sealed class Offer : AggregateRoot<OfferId>
         Guid productId,
         Guid sellerId,
         Sku variantSku,
-        Money basePrice,
+        decimal sellerPrice,
+        decimal commissionRate,
+        decimal providerFeeRate,
+        string currency,
         OfferCondition condition,
         FulfillmentType fulfillmentType,
         Guid shipFromLocationId,
@@ -73,6 +97,19 @@ public sealed class Offer : AggregateRoot<OfferId>
             return Error.Validation("offers.offer.seller_required", "Le vendeur est obligatoire.");
         }
 
+        // ⚠️ PRIX STRICTEMENT POSITIF — invariant du domaine, pas simple validation d'entrée.
+        //
+        // `Money.Create` ne rejette que le NÉGATIF : un prix de 0 passait, en création comme
+        // en modification (ChangeOfferPrice n'avait d'ailleurs aucun validator). Un vendeur
+        // pouvait donc lister un article à 0 XOF — gratuit, tout en engageant la logistique,
+        // la commission et les points de fidélité. On barre ici, dans le domaine, parce que
+        // c'est le seul endroit qu'aucun appelant (BFF, API, futur import en masse) ne peut
+        // contourner.
+        if (sellerPrice <= 0m)
+        {
+            return Error.Validation("offers.offer.price_invalid", "Le prix vendeur doit être strictement positif.");
+        }
+
         if (shipFromLocationId == Guid.Empty)
         {
             return Error.Validation("offers.offer.location_required", "La localisation d'expédition est obligatoire.");
@@ -83,14 +120,72 @@ public sealed class Offer : AggregateRoot<OfferId>
             return Error.Validation("offers.offer.handling_invalid", "Le délai de préparation ne peut pas être négatif.");
         }
 
-        return new Offer(OfferId.New(), productId, sellerId, variantSku, basePrice, condition, fulfillmentType, shipFromLocationId, handlingTime);
+        var (commissionAmount, providerFeeAmount, productPrice) =
+            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate);
+
+        var priceResult = Money.Create(productPrice, currency);
+        if (priceResult.IsFailure)
+        {
+            return Result.Failure<Offer>(priceResult.Error);
+        }
+
+        return new Offer(
+            OfferId.New(),
+            productId,
+            sellerId,
+            variantSku,
+            sellerPrice,
+            commissionAmount,
+            providerFeeAmount,
+            priceResult.Value,
+            condition,
+            fulfillmentType,
+            shipFromLocationId,
+            handlingTime);
     }
 
-    public Result ChangePrice(Money newPrice)
+    public Result ChangePrice(decimal sellerPrice, decimal commissionRate, decimal providerFeeRate)
     {
-        BasePrice = newPrice;
-        Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, newPrice.Amount, newPrice.Currency));
+        // Même invariant qu'à la création : pas de prix nul ou négatif. Cette méthode
+        // n'avait AUCUNE validation de prix — c'était le trou par lequel une offre passait
+        // à 0 après coup.
+        if (sellerPrice <= 0m)
+        {
+            return Result.Failure(Error.Validation(
+                "offers.offer.price_invalid", "Le prix vendeur doit être strictement positif."));
+        }
+
+        var (commissionAmount, providerFeeAmount, productPrice) =
+            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate);
+
+        var priceResult = Money.Create(productPrice, BasePrice.Currency);
+        if (priceResult.IsFailure)
+        {
+            return Result.Failure(priceResult.Error);
+        }
+
+        SellerPrice = sellerPrice;
+        CommissionAmount = commissionAmount;
+        ProviderFeeAmount = providerFeeAmount;
+        BasePrice = priceResult.Value;
+
+        // L'événement porte le PRIX PRODUIT (payé par l'acheteur), pas le prix vendeur.
+        Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, BasePrice.Amount, BasePrice.Currency));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Empile la majoration plateforme sur le prix vendeur net (XOF = entiers) :
+    ///   commission = Round(sellerPrice * commRate), provider = Round(sellerPrice * provRate),
+    ///   prix produit = sellerPrice + commission + provider.
+    /// </summary>
+    private static (decimal Commission, decimal ProviderFee, decimal ProductPrice) ComputeBreakdown(
+        decimal sellerPrice, decimal commissionRate, decimal providerFeeRate)
+    {
+        var commissionAmount = Math.Round(sellerPrice * commissionRate);
+        var providerFeeAmount = Math.Round(sellerPrice * providerFeeRate);
+        var productPrice = sellerPrice + commissionAmount + providerFeeAmount;
+        return (commissionAmount, providerFeeAmount, productPrice);
     }
 
     public Result SetHandlingTime(int handlingTime)

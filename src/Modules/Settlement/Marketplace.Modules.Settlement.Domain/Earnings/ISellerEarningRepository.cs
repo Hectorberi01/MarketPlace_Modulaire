@@ -21,4 +21,11 @@ public interface ISellerEarningRepository
     Task<IReadOnlyList<SellerEarning>> ListByOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     Task<SellerStatement> GetSellerStatementAsync(Guid sellerId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lignes détaillées du relevé d'un vendeur : chaque gain créé sur la période,
+    /// trié par date de création. Sert à produire les écritures détaillées
+    /// (vente + commission) du relevé, sans agrégation.
+    /// </summary>
+    Task<IReadOnlyList<SellerEarning>> ListSellerEarningsAsync(Guid sellerId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default);
 }

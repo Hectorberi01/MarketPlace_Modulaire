@@ -1,0 +1,349 @@
+# =====================================================================
+#  STAGING — Marketplace
+#  Identique à la prod, avec les ajustements de pré-production :
+#   • ACME Let's Encrypt STAGING par défaut (certificats non fiables mais SANS
+#     rate-limit) — bascule vers l'ACME prod via ACME_CASERVER quand tu es prêt.
+#   • ASPNETCORE_ENVIRONMENT=Staging (Swagger activé, logs plus verbeux).
+#   • Base et secrets DÉDIÉS au staging (branche Neon de staging, clés FedaPay
+#     sandbox) — jamais les données/clés de prod.
+#   • Réseau, volumes et nom de projet ISOLÉS (peut cohabiter avec la prod si les
+#     ports Traefik sont changés via TRAEFIK_HTTP_PORT / TRAEFIK_HTTPS_PORT).
+#
+#  Lancement :
+#     cd deploy
+#     cp .env.staging.example .env.staging   # renseigner les valeurs
+#     docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+# =====================================================================
+
+name: marketplace-staging
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-env: &app-env
+  ASPNETCORE_ENVIRONMENT: "Staging"
+  # Observabilité : export OTLP (traces + métriques) vers le collector. Vide = pas
+  # d'export (l'app tourne normalement). Ex. : http://otel-collector:4317
+  Otel__Endpoint: "${OTEL_ENDPOINT:-}"
+  # Base DÉDIÉE au staging (branche Neon de staging). Endpoint DIRECT (sans -pooler).
+  ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon staging)}"
+  Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD requis},abortConnect=false"
+  Jwt__Issuer: "marketplace"
+  Jwt__Audience: "marketplace"
+  Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
+  # Validation des comptes par un administrateur.
+  #
+  # « true » = tout compte issu de l'inscription publique reste bloqué tant qu'un
+  # administrateur ne l'a pas validé dans la console. C'est le réglage actuel, et
+  # il a un coût réel : un acheteur qui s'inscrit la nuit ne peut rien commander
+  # avant d'être validé. Le jour où le volume rendra la file intenable, basculer
+  # REQUIRE_APPROVAL_BUYERS à « false » suffit — sans livraison de code.
+  #
+  # Les comptes créés DEPUIS la console restent actifs d'emblée : c'est
+  # l'administrateur qui vient de les créer, l'auto-validation n'apporterait rien.
+  Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
+  Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
+  # FedaPay SANDBOX en staging (pas les clés live).
+  #
+  # L'URL DOIT correspondre au préfixe de la clé : sk_sandbox_… → sandbox-api,
+  # sk_live_… → api.fedapay.com. L'API refuse de démarrer si les deux divergent.
+  # ⚠️ Le bac à sable FedaPay n'exécute PAS les versements (403) : en staging,
+  #    les retraits sont simulés, quoi que dise FEDAPAY_ENABLE_PAYOUTS.
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
+  Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
+  Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
+  # Active les VERSEMENTS réels FedaPay (retraits vendeur). false = payout simulé.
+  Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
+  # Cloudflare R2 — pièces KYB (bucket privé, idéalement un bucket de staging).
+  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2__BucketName: "${R2_BUCKET_NAME:-}"
+  Storage__CloudflareR2__PublicBaseUrl: "${R2_PUBLIC_BASE_URL:-}"
+  # Cloudflare R2 — images produit (bucket public).
+  Storage__CloudflareR2Media__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__CloudflareR2Media__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
+  Storage__CloudflareR2Media__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
+  Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
+  Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+  # Cloudinary — traitement d'image (détourage IA + fond blanc). Secrets via .env non versionné.
+  Media__Cloudinary__CloudName: "${CLOUDINARY_CLOUD_NAME:-}"
+  Media__Cloudinary__ApiKey: "${CLOUDINARY_API_KEY:-}"
+  Media__Cloudinary__ApiSecret: "${CLOUDINARY_API_SECRET:-}"
+  # Firebase Cloud Messaging (push). Le JSON du compte de service est écrit par
+  # Ansible (depuis le vault) dans deploy/fcm/service-account.json, monté en RO
+  # dans chaque conteneur (voir volumes de x-app-common). Si le fichier est absent,
+  # le module bascule automatiquement sur NullPushSender (aucun push, pas d'erreur).
+  Notifications__Fcm__ServiceAccountPath: "/run/secrets/fcm/service-account.json"
+
+  # E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe.
+  # RESEND_API_KEY vient du vault ; EMAIL_FROM / EMAIL_APP_BASE_URL du group_vars.
+  # Les trois vides = canal désactivé (DevelopmentEmailSender, aucun envoi réel).
+  Notifications__Email__ApiKey: "${RESEND_API_KEY:-}"
+  Notifications__Email__From: "${EMAIL_FROM:-}"
+  Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
+
+x-app-common: &app-common
+  restart: unless-stopped
+  logging: *logging
+  networks: [marketplace-net]
+  # Compte de service Firebase (push FCM) monté en lecture seule dans TOUS les
+  # hôtes (api + BFF). Le bff-admin en a besoin pour envoyer le push de test au
+  # vendeur ; les autres pour les notifications déclenchées par leurs flux.
+  volumes:
+    - ./fcm:/run/secrets/fcm:ro
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 40s
+  deploy:
+    resources:
+      limits:
+        cpus: "0.75"
+        memory: 512M
+
+services:
+  # ---------------- Redis (backplane + cache) ----------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD requis}"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    networks: [marketplace-net]
+
+  # ---------------- Edge gateway (TLS staging) ----------------
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    environment:
+      # Ubuntu 26.04 embarque un Docker qui refuse les vieilles API : on force une
+      # version d'API moderne pour le client Docker interne de Traefik (sinon le
+      # provider docker échoue « client version 1.24 is too old »).
+      DOCKER_API_VERSION: "1.44"
+    command:
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL requis}"
+      # ACME staging par défaut (SANS rate-limit). Passer l'URL de prod pour des certificats fiables.
+      - "--certificatesresolvers.letsencrypt.acme.caserver=${ACME_CASERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.staging.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic-staging:/etc/traefik/dynamic:ro
+      - acme:/acme
+    logging: *logging
+    networks: [marketplace-net]
+
+  # ---------------- Monolithe modulaire (migrateur) ----------------
+  api:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj
+        APP_DLL: Marketplace.Api.dll
+    image: ${IMAGE_PREFIX:-marketplace}/api:${IMAGE_TAG:-staging}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=edge-chain@file"
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+
+  # ---------------- BFF ----------------
+  bff-mobile:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj
+        APP_DLL: Marketplace.Bff.Mobile.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-mobile:${IMAGE_TAG:-staging}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mobile.rule=Host(`m.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.mobile.entrypoints=websecure"
+      - "traefik.http.routers.mobile.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.mobile.middlewares=edge-chain@file"
+      - "traefik.http.services.mobile.loadbalancer.server.port=8080"
+
+  bff-web:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj
+        APP_DLL: Marketplace.Bff.Web.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-web:${IMAGE_TAG:-staging}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`web.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.web.middlewares=edge-chain@file"
+      - "traefik.http.services.web.loadbalancer.server.port=8080"
+
+  bff-seller:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj
+        APP_DLL: Marketplace.Bff.Seller.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-seller:${IMAGE_TAG:-staging}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+      # Origine CORS du dashboard vendeur hébergé séparément (Blazor WASM
+      # sur web-seller.hba-marketplace.fr → appels cross-origin vers ce BFF).
+      Cors__Origins: "${SELLER_CORS_ORIGINS:-https://web-seller.hba-marketplace.fr}"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.seller.rule=Host(`seller.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.seller.entrypoints=websecure"
+      - "traefik.http.routers.seller.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.seller.middlewares=edge-chain@file"
+      - "traefik.http.services.seller.loadbalancer.server.port=8080"
+
+  bff-admin:
+    <<: *app-common
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj
+        APP_DLL: Marketplace.Bff.Admin.dll
+    image: ${IMAGE_PREFIX:-marketplace}/bff-admin:${IMAGE_TAG:-staging}
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      OUTBOX_ENABLED: "false"
+      # --- CORS ---
+      # La console d'administration est une application NAVIGATEUR servie depuis une
+      # autre origine que l'API : sans déclaration explicite, la politique reste
+      # FERMÉE (SetIsOriginAllowed(false)) et le navigateur bloque tout — pas de
+      # message côté serveur, juste un échec CORS côté client.
+      #
+      # Liste séparée par des virgules. En développement, on y ajoute l'origine
+      # locale de la console (ex. http://localhost:5318) — JAMAIS en production.
+      Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
+      # --- Supervision (page « Santé système ») ---
+      # Surfaces surveillées : URLs INTERNES (noms de services sur le réseau).
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
+      Monitoring__Surfaces__1__Name: "BFF Mobile"
+      Monitoring__Surfaces__1__Url: "http://bff-mobile:8080"
+      Monitoring__Surfaces__2__Name: "BFF Web"
+      Monitoring__Surfaces__2__Url: "http://bff-web:8080"
+      Monitoring__Surfaces__3__Name: "BFF Vendeur"
+      Monitoring__Surfaces__3__Url: "http://bff-seller:8080"
+      Monitoring__Surfaces__4__Name: "BFF Admin"
+      Monitoring__Surfaces__4__Url: "http://bff-admin:8080"
+      # KPIs live + liens Grafana (vides = masqués). Ex. PROMETHEUS_URL=http://prometheus:9090
+      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
+      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
+      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
+      Monitoring__PortainerUrl: "${PORTAINER_URL:-}"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.rule=Host(`admin.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.admin.middlewares=edge-chain@file"
+      - "traefik.http.services.admin.loadbalancer.server.port=8080"
+
+  # ---------------------------------------------------------------------------
+  # Console d'administration (Next.js) — le FRONT navigateur des administrateurs.
+  # C'est ici que sont servies les pages publiques /reinitialiser-mot-de-passe et
+  # /mot-de-passe-oublie (cibles des liens d'e-mail : EMAIL_APP_BASE_URL doit
+  # pointer sur https://console.${ROOT_DOMAIN}).
+  #
+  # Image construite depuis le dépôt Admin_MP_Next (Dockerfile fourni) et poussée
+  # au registre — la CI doit builder/pousser « console » comme les autres images.
+  # Le navigateur n'appelle QUE /api/* de cette console ; celle-ci relaie en
+  # interne vers le BFF Admin (ADMIN_BFF_URL=http://bff-admin:8080). Aucun jeton
+  # ne transite par le JavaScript client.
+  # ---------------------------------------------------------------------------
+  console:
+    image: ${IMAGE_PREFIX:-marketplace}/console:${IMAGE_TAG:-staging}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      # Cible SERVEUR-à-SERVEUR (réseau interne), jamais exposée au navigateur.
+      ADMIN_BFF_URL: "http://bff-admin:8080"
+      # Secret de chiffrement du cookie de session (vault → ADMIN_SESSION_SECRET).
+      SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"
+      # Derrière Traefik en HTTPS : cookie Secure obligatoire.
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      bff-admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.console.rule=Host(`console.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.console.entrypoints=websecure"
+      - "traefik.http.routers.console.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.console.middlewares=edge-chain@file"
+      - "traefik.http.services.console.loadbalancer.server.port=3000"
+
+networks:
+  marketplace-net:
+    name: marketplace-staging-net
+
+volumes:
+  redisdata:
+  acme:

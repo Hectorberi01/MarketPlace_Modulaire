@@ -58,9 +58,19 @@ public static class WebCheckoutEndpoints
         return payment.Match(result => Results.Ok(new { orderId, payment = result }));
     }
 
-    /// <summary>Statut courant du paiement (polling).</summary>
-    private static async Task<IResult> PaymentStatusAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetPaymentQuery(id), ct)).Match(p => Results.Ok(p));
+    /// <summary>Statut courant du paiement (polling). Réservé au propriétaire du paiement.</summary>
+    private static async Task<IResult> PaymentStatusAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+    {
+        if (WebBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+        var result = await sender.Send(new GetPaymentQuery(id), ct);
+        // 404 si absent OU non possédé (anti-IDOR, pas de divulgation).
+        return result.IsSuccess && result.Value.BuyerId == buyerId
+            ? Results.Ok(result.Value)
+            : Results.NotFound();
+    }
 
     public sealed record PayRequest(
         string Method, string Provider, string? Flow, string? ReturnUrl, string? CancelUrl, string? PayerPhone);

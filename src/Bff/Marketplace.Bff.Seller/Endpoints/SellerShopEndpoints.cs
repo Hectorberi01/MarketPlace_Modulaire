@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.AddKybDocument;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.RemoveKybDocument;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetPayoutAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.UpdateSellerProfile;
 using Marketplace.Modules.Sellers.Application.Abstractions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -20,15 +22,21 @@ public static class SellerShopEndpoints
 {
     public static IEndpointRouteBuilder MapSellerShopEndpoints(this IEndpointRouteBuilder app)
     {
-        var shop = app.MapGroup("/seller/shop").WithTags("Vendeur · Boutique").RequireAuthorization();
+        var shop = app.MapSellerGroup("/seller/shop", "Vendeur · Boutique");
 
         shop.MapGet("/", MyShopAsync);
         shop.MapPost("/", OnboardAsync);
         shop.MapPut("/profile", UpdateProfileAsync);
+        // Upload / mise à jour du logo de la boutique (multipart, champ « file »).
+        shop.MapPost("/logo", UploadLogoAsync).DisableAntiforgery();
         shop.MapPut("/payout-account", SetPayoutAccountAsync);
         shop.MapPost("/kyb-documents", AddKybDocumentAsync);
         // Upload d'une pièce KYB (fichier) : envoyé au service média puis rattaché.
         shop.MapPost("/kyb-documents/upload", UploadKybDocumentAsync).DisableAntiforgery();
+        // Téléchargement par le vendeur d'une de ses pièces (URL présignée temporaire).
+        shop.MapGet("/kyb-documents/{id:guid}/download", DownloadKybDocumentAsync);
+        // Suppression par le vendeur d'une de ses pièces KYB (scopée boutique, anti-IDOR).
+        shop.MapDelete("/kyb-documents/{id:guid}", RemoveKybDocumentAsync);
 
         return app;
     }
@@ -53,6 +61,46 @@ public static class SellerShopEndpoints
         return seller is null
             ? SellerBff.NotASeller()
             : (await sender.Send(new UpdateSellerProfileCommand(seller.Id, request.ShopName, request.LogoUrl, request.Description), ct)).Match(() => Results.NoContent());
+    }
+
+    /// <summary>
+    /// Téléverse (ou remplace) le logo de la boutique. Le fichier part vers le service
+    /// média public (même canal que les images produit), qui renvoie une URL publique ;
+    /// celle-ci est ensuite enregistrée sur le profil via UpdateProfileCommand. Le nom
+    /// et la description de la boutique sont préservés (seul le logo change).
+    /// </summary>
+    private static async Task<IResult> UploadLogoAsync(
+        ClaimsPrincipal user, IFormFile file,
+        ISender sender, IMediaStorage mediaStorage, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
+        {
+            return invalid;
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+
+        // Le type RÉEL, déduit des octets — jamais `file.ContentType`, qui n'est que
+        // la déclaration non vérifiée du client. C'est ce type qui sera stocké sur R2,
+        // renvoyé aux navigateurs, et remis aux processeurs d'image.
+        var upload = await mediaStorage.UploadAsync(
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
+        if (upload.IsFailure)
+        {
+            return Results.BadRequest(new { error = upload.Error.Message });
+        }
+
+        // On conserve nom + description existants, on ne remplace que le logo.
+        return (await sender.Send(new UpdateSellerProfileCommand(seller.Id, seller.ShopName, upload.Value.Url, seller.Description), ct))
+            .Match(() => Results.Ok(new { logoUrl = upload.Value.Url }));
     }
 
     /// <summary>Définit le compte de reversement (MoMo, Wave, banque…).</summary>
@@ -84,10 +132,20 @@ public static class SellerShopEndpoints
             return SellerBff.NotASeller();
         }
 
+        var check = await UploadValidation.CheckDocumentAsync(file, ct);
+        if (check.Error is { } invalid)
+        {
+            return invalid;
+        }
+
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
-        // Stockage sécurisé sur Cloudflare R2 (pièces KYB sensibles).
-        var upload = await kybStorage.UploadAsync(new KybFileUpload(file.FileName, file.ContentType, ms.ToArray()), ct);
+
+        // Stockage sécurisé sur Cloudflare R2 (pièces KYB sensibles). Le type enregistré est
+        // le type RÉEL, pas celui déclaré : ce document sera ouvert par un agent de
+        // conformité.
+        var upload = await kybStorage.UploadAsync(
+            new KybFileUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
         if (upload.IsFailure)
         {
             return Results.BadRequest(new { error = upload.Error.Message });
@@ -95,6 +153,56 @@ public static class SellerShopEndpoints
 
         return (await sender.Send(new AddKybDocumentCommand(seller.Id, type, upload.Value.Url), ct))
             .Match(id => Results.Ok(new { documentId = id, url = upload.Value.Url }));
+    }
+
+    /// <summary>
+    /// Renvoie une URL de téléchargement temporaire (présignée) pour une pièce KYB
+    /// du vendeur. La propriété est vérifiée : on ne présigne que si la pièce
+    /// appartient bien à la boutique du jeton (anti-IDOR).
+    /// </summary>
+    private static async Task<IResult> DownloadKybDocumentAsync(
+        Guid id, ClaimsPrincipal user, IKybDocumentStorage kybStorage, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var doc = seller.KybDocuments.FirstOrDefault(d => d.Id == id);
+        if (doc is null)
+        {
+            return SellerBff.NotFoundOrForbidden("kyb_document");
+        }
+
+        var presigned = kybStorage.CreatePresignedGetUrl(doc.FileUrl);
+        return presigned.IsFailure
+            ? Results.BadRequest(new { error = presigned.Error.Message })
+            : Results.Ok(new { url = presigned.Value });
+    }
+
+    /// <summary>
+    /// Supprime une pièce KYB de la boutique du jeton. La propriété est vérifiée en
+    /// amont (la pièce doit figurer dans les documents de la boutique résolue) puis
+    /// la commande, elle-même scopée au SellerId, effectue le retrait (anti-IDOR).
+    /// Le binaire reste sur R2 (le port de stockage KYB n'expose pas de suppression) :
+    /// seule la référence en base est retirée.
+    /// </summary>
+    private static async Task<IResult> RemoveKybDocumentAsync(
+        Guid id, ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        if (seller.KybDocuments.All(d => d.Id != id))
+        {
+            return SellerBff.NotFoundOrForbidden("kyb_document");
+        }
+
+        return (await sender.Send(new RemoveKybDocumentCommand(seller.Id, id), ct)).Match(() => Results.NoContent());
     }
 
     public sealed record OnboardRequest(string ShopName);

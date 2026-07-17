@@ -39,7 +39,7 @@ public static class CatalogEndpoints
     // Products
     private static void MapProducts(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/catalog/products").WithTags("Catalog · Products");
+        var group = app.MapAdminGroup("/api/catalog/products").WithTags("Catalog · Products");
 
         group.MapPost("/", CreateProductAsync).WithName("CreateProduct");
         group.MapGet("/{id:guid}", GetProductAsync).WithName("GetProduct");
@@ -116,7 +116,7 @@ public static class CatalogEndpoints
 
     private static void MapBrands(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/catalog/brands").WithTags("Catalog · Brands");
+        var group = app.MapAdminGroup("/api/catalog/brands").WithTags("Catalog · Brands");
 
         group.MapPost("/", CreateBrandAsync).WithName("CreateBrand");
         group.MapGet("/{id:guid}", GetBrandAsync).WithName("GetBrand");
@@ -164,7 +164,7 @@ public static class CatalogEndpoints
 
     private static void MapCategories(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/catalog/categories").WithTags("Catalog · Categories");
+        var group = app.MapAdminGroup("/api/catalog/categories").WithTags("Catalog · Categories");
 
         group.MapPost("/", CreateCategoryAsync).WithName("CreateCategory");
         group.MapGet("/{id:guid}", GetCategoryAsync).WithName("GetCategory");

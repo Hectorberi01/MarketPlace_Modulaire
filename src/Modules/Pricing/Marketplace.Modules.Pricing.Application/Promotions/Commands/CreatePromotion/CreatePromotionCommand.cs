@@ -17,4 +17,7 @@ public sealed record CreatePromotionCommand(
     string? Code,
     DateTime StartUtc,
     DateTime EndUtc,
-    int UsageLimit) : ICommand<Guid>;
+    int UsageLimit,
+    /// <summary>Plafond par acheteur. 0 = illimité. Sans lui, un coupon « une fois par
+    /// personne » n'existe pas : le même acheteur épuise tout le plafond global.</summary>
+    int PerUserLimit = 0) : ICommand<Guid>;

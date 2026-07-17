@@ -1,8 +1,10 @@
 using MediatR;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Identity.Application.Users.Commands.ConfirmEmail;
 using Marketplace.Modules.Identity.Application.Users.Commands.Login;
 using Marketplace.Modules.Identity.Application.Users.Commands.Logout;
 using Marketplace.Modules.Identity.Application.Users.Commands.RefreshToken;
+using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 
 namespace Marketplace.Bff.Web.Endpoints;
@@ -12,17 +14,23 @@ public static class WebAuthEndpoints
 {
     public static IEndpointRouteBuilder MapWebAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var auth = app.MapGroup("/web/auth").WithTags("Web · Auth");
+        var auth = app.MapGroup("/web/auth").WithTags("Web · Auth").RequireRateLimiting("auth");
 
         auth.MapPost("/register", RegisterAsync).AllowAnonymous();
         auth.MapPost("/login", LoginAsync).AllowAnonymous();
         auth.MapPost("/refresh", RefreshAsync).AllowAnonymous();
         auth.MapPost("/logout", LogoutAsync).RequireAuthorization();
 
-        // Réinitialisation de mot de passe : nécessite une capacité Identity dédiée
-        // (jeton de reset / envoi e-mail) non encore implémentée.
-        auth.MapPost("/password/forgot", () => WebBff.NotImplemented("identity.password_reset")).AllowAnonymous();
-        auth.MapPost("/password/reset", () => WebBff.NotImplemented("identity.password_reset")).AllowAnonymous();
+        // Réinitialisation de mot de passe. Ces deux routes renvoyaient un 501 « capacité
+        // Identity non implémentée » — un diagnostic faux : la capacité existait
+        // entièrement (jeton, haché, expiration, usage unique). Ce qui manquait était le
+        // canal E-MAIL pour acheminer le jeton. Il existe désormais.
+        auth.MapPost("/password/forgot", ForgotPasswordAsync).AllowAnonymous();
+        auth.MapPost("/password/reset", ResetPasswordAsync).AllowAnonymous();
+
+        // Confirmation d'adresse e-mail (POST, pas GET : les scanners de mail
+        // pré-chargent les liens, et déclencheraient un GET à effet de bord).
+        auth.MapPost("/email/confirm", ConfirmEmailAsync).AllowAnonymous();
 
         return app;
     }
@@ -54,6 +62,39 @@ public static class WebAuthEndpoints
         return (await sender.Send(new LogoutCommand(userId, request.RefreshToken), ct)).Match(() => Results.NoContent());
     }
 
+    /// <summary>
+    /// Demande de réinitialisation. Réponse TOUJOURS identique — compte existant ou non —
+    /// pour interdire l'énumération de comptes.
+    ///
+    /// ⚠️ Ne JAMAIS renvoyer le jeton ici. C'est exactement ce que faisait le BFF Mobile,
+    /// en anonyme : la prise de contrôle de n'importe quel compte tenait en deux requêtes.
+    /// La commande ne renvoie d'ailleurs plus rien — la fuite est devenue impossible à
+    /// réécrire.
+    /// </summary>
+    private static async Task<IResult> ForgotPasswordAsync(ForgotRequest request, ISender sender, CancellationToken ct)
+    {
+        _ = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
+
+        return Results.Ok(new
+        {
+            sent = true,
+            message = "Si un compte existe pour cette adresse, un e-mail de réinitialisation vient d'être envoyé.",
+        });
+    }
+
+    /// <summary>Réinitialise le mot de passe à partir du jeton reçu par e-mail.</summary>
+    private static async Task<IResult> ResetPasswordAsync(ResetRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ResetPasswordCommand(request.Email, request.Token, request.NewPassword), ct))
+            .Match(() => Results.Ok(new { reset = true }));
+
+    /// <summary>Confirme l'adresse e-mail à partir du lien reçu par mail.</summary>
+    private static async Task<IResult> ConfirmEmailAsync(ConfirmEmailRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ConfirmEmailCommand(request.UserId, request.Token), ct))
+            .Match(() => Results.Ok(new { confirmed = true }));
+
+    public sealed record ForgotRequest(string Email);
+    public sealed record ResetRequest(string Email, string Token, string NewPassword);
+    public sealed record ConfirmEmailRequest(Guid UserId, string Token);
     public sealed record RegisterRequest(string FirstName, string LastName, string Email, string? PhoneNumber, string Password);
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);

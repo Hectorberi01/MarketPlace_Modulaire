@@ -1,0 +1,50 @@
+# Configuration DYNAMIQUE (provider file) — STAGING.
+# Comme la prod, mais SANS preload HSTS (certificats ACME staging non fiables,
+# on évite d'ancrer le HTTPS dans le navigateur pour un domaine de test).
+
+http:
+  middlewares:
+    sec-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Gateway: "traefik-staging"
+          X-Environment: "staging"
+          Server: ""
+
+    rate-limit:
+      rateLimit:
+        average: 200
+        burst: 100
+
+    gzip:
+      compress: {}
+
+    edge-chain:
+      chain:
+        middlewares:
+          - sec-headers
+          - rate-limit
+          - gzip
+
+    # En-têtes SANS frameDeny : autorise l'embarquement en iframe (Grafana dans
+    # la console admin). Grafana contrôle lui-même le framing via allow_embedding.
+    sec-headers-embed:
+      headers:
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Gateway: "traefik-staging"
+          X-Environment: "staging"
+          Server: ""
+
+    edge-chain-embed:
+      chain:
+        middlewares:
+          - sec-headers-embed
+          - rate-limit
+          - gzip

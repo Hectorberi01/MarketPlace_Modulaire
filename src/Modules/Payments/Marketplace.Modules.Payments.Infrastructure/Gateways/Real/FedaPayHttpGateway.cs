@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Marketplace.Modules.Payments.Application.Abstractions.Gateways;
 using Marketplace.Modules.Payments.Infrastructure.Gateways;
@@ -110,7 +112,7 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
     /// </summary>
     public override Task<GatewayEvent> ParseWebhookAsync(string rawBody, string? signatureHeader, CancellationToken ct = default)
     {
-        if (!GatewayWebhook.VerifySignature(rawBody, signatureHeader, WebhookSecret))
+        if (!VerifyFedaPaySignature(rawBody, signatureHeader, WebhookSecret))
         {
             return Task.FromResult(new GatewayEvent(Verified: false, GatewayOutcome.Ignored, null, null));
         }
@@ -119,6 +121,17 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
         {
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawBody) ? "{}" : rawBody);
             var root = doc.RootElement;
+
+            // GARDE : les événements de DÉPÔT (payout.*) arrivent sur la même URL et
+            // portent un id d'entité distinct — mais numériquement collisionnable avec
+            // celui d'une transaction. Sans ce filtre, un « payout.canceled » ferait
+            // échouer le PAIEMENT qui porte le même numéro. Ils sont traités ailleurs.
+            var eventName = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty;
+            if (eventName.StartsWith("payout", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new GatewayEvent(Verified: true, GatewayOutcome.Ignored, null, null));
+            }
+
             var entity = root.TryGetProperty("entity", out var e) ? e : root;
 
             var status = entity.TryGetProperty("status", out var s) ? s.GetString() ?? string.Empty : string.Empty;
@@ -150,6 +163,57 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Vérifie la signature du webhook FedaPay. Le header « x-fedapay-signature »
+    /// est au format « t=<timestamp>,s=<hmac_hex> » (comme Stripe) : la signature
+    /// est le HMAC-SHA256 hex de « <t>.<corps_brut> » avec le secret du endpoint.
+    /// Secret vide = sandbox permissif (accepté sans vérif, pour les tests).
+    /// Repli : si le header est une signature hex brute (sans « t= »), on retombe
+    /// sur la vérification générique HMAC(corps).
+    /// </summary>
+    internal static bool VerifyFedaPaySignature(string rawBody, string? signatureHeader, string secret)
+    {
+        if (string.IsNullOrEmpty(secret))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(signatureHeader))
+        {
+            return false;
+        }
+
+        string? t = null, sig = null;
+        foreach (var part in signatureHeader.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2)
+            {
+                continue;
+            }
+
+            var key = kv[0].Trim();
+            var val = kv[1].Trim();
+            if (key == "t") t = val;
+            else if (key is "s" or "s1" or "v1") sig = val;
+        }
+
+        // Header sans « t= » : signature hex brute → vérification générique.
+        if (sig is null)
+        {
+            return GatewayWebhook.VerifySignature(rawBody, signatureHeader, secret);
+        }
+
+        if (t is null)
+        {
+            return false;
+        }
+
+        var expected = GatewayWebhook.ComputeSignature($"{t}.{rawBody}", secret);
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(sig.ToLowerInvariant()));
     }
 
     private void Authorize(HttpRequestMessage request)

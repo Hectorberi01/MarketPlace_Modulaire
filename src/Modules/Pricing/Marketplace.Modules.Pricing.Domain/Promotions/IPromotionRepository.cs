@@ -12,5 +12,8 @@ public interface IPromotionRepository
     Task<IReadOnlyList<Promotion>> GetActiveCandidatesAsync(
         Guid productId, Guid categoryId, Guid sellerId, DateTime nowUtc, CancellationToken cancellationToken = default);
 
+    /// <summary>Retrouve une promotion par son code (normalisé en MAJUSCULES).</summary>
+    Task<Promotion?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Promotion>> ListAsync(CancellationToken cancellationToken = default);
 }

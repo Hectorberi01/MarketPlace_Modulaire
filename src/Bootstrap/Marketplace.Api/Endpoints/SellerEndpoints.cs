@@ -6,7 +6,6 @@ using Marketplace.Modules.Sellers.Application.Sellers.Commands.AddKybDocument;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
-using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetCommissionRate;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetPayoutAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SuspendSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.UpdateSellerProfile;
@@ -18,7 +17,7 @@ namespace Marketplace.Api.Endpoints;
 
 /// <summary>
 /// Endpoints HTTP du module Sellers : espace vendeur (authentifié, agit sur sa
-/// propre boutique) et administration (Admin : KYB, activation, commission).
+/// propre boutique) et administration (Admin : KYB, activation, suspension).
 /// </summary>
 public static class SellerEndpoints
 {
@@ -127,7 +126,7 @@ public static class SellerEndpoints
 
     private static void MapAdmin(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/sellers/admin")
+        var group = app.MapAdminGroup("/api/sellers/admin")
             .WithTags("Sellers · Admin")
             .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
@@ -137,7 +136,6 @@ public static class SellerEndpoints
         group.MapPost("/{id:guid}/kyb/reject", RejectKybAsync).WithName("RejectKyb");
         group.MapPost("/{id:guid}/activate", ActivateAsync).WithName("ActivateSeller");
         group.MapPost("/{id:guid}/suspend", SuspendAsync).WithName("SuspendSeller");
-        group.MapPut("/{id:guid}/commission", SetCommissionAsync).WithName("SetSellerCommission");
     }
 
     /// <summary>Liste les vendeurs (Admin).</summary>
@@ -182,13 +180,6 @@ public static class SellerEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Définit le taux de commission négocié d'un vendeur (Admin).</summary>
-    private static async Task<IResult> SetCommissionAsync(Guid id, CommissionRequest request, ISender sender, CancellationToken ct)
-    {
-        var result = await sender.Send(new SetCommissionRateCommand(id, request.CommissionRate), ct);
-        return result.Match(() => Results.NoContent());
-    }
-
     // -------------------------------------------------------------- Utilitaire
 
     private static Guid? CurrentUserId(ClaimsPrincipal principal)
@@ -203,5 +194,4 @@ public static class SellerEndpoints
     public sealed record UpdateShopRequest(string ShopName, string? LogoUrl, string? Description);
     public sealed record PayoutRequest(string Provider, string AccountNumber, string AccountName);
     public sealed record KybRequest(string Type, string FileUrl);
-    public sealed record CommissionRequest(decimal CommissionRate);
 }

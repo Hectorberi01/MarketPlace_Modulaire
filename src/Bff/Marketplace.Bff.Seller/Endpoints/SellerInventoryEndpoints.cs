@@ -24,11 +24,12 @@ public static class SellerInventoryEndpoints
 {
     public static IEndpointRouteBuilder MapSellerInventoryEndpoints(this IEndpointRouteBuilder app)
     {
-        var locations = app.MapGroup("/seller/locations").WithTags("Vendeur · Lieux").RequireAuthorization();
+        var locations = app.MapSellerGroup("/seller/locations", "Vendeur · Lieux");
         locations.MapGet("/", ListLocationsAsync);
         locations.MapPost("/", CreateLocationAsync);
+        locations.MapDelete("/{id:guid}", DeleteLocationAsync);
 
-        var stock = app.MapGroup("/seller/inventory").WithTags("Vendeur · Stock").RequireAuthorization();
+        var stock = app.MapSellerGroup("/seller/inventory", "Vendeur · Stock");
         stock.MapPost("/items", CreateItemAsync);
         stock.MapPost("/items/{id:guid}/receive", ReceiveAsync);
         stock.MapPost("/items/{id:guid}/adjust", AdjustAsync);
@@ -65,6 +66,23 @@ public static class SellerInventoryEndpoints
             "SellerAddress", seller.Id, request.Line, request.City, request.Country, request.Latitude, request.Longitude), ct);
 
         return result.Match(id => Results.Ok(new { locationId = id }));
+    }
+
+    /// <summary>
+    /// Supprime un lieu d'expédition de la boutique du jeton. La suppression passe
+    /// l'OwnerId (= SellerId) à la commande : le module ne supprime que si le lieu
+    /// appartient bien à cette boutique (anti-IDOR ; 404 normalisé sinon).
+    /// </summary>
+    private static async Task<IResult> DeleteLocationAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var result = await sender.Send(new DeleteFulfillmentLocationCommand(id, seller.Id), ct);
+        return result.Match(() => Results.NoContent());
     }
 
     private static async Task<IResult> CreateItemAsync(ClaimsPrincipal user, CreateItemRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)

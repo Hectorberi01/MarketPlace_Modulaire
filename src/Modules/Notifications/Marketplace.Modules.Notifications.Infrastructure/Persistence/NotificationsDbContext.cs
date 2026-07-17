@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Notifications.Application.Abstractions;
+using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Notifications.Domain.Notifications;
 
 namespace Marketplace.Modules.Notifications.Infrastructure.Persistence;
@@ -21,6 +22,7 @@ public sealed class NotificationsDbContext : ModuleDbContext, INotificationsUnit
     }
 
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
     protected override string Schema => SchemaName;
 

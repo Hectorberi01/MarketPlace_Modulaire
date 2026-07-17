@@ -1,0 +1,110 @@
+---
+# Déploiement de la stack : synchronisation du code, génération du fichier
+# d'environnement (secrets Vault), build + up via docker compose.
+
+- name: Créer le répertoire de l'application
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+  when: not skip_sync
+  # Aussi sous « monitoring » : un déploiement monitoring-only doit pouvoir
+  # pousser les fichiers de conf (prometheus.yml, promtail, dashboards…).
+  tags: [deploy, monitoring]
+
+- name: Synchroniser le code source vers l'hôte
+  ansible.posix.synchronize:
+    src: "{{ project_local_path }}/"
+    dest: "{{ app_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=bin"
+      - "--exclude=obj"
+      - "--exclude=node_modules"
+      - "--exclude=.env"
+      - "--exclude=.env.*"
+      - "--exclude=*.dump"
+      - "--exclude=TestResults"
+      # Config Alertmanager générée sur l'hôte depuis le vault (secrets) : ne pas
+      # la supprimer lors de la synchro (elle n'existe pas dans le dépôt).
+      - "--exclude=alertmanager.yml"
+  when: not skip_sync
+  # Le sync pousse aussi deploy/monitoring/ (conf montée dans les conteneurs) :
+  # accessible via --tags monitoring pour ne PAS rebuild l'app.
+  tags: [deploy, monitoring]
+
+- name: Générer le fichier d'environnement ({{ target_env }})
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/deploy/.env.{{ target_env }}"
+    mode: "0600"
+
+# --- Push FCM : compte de service Firebase (secret Vault -> fichier monté) ---
+- name: Créer le répertoire du compte de service FCM
+  ansible.builtin.file:
+    path: "{{ app_dir }}/deploy/fcm"
+    state: directory
+    mode: "0700"
+  when: fcm_service_account_json is defined and (fcm_service_account_json | trim | length > 0)
+
+- name: Écrire le JSON du compte de service FCM (push)
+  ansible.builtin.copy:
+    content: "{{ fcm_service_account_json }}"
+    dest: "{{ app_dir }}/deploy/fcm/service-account.json"
+    mode: "0600"
+  no_log: true
+  when: fcm_service_account_json is defined and (fcm_service_account_json | trim | length > 0)
+
+# --- MODE REGISTRY (use_registry=true) : le serveur ne compile PAS, il PULL ---
+- name: Connexion au registry (images privées)
+  ansible.builtin.command:
+    cmd: "docker login {{ registry_host | default('ghcr.io') }} -u {{ registry_username }} --password-stdin"
+    stdin: "{{ registry_token }}"
+  no_log: true
+  changed_when: false
+  when:
+    - use_registry | default(false)
+    - registry_username is defined
+    - registry_token is defined
+
+- name: Récupérer les images depuis le registry
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} pull"
+    chdir: "{{ app_dir }}"
+  register: compose_pull
+  changed_when: true
+  when: use_registry | default(false)
+
+# --- MODE BUILD (défaut) : compilation SÉQUENTIELLE sur l'hôte (RAM) ---
+- name: Construire les images (séquentiel)
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} build"
+    chdir: "{{ app_dir }}"
+  environment:
+    DOCKER_BUILDKIT: "1"
+    COMPOSE_PARALLEL_LIMIT: "1"
+  register: compose_build_res
+  changed_when: true
+  when:
+    - compose_build | default(true)
+    - not (use_registry | default(false))
+
+- name: Démarrer la stack (docker compose up, sans build)
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} up -d --no-build --remove-orphans"
+    chdir: "{{ app_dir }}"
+  register: compose_up
+  changed_when: true
+
+- name: Statut des conteneurs
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} ps"
+    chdir: "{{ app_dir }}"
+  register: compose_ps
+  changed_when: false
+
+- name: Afficher le statut
+  ansible.builtin.debug:
+    var: compose_ps.stdout_lines

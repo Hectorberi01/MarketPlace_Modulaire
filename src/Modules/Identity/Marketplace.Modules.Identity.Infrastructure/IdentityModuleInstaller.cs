@@ -60,6 +60,11 @@ public sealed class IdentityModuleInstaller : IModuleInstaller
         services.AddSingleton<ITotpService, TotpService>();
         services.AddSingleton<IAuthTokenSettings, AuthTokenSettings>();
 
+        // Politique d'activation des comptes (section « Identity:Registration »).
+        // Section absente = valeurs par défaut = les plus strictes.
+        services.AddSingleton(BuildRegistrationOptions(configuration));
+        services.AddSingleton<IRegistrationPolicy, RegistrationPolicy>();
+
         // Handlers de domain events.
         services.AddScoped<IDomainEventHandler<UserRegisteredDomainEvent>, UserRegisteredDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<UserEmailConfirmedDomainEvent>, UserEmailConfirmedDomainEventHandler>();
@@ -84,6 +89,56 @@ public sealed class IdentityModuleInstaller : IModuleInstaller
         };
     }
 
+    /// <summary>
+    /// Lit « Identity:Registration » à la main, comme <see cref="BuildJwtOptions"/>.
+    ///
+    /// Pas de <c>Bind()</c> : ce projet ne référence que
+    /// <c>Microsoft.Extensions.Configuration.Abstractions</c>, où l'extension
+    /// n'existe pas — elle vit dans le paquet <c>…Configuration.Binder</c>. Ajouter
+    /// une dépendance pour lire deux booléens serait disproportionné, et créerait
+    /// deux façons de lire la configuration dans le même fichier.
+    /// </summary>
+    private static RegistrationOptions BuildRegistrationOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection(RegistrationOptions.SectionName);
+        return new RegistrationOptions
+        {
+            // Défauts STRICTS : une clé absente ou illisible ferme la porte.
+            RequireApprovalForBuyers = ParseBool(section["RequireApprovalForBuyers"], fallback: true),
+            RequireApprovalForAdminCreated = ParseBool(section["RequireApprovalForAdminCreated"], fallback: false)
+        };
+    }
+
     private static int ParseInt(string? value, int fallback)
         => int.TryParse(value, out var parsed) ? parsed : fallback;
+
+    /// <summary>
+    /// Tolère « 1 » et « 0 » en plus de « true »/« false ».
+    ///
+    /// Ces valeurs arrivent d'un fichier .env, pas d'un JSON typé : quelqu'un
+    /// écrira <c>REQUIRE_APPROVAL_BUYERS=1</c> un jour, et un <c>bool.TryParse</c>
+    /// seul répondrait « false » en silence — c'est-à-dire l'exact contraire de
+    /// l'intention, sur un réglage de sécurité.
+    /// </summary>
+    private static bool ParseBool(string? value, bool fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var normalized = value.Trim();
+        if (bool.TryParse(normalized, out var parsed))
+        {
+            return parsed;
+        }
+
+        // Minuscules : « YES » et « ON » sont des réponses aussi valables que « yes ».
+        return normalized.ToLowerInvariant() switch
+        {
+            "1" or "yes" or "on" => true,
+            "0" or "no" or "off" => false,
+            _ => fallback
+        };
+    }
 }
