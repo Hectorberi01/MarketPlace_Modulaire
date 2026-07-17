@@ -59,6 +59,10 @@ public class CreateProductCommandHandlerTests
         public Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Product>>(Products.Take(take).ToList());
 
+        public Task<(IReadOnlyList<Product> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+            int page, int pageSize, string? search, ProductStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default)
+            => Task.FromResult(((IReadOnlyList<Product>)Products.ToList(), Products.Count, (IReadOnlyDictionary<string, int>)new Dictionary<string, int>()));
+
         public Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
             => Task.FromResult(SlugAlreadyExists);
 
