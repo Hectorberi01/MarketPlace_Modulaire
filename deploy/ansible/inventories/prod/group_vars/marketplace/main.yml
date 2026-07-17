@@ -4,6 +4,15 @@ target_env: prod
 compose_file: docker-compose.prod.yml
 app_dir: /opt/marketplace
 
+# --- Mode déploiement : le serveur ne fait que PULL depuis GHCR (pas de build). ---
+# La CI build+push les images (tag « latest » pour prod). Images privées → le token
+# de pull va dans vault.yml : registry_token (login auto avant le pull).
+use_registry: true
+image_prefix: ghcr.io/hectorberi01
+image_tag: latest
+registry_host: ghcr.io
+registry_username: hectorberi01
+
 #postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
 # Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
 root_domain: hba-express.org
