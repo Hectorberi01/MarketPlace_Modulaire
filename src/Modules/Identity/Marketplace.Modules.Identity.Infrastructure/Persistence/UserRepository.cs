@@ -30,6 +30,47 @@ internal sealed class UserRepository : IUserRepository
             .Take(take)
             .ToListAsync(cancellationToken);
 
+    public async Task<(IReadOnlyList<User> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+        int page, int pageSize, string? search, UserStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default)
+    {
+        // Base = recherche appliquée, filtre statut NON appliqué (pour des facettes stables).
+        var baseQuery = _dbContext.Users.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            // ILike (Npgsql) = insensible à la casse. Uniquement sur des colonnes string
+            // simples : Email/PhoneNumber sont des value objects convertis, non traduisibles.
+            baseQuery = baseQuery.Where(u =>
+                EF.Functions.ILike(u.FirstName, term) || EF.Functions.ILike(u.LastName, term));
+        }
+
+        var statusCounts = await baseQuery
+            .GroupBy(u => u.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var filtered = status is { } s ? baseQuery.Where(u => u.Status == s) : baseQuery;
+
+        var total = await filtered.CountAsync(cancellationToken);
+
+        var q = filtered.Include(u => u.RoleAssignments);
+        IOrderedQueryable<User> ordered = sort switch
+        {
+            "name" => desc ? q.OrderByDescending(u => u.LastName).ThenByDescending(u => u.FirstName)
+                           : q.OrderBy(u => u.LastName).ThenBy(u => u.FirstName),
+            "status" => desc ? q.OrderByDescending(u => u.Status) : q.OrderBy(u => u.Status),
+            _ => desc ? q.OrderByDescending(u => u.CreatedOnUtc) : q.OrderBy(u => u.CreatedOnUtc),
+        };
+
+        var items = await ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, total, statusCounts.ToDictionary(x => x.Status.ToString(), x => x.Count));
+    }
+
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var emailResult = Email.Create(email);

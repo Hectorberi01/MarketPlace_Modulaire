@@ -269,6 +269,7 @@ app.MapObservability();
 
 // Surface /admin (back-office plateforme).
 app.MapAdminAuthEndpoints();
+app.MapAdminAccountEndpoints();
 app.MapAdminSellerEndpoints();
 app.MapAdminUserEndpoints();
 app.MapAdminModerationEndpoints();

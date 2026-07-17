@@ -25,6 +25,7 @@ public static class AdminOrderEndpoints
 
         var payments = app.MapAdminGroup("/admin/payments", "Admin · Paiements");
         payments.MapGet("/", ListPaymentsAsync);
+        payments.MapGet("/stats", PaymentStatsAsync);
         payments.MapGet("/{id:guid}", GetPaymentAsync);
         payments.MapGet("/by-order/{orderId:guid}", GetPaymentByOrderAsync);
         payments.MapPost("/{id:guid}/fail", FailPaymentAsync);
@@ -33,9 +34,11 @@ public static class AdminOrderEndpoints
         return app;
     }
 
-    /// <summary>Toutes les commandes de la plateforme.</summary>
-    private static async Task<IResult> ListOrdersAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListAllOrdersQuery(), ct)).Match(o => Results.Ok(o));
+    /// <summary>Page de commandes (pagination, filtre statut, recherche par identifiant).</summary>
+    private static async Task<IResult> ListOrdersAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListAllOrdersQuery(page, pageSize, search, status, sort, dir), ct)).Match(o => Results.Ok(o));
 
     /// <summary>Détail d'une commande.</summary>
     private static async Task<IResult> GetOrderAsync(Guid id, ISender sender, CancellationToken ct)
@@ -53,9 +56,15 @@ public static class AdminOrderEndpoints
     private static async Task<IResult> DeliverAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new MarkOrderDeliveredCommand(id), ct)).Match(() => Results.NoContent());
 
-    /// <summary>Liste de tous les paiements de la plateforme.</summary>
-    private static async Task<IResult> ListPaymentsAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListPaymentsQuery(), ct)).Match(p => Results.Ok(p));
+    /// <summary>Page de paiements (pagination, filtre statut, recherche par identifiant).</summary>
+    private static async Task<IResult> ListPaymentsAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListPaymentsQuery(page, pageSize, search, status, sort, dir), ct)).Match(p => Results.Ok(p));
+
+    /// <summary>Agrégats de paiements (montants + compteurs) sur l'ensemble filtré.</summary>
+    private static async Task<IResult> PaymentStatsAsync(ISender sender, CancellationToken ct, string? search = null)
+        => (await sender.Send(new GetPaymentStatsQuery(search), ct)).Match(s => Results.Ok(s));
 
     /// <summary>Détail d'un paiement.</summary>
     private static async Task<IResult> GetPaymentAsync(Guid id, ISender sender, CancellationToken ct)

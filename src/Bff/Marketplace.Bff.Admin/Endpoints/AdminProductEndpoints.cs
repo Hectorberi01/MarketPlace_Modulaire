@@ -27,9 +27,11 @@ public static class AdminProductEndpoints
         return app;
     }
 
-    /// <summary>Tous les produits de la plateforme.</summary>
-    private static async Task<IResult> ListAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListAllProductsQuery(), ct)).Match(p => Results.Ok(p));
+    /// <summary>Page de produits (pagination, recherche par nom, filtre statut).</summary>
+    private static async Task<IResult> ListAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListAllProductsQuery(page, pageSize, search, status, sort, dir), ct)).Match(p => Results.Ok(p));
 
     /// <summary>Détail d'un produit (fiche + médias + variantes).</summary>
     private static async Task<IResult> GetAsync(Guid id, ICatalogModuleApi catalog, CancellationToken ct)

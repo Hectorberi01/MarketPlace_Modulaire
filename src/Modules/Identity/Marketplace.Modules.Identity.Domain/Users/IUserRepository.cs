@@ -18,4 +18,13 @@ public interface IUserRepository
 
     /// <summary>Liste tous les comptes de la plateforme (back-office admin).</summary>
     Task<IReadOnlyList<User>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Page de comptes pour la console admin : recherche (prénom/nom), filtre par
+    /// statut, tri par date de création décroissante. Renvoie aussi le total filtré
+    /// et la répartition par statut (calculée AVANT le filtre statut, pour un graphe
+    /// stable quel que soit le filtre courant).
+    /// </summary>
+    Task<(IReadOnlyList<User> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+        int page, int pageSize, string? search, UserStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
 }

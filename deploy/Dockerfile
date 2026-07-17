@@ -18,9 +18,16 @@ COPY . .
 
 # Cache NuGet partagé (BuildKit) : les 5 images et les rebuilds réutilisent les
 # packages déjà téléchargés → restores quasi instantanés après la 1re fois.
-RUN --mount=type=cache,target=/root/.nuget/packages \
+#
+# ⚠️ sharing=locked : `docker compose build` construit les 5 images EN PARALLÈLE
+# (BuildKit bake), or le cache par défaut est en accès CONCURRENT (sharing=shared).
+# Cinq `dotnet restore` écrivant ensemble dans le même cache se marchent dessus et
+# NuGet échoue sur « Could not find file .../xxxxx.tmp ». `locked` sérialise l'accès
+# au cache (un restore à la fois), sans le désactiver — la compilation, elle, reste
+# parallèle.
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "${PROJECT}"
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "${PROJECT}" -c Release -o /app --no-restore /p:UseAppHost=false
 
 # ---------- runtime ----------

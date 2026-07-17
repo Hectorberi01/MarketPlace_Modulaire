@@ -51,4 +51,42 @@ internal sealed class OrderRepository : IOrderRepository
             .OrderByDescending(o => o.CreatedAtUtc)
             .Take(take)
             .ToListAsync(cancellationToken);
+
+    public async Task<(IReadOnlyList<Order> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+        int page, int pageSize, Guid? id, OrderStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default)
+    {
+        var baseQuery = _dbContext.Orders.AsNoTracking().AsQueryable();
+
+        if (id is { } g)
+        {
+            // Les GUID sont des identifiants exacts (pas de LIKE traduisible dessus) :
+            // on rapproche d'une commande OU d'un acheteur.
+            var orderId = new OrderId(g);
+            baseQuery = baseQuery.Where(o => o.Id == orderId || o.BuyerId == g);
+        }
+
+        var statusCounts = await baseQuery
+            .GroupBy(o => o.Status)
+            .Select(gr => new { Status = gr.Key, Count = gr.Count() })
+            .ToListAsync(cancellationToken);
+
+        var filtered = status is { } s ? baseQuery.Where(o => o.Status == s) : baseQuery;
+
+        var total = await filtered.CountAsync(cancellationToken);
+
+        var q = filtered.Include(o => o.Lines);
+        IOrderedQueryable<Order> ordered = sort switch
+        {
+            "total" => desc ? q.OrderByDescending(o => o.GrandTotal) : q.OrderBy(o => o.GrandTotal),
+            "status" => desc ? q.OrderByDescending(o => o.Status) : q.OrderBy(o => o.Status),
+            _ => desc ? q.OrderByDescending(o => o.CreatedAtUtc) : q.OrderBy(o => o.CreatedAtUtc),
+        };
+
+        var items = await ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, total, statusCounts.ToDictionary(x => x.Status.ToString(), x => x.Count));
+    }
 }

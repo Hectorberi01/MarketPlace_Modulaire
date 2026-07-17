@@ -80,6 +80,13 @@ x-app-env: &app-env
   # le module bascule automatiquement sur NullPushSender (aucun push, pas d'erreur).
   Notifications__Fcm__ServiceAccountPath: "/run/secrets/fcm/service-account.json"
 
+  # E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe.
+  # RESEND_API_KEY vient du vault ; EMAIL_FROM / EMAIL_APP_BASE_URL du group_vars.
+  # Les trois vides = canal désactivé (DevelopmentEmailSender, aucun envoi réel).
+  Notifications__Email__ApiKey: "${RESEND_API_KEY:-}"
+  Notifications__Email__From: "${EMAIL_FROM:-}"
+  Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
+
 x-app-common: &app-common
   restart: unless-stopped
   logging: *logging
@@ -290,6 +297,48 @@ services:
       - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
       - "traefik.http.routers.admin.middlewares=edge-chain@file"
       - "traefik.http.services.admin.loadbalancer.server.port=8080"
+
+  # ---------------------------------------------------------------------------
+  # Console d'administration (Next.js) — le FRONT navigateur des administrateurs.
+  # C'est ici que sont servies les pages publiques /reinitialiser-mot-de-passe et
+  # /mot-de-passe-oublie (cibles des liens d'e-mail : EMAIL_APP_BASE_URL doit
+  # pointer sur https://console.${ROOT_DOMAIN}).
+  #
+  # Image construite depuis le dépôt Admin_MP_Next (Dockerfile fourni) et poussée
+  # au registre — la CI doit builder/pousser « console » comme les autres images.
+  # Le navigateur n'appelle QUE /api/* de cette console ; celle-ci relaie en
+  # interne vers le BFF Admin (ADMIN_BFF_URL=http://bff-admin:8080). Aucun jeton
+  # ne transite par le JavaScript client.
+  # ---------------------------------------------------------------------------
+  console:
+    image: ${IMAGE_PREFIX:-marketplace}/console:${IMAGE_TAG:-staging}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      # Cible SERVEUR-à-SERVEUR (réseau interne), jamais exposée au navigateur.
+      ADMIN_BFF_URL: "http://bff-admin:8080"
+      # Secret de chiffrement du cookie de session (vault → ADMIN_SESSION_SECRET).
+      SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"
+      # Derrière Traefik en HTTPS : cookie Secure obligatoire.
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      bff-admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.console.rule=Host(`console.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.console.entrypoints=websecure"
+      - "traefik.http.routers.console.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.console.middlewares=edge-chain@file"
+      - "traefik.http.services.console.loadbalancer.server.port=3000"
 
 networks:
   marketplace-net:

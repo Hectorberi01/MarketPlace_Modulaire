@@ -54,25 +54,44 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         // l'envoi réel ; sinon un adaptateur no-op (aucun push, mais tout compile/tourne).
         var fcm = BindFcmOptions(configuration);
         services.AddSingleton(fcm);
+        var fcmReady = false;
         if (fcm.IsConfigured)
         {
-            if (FirebaseApp.DefaultInstance is null)
+            // ⚠️ Le push est OPTIONNEL : un compte de service FCM MALFORMÉ (clé privée
+            // invalide, JSON tronqué, `\n` mal échappés…) ne doit PAS abattre toute la
+            // plateforme. On tente de le brancher ; en cas d'échec on DÉGRADE proprement
+            // vers NullPushSender en traçant la cause, au lieu de crasher au démarrage.
+            try
             {
-                FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromJson(fcm.ResolveJson()) });
+                if (FirebaseApp.DefaultInstance is null)
+                {
+                    FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromJson(fcm.ResolveJson()) });
+                }
+                services.AddSingleton(FirebaseMessaging.DefaultInstance);
+                services.AddScoped<IPushSender, FcmPushSender>();
+                fcmReady = true;
+                Console.WriteLine("[Push] FCM configuré : FcmPushSender actif (les push seront envoyés).");
             }
-            services.AddSingleton(FirebaseMessaging.DefaultInstance);
-            services.AddScoped<IPushSender, FcmPushSender>();
-            Console.WriteLine("[Push] FCM configuré : FcmPushSender actif (les push seront envoyés).");
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"[Push] FCM configuré mais INVALIDE ({ex.GetType().Name} : {ex.Message}). " +
+                    "Repli sur NullPushSender (aucun push). Vérifier le JSON du compte de service " +
+                    "— clé privée base64 valide et échappement des « \\n » (simple, pas double).");
+            }
         }
-        else
+        if (!fcmReady)
         {
             services.AddScoped<IPushSender, NullPushSender>();
-            // DIAGNOSTIC : aucun compte de service FCM résolu -> AUCUN push ne partira.
-            // Vérifier le montage du fichier et Notifications:Fcm:ServiceAccountPath/Json.
-            Console.WriteLine(
-                $"[Push] FCM NON configuré : NullPushSender actif (aucun push). " +
-                $"Path='{fcm.ServiceAccountPath}', JsonInline={( string.IsNullOrWhiteSpace(fcm.ServiceAccountJson) ? "non" : "oui")}, " +
-                $"FichierExiste={(!string.IsNullOrWhiteSpace(fcm.ServiceAccountPath) && File.Exists(fcm.ServiceAccountPath) ? "oui" : "non")}.");
+            // DIAGNOSTIC (uniquement si RIEN n'était configuré ; le cas « configuré mais
+            // invalide » a déjà loggé sa propre cause dans le catch ci-dessus).
+            if (!fcm.IsConfigured)
+            {
+                Console.WriteLine(
+                    $"[Push] FCM NON configuré : NullPushSender actif (aucun push). " +
+                    $"Path='{fcm.ServiceAccountPath}', JsonInline={( string.IsNullOrWhiteSpace(fcm.ServiceAccountJson) ? "non" : "oui")}, " +
+                    $"FichierExiste={(!string.IsNullOrWhiteSpace(fcm.ServiceAccountPath) && File.Exists(fcm.ServiceAccountPath) ? "oui" : "non")}.");
+            }
         }
 
         // ═════════════════════════════════════════════════════════════════════════

@@ -52,6 +52,25 @@ grafana_embed_url: "https://grafana.hba-marketplace.fr/d/app-overview/apps-net-o
 # Le fragment « /#!/auth » ouvre directement l'écran de connexion Portainer.
 portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth"
 
+# --- E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe ---
+# Secret DANS LE VAULT : resend_api_key. Ici, uniquement du non-sensible.
+# Expéditeur : le DOMAINE (ici le SOUS-DOMAINE d'envoi) doit être « Verified »
+# chez Resend (SPF+DKIM). La partie locale (no-reply, etc.) est libre.
+# ⚠️ On vérifie le sous-domaine updates.hbatechettrade.com → l'adresse DOIT être
+#    @updates.hbatechettrade.com (une adresse @hbatechettrade.com ne serait PAS
+#    couverte par la vérification du sous-domaine → 403).
+#    Tant que le sous-domaine n'est pas « Verified », repasser à
+#    "onboarding@resend.dev" (bac à sable : ne livre qu'à l'adresse du compte Resend).
+email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
+# Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
+# Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
+# ⚠️ admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
+# La console (Admin_MP_Next) n'est pas encore déployée en staging. Cible réservée
+# ci-dessous : il faut (1) un enregistrement DNS A pour ce sous-domaine, et
+# (2) déployer la console derrière (service compose + Traefik). Tant que ce n'est
+# pas fait, les liens des e-mails ne seront pas cliquables (compléter le reset via l'API).
+email_app_base_url: "https://console.marketplace-staging.hba-marketplace.fr"
+
 # --- Alertmanager (notifications d'alerte) ---
 # Secrets DANS LE VAULT : alertmanager_slack_webhook_url, smtp_password.
 # Laisser une valeur vide désactive le canal correspondant.

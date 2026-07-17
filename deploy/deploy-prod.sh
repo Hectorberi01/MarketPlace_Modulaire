@@ -124,8 +124,11 @@ fi
 
 # --------------------------- confirmation ----------------------------
 if [ "$ASSUME_YES" != 1 ] && [ "$ANSIBLE_CHECK" != 1 ]; then
+  # Majuscules via `tr` (portable) : la syntaxe ${VAR^^} exige bash 4+, or macOS
+  # est encore en bash 3.2 par défaut → « bad substitution ».
+  ENV_UPPER="$(printf '%s' "$ENV_NAME" | tr '[:lower:]' '[:upper:]')"
   printf '\n%sDéploiement %s%s%s vers %s%s%s — tags: %s%s%s\n' \
-    "$BOLD" "$RED" "${ENV_NAME^^}" "$RST$BOLD" "$YEL" "${TARGET_HOST:-?}" "$RST$BOLD" "$YEL" "$TAGS" "$RST"
+    "$BOLD" "$RED" "$ENV_UPPER" "$RST$BOLD" "$YEL" "${TARGET_HOST:-?}" "$RST$BOLD" "$YEL" "$TAGS" "$RST"
   printf 'Tape %s%s%s pour confirmer : ' "$BOLD" "$ENV_NAME" "$RST"
   read -r CONFIRM
   [ "$CONFIRM" = "$ENV_NAME" ] || die "Confirmation invalide — abandon."

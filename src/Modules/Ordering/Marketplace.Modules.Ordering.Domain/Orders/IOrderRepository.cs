@@ -25,4 +25,12 @@ public interface IOrderRepository
 
     /// <summary>Toutes les commandes de la plateforme (back-office admin).</summary>
     Task<IReadOnlyList<Order>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Page de commandes pour la console admin : filtre par statut, recherche par
+    /// identifiant (commande ou acheteur, GUID exact), tri par date décroissante.
+    /// Renvoie le total filtré + la répartition par statut (avant filtre statut).
+    /// </summary>
+    Task<(IReadOnlyList<Order> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
+        int page, int pageSize, Guid? id, OrderStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
 }

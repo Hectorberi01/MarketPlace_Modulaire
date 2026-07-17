@@ -11,6 +11,10 @@ marketplace_connection: "Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Us
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
 
+# Secret de chiffrement du cookie de session de la console admin (Next).
+# Générer : openssl rand -base64 32
+admin_session_secret: "CHANGE_ME_openssl_rand_base64_32"
+
 # Mot de passe admin Grafana (stack monitoring).
 grafana_password: "CHANGE_ME_STRONG_RANDOM"
 

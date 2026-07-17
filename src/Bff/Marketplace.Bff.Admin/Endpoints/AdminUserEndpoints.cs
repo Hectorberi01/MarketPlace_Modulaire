@@ -54,9 +54,11 @@ public static class AdminUserEndpoints
         return app;
     }
 
-    /// <summary>Liste de tous les comptes de la plateforme.</summary>
-    private static async Task<IResult> ListUsersAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListUsersQuery(), ct)).Match(u => Results.Ok(u));
+    /// <summary>Page de comptes (pagination, recherche prénom/nom, filtre statut).</summary>
+    private static async Task<IResult> ListUsersAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListUsersQuery(page, pageSize, search, status, sort, dir), ct)).Match(u => Results.Ok(u));
 
     /// <summary>Crée un compte (par ex. un administrateur) et lui attribue les rôles fournis.</summary>
     private static async Task<IResult> RegisterUserAsync(RegisterUserRequestBody request, ISender sender, CancellationToken ct)
