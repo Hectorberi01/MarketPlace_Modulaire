@@ -52,7 +52,7 @@ internal sealed class RegisterSellerCommandHandler : ICommandHandler<RegisterSel
             return Error.Conflict("sellers.seller.shop_name_taken", $"Le nom de boutique « {command.ShopName} » est déjà pris.");
         }
 
-        var result = Seller.Register(command.UserId, command.ShopName, command.CommissionRate);
+        var result = Seller.Register(command.UserId, command.ShopName, command.CommissionRate, command.Metadata);
         if (result.IsFailure)
         {
             return Result.Failure<Guid>(result.Error);

@@ -340,6 +340,9 @@ services:
       - "traefik.http.routers.console.middlewares=edge-chain@file"
       - "traefik.http.services.console.loadbalancer.server.port=3000"
 
+  # NOTE : service « site » à ajouter quand l'image hbaexpress-site sera poussée
+  # (sinon le déploiement backend échoue au `pull site` d'une image absente).
+
 networks:
   marketplace-net:
     name: marketplace-staging-net

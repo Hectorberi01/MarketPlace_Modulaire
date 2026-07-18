@@ -34,3 +34,25 @@ http:
           - sec-headers
           - rate-limit
           - gzip
+
+    # En-têtes SANS frameDeny : autorise l'embarquement en iframe (Grafana dans la
+    # console admin). Grafana contrôle lui-même le framing via allow_embedding.
+    sec-headers-embed:
+      headers:
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customResponseHeaders:
+          X-Gateway: "traefik"
+          Server: ""
+
+    # Chaîne edge pour les surfaces embarquées (Grafana).
+    edge-chain-embed:
+      chain:
+        middlewares:
+          - sec-headers-embed
+          - rate-limit
+          - gzip

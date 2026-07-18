@@ -25,25 +25,22 @@ namespace Marketplace.Modules.Notifications.Application.Notifications.EventHandl
 public sealed class SendEmailVerificationHandler : IIntegrationEventHandler<EmailVerificationRequestedIntegrationEvent>
 {
     private readonly IEmailSender _email;
-    private readonly IAccountLinkBuilder _links;
     private readonly ILogger<SendEmailVerificationHandler> _logger;
 
     public SendEmailVerificationHandler(
         IEmailSender email,
-        IAccountLinkBuilder links,
         ILogger<SendEmailVerificationHandler> logger)
     {
         _email = email;
-        _links = links;
         _logger = logger;
     }
 
     public async Task HandleAsync(
         EmailVerificationRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
     {
-        var url = _links.EmailVerification(integrationEvent.UserId, integrationEvent.VerificationToken);
-        var message = AccountEmailTemplates.EmailVerification(
-            integrationEvent.Email, integrationEvent.FirstName, url);
+        // Le champ VerificationToken porte désormais le CODE numérique à 6 chiffres.
+        var message = AccountEmailTemplates.EmailVerificationCode(
+            integrationEvent.Email, integrationEvent.FirstName, integrationEvent.VerificationToken);
 
         // On NE capture PAS l'exception. Un échec laisse le message d'outbox non traité,
         // donc rejoué au tour suivant. Avaler l'erreur perdrait définitivement l'e-mail —

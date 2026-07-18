@@ -50,6 +50,37 @@ public static class AccountEmailTemplates
         return new EmailMessage(to, "Confirmez votre adresse e-mail — HBA Express", html, text);
     }
 
+    /// <summary>
+    /// Vérification e-mail par CODE numérique (saisi dans l'app mobile), plutôt que
+    /// par lien : plus simple sur mobile, et le code ne quitte jamais l'appareil.
+    /// </summary>
+    public static EmailMessage EmailVerificationCode(string to, string firstName, string code)
+    {
+        var name = WebUtility.HtmlEncode(firstName);
+        var safeCode = WebUtility.HtmlEncode(code);
+
+        var html = $"""
+            <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;color:#111;line-height:1.6">
+              <p>Bonjour {name},</p>
+              <p>Bienvenue sur HBA Express. Voici votre code de vérification :</p>
+              <p style="margin:28px 0;font-size:32px;font-weight:700;letter-spacing:6px">{safeCode}</p>
+              <p style="color:#555;font-size:14px">Saisissez ce code dans l'application pour activer votre compte. Il expire dans 48 heures.</p>
+              <p style="color:#555;font-size:14px">Si vous n'avez pas créé de compte, ignorez cet e-mail.</p>
+            </div>
+            """;
+
+        var text = $"""
+            Bonjour {firstName},
+
+            Votre code de vérification HBA Express : {code}
+
+            Saisissez-le dans l'application pour activer votre compte. Il expire dans 48 heures.
+            Si vous n'avez pas créé de compte, ignorez cet e-mail.
+            """;
+
+        return new EmailMessage(to, "Votre code de vérification — HBA Express", html, text);
+    }
+
     public static EmailMessage PasswordReset(string to, string firstName, string resetUrl)
     {
         var name = WebUtility.HtmlEncode(firstName);

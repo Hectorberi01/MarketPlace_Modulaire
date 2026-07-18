@@ -79,7 +79,8 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
         }
 
         var passwordHash = _passwordHasher.Hash(command.Password);
-        var (rawToken, tokenHash) = _tokenGenerator.Generate();
+        // Vérification e-mail par CODE numérique (6 chiffres) envoyé par e-mail.
+        var (rawToken, tokenHash) = _tokenGenerator.GenerateNumericCode();
         var expiresOnUtc = DateTime.UtcNow.Add(_tokenSettings.EmailVerificationLifetime);
 
         var userResult = User.Register(

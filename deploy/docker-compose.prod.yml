@@ -27,6 +27,9 @@ x-logging: &logging
 
 x-app-env: &app-env
   ASPNETCORE_ENVIRONMENT: "Production"
+  # Export OpenTelemetry (traces + métriques) vers le collector → Prometheus/Tempo.
+  # Vide = export désactivé (pas de data dans Grafana). Renseigné via OTEL_ENDPOINT.
+  Otel__Endpoint: "${OTEL_ENDPOINT:-}"
   # BASE DE DONNÉES EXTERNE (Neon) — OBLIGATOIRE en prod (pas de fallback local).
   # Utiliser l'endpoint DIRECT (sans « -pooler ») pour les migrations EF.
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon)}"
@@ -319,6 +322,22 @@ services:
       Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
+      # Supervision (page Système) : surfaces jointes par NOM DE SERVICE Docker,
+      # pas localhost (défaut dev d'appsettings.json). Identique au staging.
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
+      Monitoring__Surfaces__1__Name: "BFF Mobile"
+      Monitoring__Surfaces__1__Url: "http://bff-mobile:8080"
+      Monitoring__Surfaces__2__Name: "BFF Web"
+      Monitoring__Surfaces__2__Url: "http://bff-web:8080"
+      Monitoring__Surfaces__3__Name: "BFF Vendeur"
+      Monitoring__Surfaces__3__Url: "http://bff-seller:8080"
+      Monitoring__Surfaces__4__Name: "BFF Admin"
+      Monitoring__Surfaces__4__Url: "http://bff-admin:8080"
+      # KPIs live (Prometheus) + dashboards Grafana intégrés. Vides = masqués.
+      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
+      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
+      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
     depends_on:
       api:
         condition: service_healthy
@@ -329,6 +348,38 @@ services:
       - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
       - "traefik.http.routers.admin.middlewares=edge-chain@file"
       - "traefik.http.services.admin.loadbalancer.server.port=8080"
+
+  # --- CONSOLE ADMIN (Next.js, image poussée par le dépôt HbaEpress_admin) -------
+  console:
+    image: ${IMAGE_PREFIX:-marketplace}/console:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      ADMIN_BFF_URL: "http://bff-admin:8080"
+      SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      bff-admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.console.rule=Host(`console.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.console.entrypoints=websecure"
+      - "traefik.http.routers.console.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.console.middlewares=edge-chain@file"
+      - "traefik.http.services.console.loadbalancer.server.port=3000"
+
+  # NOTE : le service « site » (hbaexpress-site) sera ajouté ICI quand son image
+  # aura été poussée (dépôt + CI hbaexpress-site). L'ajouter avant casserait le
+  # déploiement backend : Ansible ferait un `pull site:latest` d'une image absente.
 
 networks:
   marketplace-net:

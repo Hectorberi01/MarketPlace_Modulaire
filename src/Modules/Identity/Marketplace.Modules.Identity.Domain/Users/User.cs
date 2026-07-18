@@ -229,6 +229,61 @@ public sealed class User : AggregateRoot<UserId>
     }
 
     /// <summary>
+    /// (Ré)émet un code de vérification e-mail : remplace tout code en attente.
+    ///
+    /// N'affecte PAS <see cref="EmailVerified"/> : un acheteur déjà vérifié qui se
+    /// lance dans la vente reste vérifié et connecté. Le code sert ici à PROUVER LA
+    /// POSSESSION de la boîte au moment de rattacher une boutique (anti-usurpation),
+    /// pas à revalider une adresse déjà validée.
+    /// </summary>
+    public Result BeginEmailVerification(string tokenHash, DateTime expiresOnUtc)
+    {
+        if (string.IsNullOrWhiteSpace(tokenHash))
+        {
+            return Result.Failure(Error.Validation("identity.user.token_required", "Le jeton de vérification est obligatoire."));
+        }
+
+        EmailVerificationTokenHash = tokenHash;
+        EmailVerificationExpiresOnUtc = expiresOnUtc;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Consomme un code de vérification e-mail SANS COURT-CIRCUIT.
+    ///
+    /// Contrairement à <see cref="ConfirmEmail"/>, qui renvoie succès d'emblée si
+    /// l'e-mail est déjà vérifié (double-clic sur le lien, idempotence), cette
+    /// méthode EXIGE que le code corresponde même sur un compte déjà vérifié. Sans
+    /// cela, n'importe qui pourrait rattacher une boutique à un acheteur existant
+    /// sans jamais prouver qu'il relève sa boîte. C'est la brique de l'auto-inscription
+    /// vendeur.
+    /// </summary>
+    public Result ConsumeEmailVerificationCode(string providedTokenHash, DateTime nowUtc)
+    {
+        if (EmailVerificationTokenHash is null || EmailVerificationExpiresOnUtc is null)
+        {
+            return Result.Failure(Error.Conflict("identity.user.no_verification_pending", "Aucun code de vérification en attente."));
+        }
+
+        if (EmailVerificationExpiresOnUtc < nowUtc)
+        {
+            return Result.Failure(Error.Validation("identity.user.verification_expired", "Le code de vérification a expiré."));
+        }
+
+        if (!FixedTimeEquals(EmailVerificationTokenHash, providedTokenHash))
+        {
+            return Result.Failure(Error.Validation("identity.user.verification_invalid", "Code de vérification invalide."));
+        }
+
+        EmailVerified = true;
+        EmailVerificationTokenHash = null;
+        EmailVerificationExpiresOnUtc = null;
+
+        Raise(new UserEmailConfirmedDomainEvent(Id.Value, Email.Value));
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Un administrateur atteste que l'adresse appartient bien au titulaire.
     ///
     /// À distinguer de <see cref="ConfirmEmail"/>, juste au-dessus : là, le titulaire

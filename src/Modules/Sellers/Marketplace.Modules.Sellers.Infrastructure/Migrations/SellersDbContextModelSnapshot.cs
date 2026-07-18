@@ -126,6 +126,10 @@ namespace Marketplace.Modules.Sellers.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<string>("Metadata")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata");
+
                     b.Property<string>("PayoutAccount")
                         .HasColumnType("jsonb")
                         .HasColumnName("payout_account");

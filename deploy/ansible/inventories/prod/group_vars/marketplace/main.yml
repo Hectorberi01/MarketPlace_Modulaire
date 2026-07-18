@@ -4,6 +4,15 @@ target_env: prod
 compose_file: docker-compose.prod.yml
 app_dir: /opt/marketplace
 
+# --- Mode déploiement : le serveur ne fait que PULL depuis GHCR (pas de build). ---
+# La CI build+push les images (tag « latest » pour prod). Images privées → le token
+# de pull va dans vault.yml : registry_token (login auto avant le pull).
+use_registry: true
+image_prefix: ghcr.io/hectorberi01
+image_tag: latest
+registry_host: ghcr.io
+registry_username: hectorberi01
+
 #postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
 # Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
 root_domain: hba-express.org
@@ -12,6 +21,16 @@ acme_email: hector.adjakpa@hbatechettrade.com
 # Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
 enable_portainer: true
 traefik_network: marketplace-prod-net
+
+# --- Observabilité (stack deploy/monitoring/) ---
+# Déploie Grafana/Prometheus/Loki/Tempo, sur le réseau applicatif (traefik_network).
+# grafana_password : à mettre dans le VAULT prod. DNS requis : grafana.$ROOT_DOMAIN → VPS.
+enable_monitoring: true
+grafana_host: "grafana.hba-express.org"
+otel_endpoint: "http://otel-collector:4317"
+prometheus_url: "http://prometheus:9090"          # interne (réseau Docker) → KPIs live
+grafana_url: "https://grafana.hba-express.org"     # navigateur (iframe)
+grafana_embed_url: "https://grafana.hba-express.org/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
 
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: hbaexpress-documents-pdf
