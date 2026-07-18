@@ -27,6 +27,9 @@ x-logging: &logging
 
 x-app-env: &app-env
   ASPNETCORE_ENVIRONMENT: "Production"
+  # Export OpenTelemetry (traces + métriques) vers le collector → Prometheus/Tempo.
+  # Vide = export désactivé (pas de data dans Grafana). Renseigné via OTEL_ENDPOINT.
+  Otel__Endpoint: "${OTEL_ENDPOINT:-}"
   # BASE DE DONNÉES EXTERNE (Neon) — OBLIGATOIRE en prod (pas de fallback local).
   # Utiliser l'endpoint DIRECT (sans « -pooler ») pour les migrations EF.
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon)}"
