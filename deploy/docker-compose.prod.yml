@@ -319,6 +319,18 @@ services:
       Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
+      # Supervision (page Système) : surfaces jointes par NOM DE SERVICE Docker,
+      # pas localhost (défaut dev d'appsettings.json). Identique au staging.
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
+      Monitoring__Surfaces__1__Name: "BFF Mobile"
+      Monitoring__Surfaces__1__Url: "http://bff-mobile:8080"
+      Monitoring__Surfaces__2__Name: "BFF Web"
+      Monitoring__Surfaces__2__Url: "http://bff-web:8080"
+      Monitoring__Surfaces__3__Name: "BFF Vendeur"
+      Monitoring__Surfaces__3__Url: "http://bff-seller:8080"
+      Monitoring__Surfaces__4__Name: "BFF Admin"
+      Monitoring__Surfaces__4__Url: "http://bff-admin:8080"
     depends_on:
       api:
         condition: service_healthy
