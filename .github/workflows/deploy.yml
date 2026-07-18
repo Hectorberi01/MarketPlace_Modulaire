@@ -1,0 +1,112 @@
+name: Backend · build & deploy
+
+# CI/CD du backend (API + BFF) :
+#   push sur develop_staging → environnement STAGING (tag d'image « staging »)
+#   push sur develop         → environnement PROD    (tag d'image « latest »)
+#
+# Enchaînement : garde-fou .NET (build + tests) → build & push des 5 images sur
+# GHCR → déploiement Ansible sur le VPS (le serveur ne fait que PULL, use_registry).
+#
+# Secrets requis (Settings → Secrets and variables → Actions) :
+#   DEPLOY_SSH_KEY          clé privée SSH autorisée sur le VPS (matche hosts.ini)
+#   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible
+
+on:
+  push:
+    branches: [develop_staging, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_PREFIX: ghcr.io/hectorberi01
+  # develop → prod (latest) ; sinon staging.
+  IMAGE_TAG: ${{ github.ref_name == 'develop' && 'latest' || 'staging' }}
+  ENV_NAME: ${{ github.ref_name == 'develop' && 'prod' || 'staging' }}
+
+jobs:
+  build-test:
+    name: Garde-fou .NET (build + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore Marketplace.sln
+      - run: dotnet build Marketplace.sln -c Release --no-restore
+      - run: dotnet test Marketplace.sln -c Release --no-build --verbosity minimal
+
+  images:
+    name: Build & push images (GHCR)
+    needs: build-test
+    runs-on: ubuntu-latest
+    # Secrets stockés dans l'environnement « deploy » (GHCR_TOKEN, etc.).
+    environment: deploy
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Préflight — GHCR_TOKEN présent ?
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "::error::Secret GHCR_TOKEN absent/mal nommé dans CE dépôt → on retomberait sur GITHUB_TOKEN (403 attendu)."
+            exit 1
+          fi
+          echo "GHCR_TOKEN présent (longueur ${#GHCR_TOKEN})."
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          # PAT (write:packages) si défini, sinon le token intégré. Le PAT évite le
+          # 403 quand les packages existent déjà hors du dépôt.
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: build-and-push.sh (api + 4 BFF, linux/amd64)
+        run: |
+          chmod +x deploy/build-and-push.sh
+          ./deploy/build-and-push.sh
+        env:
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          PLATFORM: linux/amd64
+
+  deploy:
+    name: Déploiement Ansible (${{ github.ref_name == 'develop' && 'prod' || 'staging' }})
+    needs: images
+    runs-on: ubuntu-latest
+    # Secrets stockés dans l'environnement « deploy » (DEPLOY_SSH_KEY, ANSIBLE_VAULT_PASSWORD).
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer Ansible + collections
+        run: |
+          pip install --upgrade ansible
+          ansible-galaxy collection install -r deploy/ansible/requirements.yml
+      - name: Clé SSH + fichier vault
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > "$RUNNER_TEMP/vault.pass"
+          chmod 600 "$RUNNER_TEMP/vault.pass"
+      - name: ansible-playbook (tags deploy)
+        working-directory: deploy/ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          # docker,setup : installe Docker si absent (idempotent).
+          # deploy : synchronise le code, génère l'env, pull les images, up la stack.
+          # monitoring,portainer : stacks annexes (gated par enable_* dans group_vars ;
+          #   sans ces tags, leurs rôles sont sautés même si enable_*=true).
+          ansible-playbook -i "inventories/${ENV_NAME}/hosts.ini" site.yml \
+            --tags docker,setup,deploy,monitoring,portainer \
+            --vault-password-file "$RUNNER_TEMP/vault.pass"
