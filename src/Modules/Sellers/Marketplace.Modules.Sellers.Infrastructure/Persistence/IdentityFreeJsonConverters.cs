@@ -25,3 +25,20 @@ internal sealed class PayoutAccountJsonConverter : ValueConverter<PayoutAccount,
 
     private sealed record Dto(int Provider, string AccountNumber, string AccountName);
 }
+
+/// <summary>
+/// Convertit le Value Object <see cref="SellerCompanyInfo"/> (infos société
+/// déclarées) en jsonb. Le record n'ayant que des champs nullables simples, la
+/// (dé)sérialisation est directe.
+/// </summary>
+internal sealed class SellerCompanyInfoJsonConverter : ValueConverter<SellerCompanyInfo, string>
+{
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+
+    public SellerCompanyInfoJsonConverter()
+        : base(
+            value => JsonSerializer.Serialize(value, Options),
+            json => JsonSerializer.Deserialize<SellerCompanyInfo>(json, Options)!)
+    {
+    }
+}

@@ -258,6 +258,7 @@ app.MapObservability();
 
 // Surface /seller (back-office vendeur).
 app.MapSellerAuthEndpoints();
+app.MapSellerRegistrationEndpoints();
 app.MapSellerDashboardEndpoints();
 app.MapSellerAccountEndpoints();
 app.MapSellerShopEndpoints();

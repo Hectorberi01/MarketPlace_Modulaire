@@ -47,6 +47,14 @@ public sealed class Seller : AggregateRoot<SellerId>
     /// </summary>
     public decimal CommissionRate { get; private set; }
     public PayoutAccount? PayoutAccount { get; private set; }
+
+    /// <summary>
+    /// Informations société déclarées par le vendeur (jsonb, null par défaut).
+    /// Renseignée à l'auto-inscription depuis l'app ; jamais une preuve — voir
+    /// <see cref="SellerCompanyInfo"/> et le KYB.
+    /// </summary>
+    public SellerCompanyInfo? Metadata { get; private set; }
+
     public decimal Rating { get; private set; }
     public int SalesCount { get; private set; }
     public DateTime CreatedOnUtc { get; private set; }
@@ -58,7 +66,8 @@ public sealed class Seller : AggregateRoot<SellerId>
     /// validité du compte sont vérifiées par l'Application (appel in-process à
     /// Identity) avant d'arriver ici.
     /// </summary>
-    public static Result<Seller> Register(Guid userId, string shopName, decimal commissionRate)
+    public static Result<Seller> Register(
+        Guid userId, string shopName, decimal commissionRate, SellerCompanyInfo? metadata = null)
     {
         if (userId == Guid.Empty)
         {
@@ -75,7 +84,19 @@ public sealed class Seller : AggregateRoot<SellerId>
             return Error.Validation("sellers.seller.commission_invalid", "Le taux de commission doit être compris entre 0 et 1.");
         }
 
-        return new Seller(SellerId.New(), userId, shopName.Trim(), commissionRate);
+        var seller = new Seller(SellerId.New(), userId, shopName.Trim(), commissionRate);
+        seller.Metadata = metadata;
+        return seller;
+    }
+
+    /// <summary>
+    /// Met à jour les informations société déclarées (édition du profil vendeur).
+    /// Passer <c>null</c> efface la metadata. N'affecte ni le statut ni le KYB.
+    /// </summary>
+    public Result UpdateMetadata(SellerCompanyInfo? metadata)
+    {
+        Metadata = metadata;
+        return Result.Success();
     }
 
     public Result UpdateProfile(string shopName, string? logoUrl, string? description)

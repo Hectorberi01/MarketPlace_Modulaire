@@ -10,6 +10,12 @@ public interface ISecureTokenGenerator
     /// <summary>Crée un jeton : renvoie la valeur en clair et son hash.</summary>
     (string Raw, string Hash) Generate();
 
+    /// <summary>
+    /// Crée un code NUMÉRIQUE (défaut 6 chiffres) pour la vérification e-mail :
+    /// renvoie le code en clair (envoyé par e-mail) et son hash (seul stocké).
+    /// </summary>
+    (string Code, string Hash) GenerateNumericCode(int digits = 6);
+
     /// <summary>Calcule le hash d'un jeton fourni (pour comparaison).</summary>
     string Hash(string rawToken);
 }

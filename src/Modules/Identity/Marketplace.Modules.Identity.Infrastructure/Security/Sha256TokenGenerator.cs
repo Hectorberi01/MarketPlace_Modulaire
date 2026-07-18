@@ -17,6 +17,19 @@ internal sealed class Sha256TokenGenerator : ISecureTokenGenerator
         return (raw, Hash(raw));
     }
 
+    public (string Code, string Hash) GenerateNumericCode(int digits = 6)
+    {
+        // Chiffres cryptographiquement aléatoires, sans biais de modulo
+        // (RandomNumberGenerator.GetInt32 est uniforme sur [0, 10)).
+        var chars = new char[digits];
+        for (var i = 0; i < digits; i++)
+        {
+            chars[i] = (char)('0' + RandomNumberGenerator.GetInt32(0, 10));
+        }
+        var code = new string(chars);
+        return (code, Hash(code));
+    }
+
     public string Hash(string rawToken)
     {
         var hashed = SHA256.HashData(Encoding.UTF8.GetBytes(rawToken));

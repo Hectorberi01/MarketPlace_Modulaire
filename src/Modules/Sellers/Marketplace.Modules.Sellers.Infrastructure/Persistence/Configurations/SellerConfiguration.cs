@@ -35,6 +35,13 @@ internal sealed class SellerConfiguration : IEntityTypeConfiguration<Seller>
             .HasColumnType("jsonb")
             .HasColumnName("payout_account");
 
+        // Metadata société (VO nullable) en jsonb, null par défaut. Comme PayoutAccount,
+        // le converter n'est appliqué qu'aux valeurs non nulles ; NULL reste NULL.
+        builder.Property(s => s.Metadata)
+            .HasConversion((ValueConverter)new SellerCompanyInfoJsonConverter())
+            .HasColumnType("jsonb")
+            .HasColumnName("metadata");
+
         builder.HasIndex(s => s.UserId).IsUnique();
         builder.HasIndex(s => s.ShopName).IsUnique();
 
