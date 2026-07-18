@@ -103,8 +103,10 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
-          # docker,setup : installe Docker si absent (idempotent — no-op ensuite).
+          # docker,setup : installe Docker si absent (idempotent).
           # deploy : synchronise le code, génère l'env, pull les images, up la stack.
+          # monitoring,portainer : stacks annexes (gated par enable_* dans group_vars ;
+          #   sans ces tags, leurs rôles sont sautés même si enable_*=true).
           ansible-playbook -i "inventories/${ENV_NAME}/hosts.ini" site.yml \
-            --tags docker,setup,deploy \
+            --tags docker,setup,deploy,monitoring,portainer \
             --vault-password-file "$RUNNER_TEMP/vault.pass"
