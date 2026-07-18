@@ -15,6 +15,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.RemoveRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.SuspendUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.ListUsers;
+using Marketplace.Modules.Identity.Application.Users.Queries.GetSignupsSeries;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -26,6 +27,7 @@ public static class AdminUserEndpoints
     {
         var users = app.MapAdminGroup("/admin/users", "Admin · Comptes");
         users.MapGet("/", ListUsersAsync);
+        users.MapGet("/signups", SignupsAsync);
         users.MapPost("/register", RegisterUserAsync);
         users.MapGet("/{id:guid}", GetUserAsync);
         users.MapGet("/{id:guid}/cart", GetUserCartAsync);
@@ -59,6 +61,14 @@ public static class AdminUserEndpoints
         ISender sender, CancellationToken ct,
         int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
         => (await sender.Send(new ListUsersQuery(page, pageSize, search, status, sort, dir), ct)).Match(u => Results.Ok(u));
+
+    /// <summary>Évolution des inscriptions par jour sur les N derniers jours (défaut 30).</summary>
+    private static async Task<IResult> SignupsAsync(ISender sender, CancellationToken ct, int days = 30)
+    {
+        var toUtc = DateTime.UtcNow.Date.AddDays(1);          // borne haute exclusive : inclut aujourd'hui
+        var fromUtc = toUtc.AddDays(-Math.Clamp(days, 1, 365));
+        return (await sender.Send(new GetSignupsSeriesQuery(fromUtc, toUtc), ct)).Match(s => Results.Ok(s));
+    }
 
     /// <summary>Crée un compte (par ex. un administrateur) et lui attribue les rôles fournis.</summary>
     private static async Task<IResult> RegisterUserAsync(RegisterUserRequestBody request, ISender sender, CancellationToken ct)

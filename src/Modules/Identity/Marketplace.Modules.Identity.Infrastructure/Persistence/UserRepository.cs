@@ -115,4 +115,19 @@ internal sealed class UserRepository : IUserRepository
         var value = phoneResult.Value;
         return await _dbContext.Users.AnyAsync(u => u.PhoneNumber == value, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<(DateTime Day, int Count)>> SignupsByDayAsync(
+        DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
+    {
+        // GROUP BY sur la date (jour) : Npgsql traduit `.Date` en CAST/date côté SQL.
+        var rows = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.CreatedOnUtc >= fromUtc && u.CreatedOnUtc < toUtc)
+            .GroupBy(u => u.CreatedOnUtc.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Day)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(r => (r.Day, r.Count)).ToList();
+    }
 }

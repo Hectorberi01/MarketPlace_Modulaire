@@ -27,4 +27,12 @@ public interface IUserRepository
     /// </summary>
     Task<(IReadOnlyList<User> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
         int page, int pageSize, string? search, UserStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nombre d'inscriptions par JOUR sur l'intervalle [fromUtc, toUtc[, pour la
+    /// courbe d'évolution des inscriptions de la console. Seuls les jours avec au
+    /// moins une inscription sont renvoyés (le front comble les jours vides).
+    /// </summary>
+    Task<IReadOnlyList<(DateTime Day, int Count)>> SignupsByDayAsync(
+        DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
 }
