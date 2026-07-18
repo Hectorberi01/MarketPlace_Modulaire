@@ -46,11 +46,20 @@ x-app-env: &app-env
   # l'administrateur qui vient de les créer, l'auto-validation n'apporterait rien.
   Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
   Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
+  # Amorçage du PREMIER administrateur (idempotent : ne réinitialise jamais un
+  # compte existant). Créé au démarrage de l'api UNIQUEMENT si les deux valeurs
+  # sont renseignées : admin_email (group_vars) + admin_password (vault). Vides =
+  # aucun admin créé — c'était le cas jusqu'ici en staging.
+  Identity__Bootstrap__AdminEmail: "${ADMIN_EMAIL:-}"
+  Identity__Bootstrap__AdminPassword: "${ADMIN_PASSWORD:-}"
+  Identity__Bootstrap__AdminFirstName: "${ADMIN_FIRST_NAME:-Admin}"
+  Identity__Bootstrap__AdminLastName: "${ADMIN_LAST_NAME:-Plateforme}"
+  Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
   # FedaPay SANDBOX en staging (pas les clés live).
   #
   # L'URL DOIT correspondre au préfixe de la clé : sk_sandbox_… → sandbox-api,
   # sk_live_… → api.fedapay.com. L'API refuse de démarrer si les deux divergent.
-  # ⚠️ Le bac à sable FedaPay n'exécute PAS les versements (403) : en staging,
+  # Le bac à sable FedaPay n'exécute PAS les versements (403) : en staging,
   #    les retraits sont simulés, quoi que dise FEDAPAY_ENABLE_PAYOUTS.
   Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
@@ -130,7 +139,7 @@ services:
   # construite automatiquement par env.j2 dès que `postgres_password` est défini
   # dans le vault ET que `marketplace_connection` (Neon) en est retiré.
   #
-  # ⚠️ Conf DÉDIÉE staging (petit VPS) : surtout pas la conf prod (4 Go shared_buffers).
+  # Conf DÉDIÉE staging (petit VPS) : surtout pas la conf prod (4 Go shared_buffers).
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
