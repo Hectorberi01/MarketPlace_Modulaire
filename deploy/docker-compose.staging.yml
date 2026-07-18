@@ -124,6 +124,38 @@ services:
     logging: *logging
     networks: [marketplace-net]
 
+  # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
+  # Remplace Neon : Postgres local, JAMAIS exposé sur Internet (aucun `ports:`),
+  # joignable uniquement sur le réseau Docker interne. La chaîne de connexion est
+  # construite automatiquement par env.j2 dès que `postgres_password` est défini
+  # dans le vault ET que `marketplace_connection` (Neon) en est retiré.
+  #
+  # ⚠️ Conf DÉDIÉE staging (petit VPS) : surtout pas la conf prod (4 Go shared_buffers).
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: "128mb"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/postgresql.staging.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
   # ---------------- Edge gateway (TLS staging) ----------------
   traefik:
     image: traefik:v3.1
@@ -162,6 +194,8 @@ services:
       <<: *app-env
       RunMigrationsAtStartup: "true"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     labels:
@@ -348,5 +382,6 @@ networks:
     name: marketplace-staging-net
 
 volumes:
+  pgdata:
   redisdata:
   acme:
