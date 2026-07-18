@@ -56,7 +56,7 @@ portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth
 # Secret DANS LE VAULT : resend_api_key. Ici, uniquement du non-sensible.
 # Expéditeur : le DOMAINE (ici le SOUS-DOMAINE d'envoi) doit être « Verified »
 # chez Resend (SPF+DKIM). La partie locale (no-reply, etc.) est libre.
-# ⚠️ On vérifie le sous-domaine updates.hbatechettrade.com → l'adresse DOIT être
+#  On vérifie le sous-domaine updates.hbatechettrade.com → l'adresse DOIT être
 #    @updates.hbatechettrade.com (une adresse @hbatechettrade.com ne serait PAS
 #    couverte par la vérification du sous-domaine → 403).
 #    Tant que le sous-domaine n'est pas « Verified », repasser à
@@ -64,7 +64,7 @@ portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth
 email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
 # Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
 # Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
-# ⚠️ admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
+# admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
 # La console (Admin_MP_Next) n'est pas encore déployée en staging. Cible réservée
 # ci-dessous : il faut (1) un enregistrement DNS A pour ce sous-domaine, et
 # (2) déployer la console derrière (service compose + Traefik). Tant que ce n'est
@@ -87,3 +87,5 @@ r2_public_base_url: ""
 r2_media_bucket_name: images
 r2_media_key_prefix: MarketPlace-staging
 r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
+
+admin_email: "hector.adjakpa@hbatechettrade.com"
