@@ -53,8 +53,7 @@ scrape_configs:
     static_configs:
       - targets: ["alertmanager:9093"]
 
-  # (Optionnel) Métriques Traefik : activez-les dans traefik.yml
-  # (metrics.prometheus) puis décommentez.
-  # - job_name: "traefik"
-  #   static_configs:
-  #     - targets: ["traefik:8080"]
+  # Métriques Traefik (entrypoint interne « metrics » :8082, cf. traefik.*.yml).
+  - job_name: "traefik"
+    static_configs:
+      - targets: ["traefik:8082"]

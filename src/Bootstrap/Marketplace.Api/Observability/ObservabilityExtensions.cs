@@ -140,7 +140,21 @@ public static class ObservabilityExtensions
     /// </summary>
     public static WebApplication MapObservability(this WebApplication app)
     {
-        app.UseSerilogRequestLogging();
+        // Le log de fin de requête HTTP porte l'utilisateur authentifié (user_id),
+        // pour corréler dans Loki les appels d'un même compte — y compris ceux qui
+        // ne passent pas par MediatR. Champ JSON, pas un label (cardinalité).
+        app.UseSerilogRequestLogging(options =>
+        {
+            options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+            {
+                var userId = httpContext.User?.FindFirst("sub")?.Value
+                    ?? httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    diagnosticContext.Set("user_id", userId);
+                }
+            };
+        });
 
         // Compte 401/403/429 (par motif de route, pas d'URL brute). Placé tôt : il
         // inspecte le code de statut au retour, après tout le pipeline en aval.

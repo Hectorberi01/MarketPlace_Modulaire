@@ -13,10 +13,22 @@ entryPoints:
           permanent: true
   websecure:
     address: ":443"
+  # Point d'entrée INTERNE pour les métriques Prometheus (non publié vers Internet ;
+  # scrapé par Prometheus sur le réseau Docker : http://traefik:8082/metrics).
+  metrics:
+    address: ":8082"
 
 api:
   dashboard: false
   insecure: false
+
+# Métriques Prometheus (requêtes, codes de statut, latences par routeur/service).
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
 
 providers:
   docker:
