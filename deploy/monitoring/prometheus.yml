@@ -43,6 +43,11 @@ scrape_configs:
     static_configs:
       - targets: ["postgres-exporter:9187"]
 
+  # Promtail expose ses compteurs custom (SSH échoués, root, bans Fail2ban).
+  - job_name: "promtail"
+    static_configs:
+      - targets: ["promtail:9080"]
+
   # Alertmanager lui-même (santé du routage d'alertes).
   - job_name: "alertmanager"
     static_configs:

@@ -274,3 +274,36 @@ groups:
           description: >-
             Le module {{ $labels.module }} échoue à publier ses événements depuis 10 min.
             Sans correction, ces messages partiront en lettre morte (10 tentatives, ~2 h).
+
+  - name: security-vps
+    rules:
+      - alert: SshBruteForce
+        # Rafale de tentatives SSH échouées = attaque par force brute en cours.
+        # Fail2ban bannit déjà l'IP, mais on veut le SAVOIR.
+        expr: increase(ssh_failed_total[5m]) > 20
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "Force brute SSH détectée sur le VPS"
+          description: >-
+            Plus de 20 tentatives SSH échouées en 5 min. Fail2ban devrait bannir
+            l'IP ; vérifier les logs (Loki : {job="auth"} |= "Failed password").
+
+      - alert: RootLogin
+        # Une connexion root ne devrait pas arriver en temps normal (on passe par
+        # un compte + sudo). Toute occurrence mérite un coup d'œil.
+        expr: increase(ssh_root_login_total[5m]) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "Ouverture de session root sur le VPS"
+          description: "Une session root a été ouverte. Confirmer qu'elle est légitime."
+
+      - alert: Fail2banBanSpike
+        # Pic de bannissements : attaque distribuée ou scan agressif.
+        expr: increase(fail2ban_banned_total[15m]) > 5
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pic de bannissements Fail2ban"
+          description: "Plus de 5 IP bannies en 15 min — activité hostile soutenue."

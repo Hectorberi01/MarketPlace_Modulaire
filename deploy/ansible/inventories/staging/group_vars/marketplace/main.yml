@@ -35,6 +35,14 @@ traefik_network: marketplace-staging-net
 # true = appel FedaPay réel (sandbox) ; false = payout simulé (le retrait réussit sans FedaPay).
 fedapay_enable_payouts: true
 
+# --- Sécurité VPS (rôle « security ») ---
+# Installe Fail2ban (+ rsyslog) et garantit /var/log/auth.log + fail2ban.log,
+# expédiés vers Loki par Promtail. Bannissement SSH activé.
+enable_security: true
+fail2ban_bantime: "1h"
+fail2ban_findtime: "10m"
+fail2ban_sshd_maxretry: 4
+
 # --- Observabilité (stack deploy/monitoring/) ---
 # Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).
 enable_monitoring: true

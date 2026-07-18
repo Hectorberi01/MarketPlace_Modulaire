@@ -45,3 +45,53 @@ scrape_configs:
       - labels:
           level:
           svc:
+
+  # ── Sécurité : authentification système (SSH, sudo, root) ──────────────────
+  # /var/log/auth.log de l'hôte (monté en RO). rsyslog est garanti par le rôle
+  # Ansible « security ». On expédie les lignes à Loki ET on émet des compteurs
+  # Prometheus (via /metrics de Promtail) pour les alertes.
+  - job_name: system-auth
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: auth
+          __path__: /var/log/host/auth.log
+    pipeline_stages:
+      # Compteur : tentatives SSH échouées (brute-force, mauvais mot de passe…).
+      - regex:
+          expression: '(?P<ssh_failed>Failed password|Invalid user|authentication failure|Connection closed by authenticating user)'
+      - metrics:
+          ssh_failed_total:
+            type: Counter
+            description: "Tentatives d'authentification SSH échouées"
+            source: ssh_failed
+            config:
+              action: inc
+      # Compteur : ouvertures de session root.
+      - regex:
+          expression: '(?P<ssh_root>session opened for user root)'
+      - metrics:
+          ssh_root_login_total:
+            type: Counter
+            description: "Ouvertures de session root"
+            source: ssh_root
+            config:
+              action: inc
+
+  # ── Sécurité : Fail2ban (bannissements) ───────────────────────────────────
+  - job_name: fail2ban
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: fail2ban
+          __path__: /var/log/host/fail2ban.log
+    pipeline_stages:
+      - regex:
+          expression: '(?P<f2b_ban>\bBan\b)'
+      - metrics:
+          fail2ban_banned_total:
+            type: Counter
+            description: "IP bannies par Fail2ban"
+            source: f2b_ban
+            config:
+              action: inc

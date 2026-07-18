@@ -20,6 +20,9 @@
     - role: docker
       tags: [docker, setup]
       when: manage_docker | default(true)
+    - role: security
+      tags: [security]
+      when: enable_security | default(false)
     - role: marketplace
       tags: [deploy]
     - role: monitoring

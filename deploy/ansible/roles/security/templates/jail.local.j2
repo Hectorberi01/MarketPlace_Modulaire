@@ -1,0 +1,20 @@
+# Généré par Ansible — NE PAS éditer à la main (modifier group_vars / le rôle).
+[DEFAULT]
+# Durée du bannissement, fenêtre d'observation, nombre d'échecs tolérés.
+bantime  = {{ fail2ban_bantime | default('1h') }}
+findtime = {{ fail2ban_findtime | default('10m') }}
+maxretry = {{ fail2ban_maxretry | default(5) }}
+
+# Jamais bannir la boucle locale ni le réseau Docker interne (BFF, exporters…).
+ignoreip = 127.0.0.1/8 ::1 172.16.0.0/12
+
+# auto : utilise /var/log/auth.log si présent (rsyslog installé par ce rôle),
+# sinon journald. Fail2ban journalise ses actions dans /var/log/fail2ban.log.
+backend = auto
+
+[sshd]
+enabled = true
+# Le VPS écoute SSH sur ce port (cf. inventaire ansible_port). Sert à la règle
+# de bannissement ; la détection, elle, se fait sur le contenu des logs sshd.
+port = {{ ansible_port | default(22) }}
+maxretry = {{ fail2ban_sshd_maxretry | default(4) }}

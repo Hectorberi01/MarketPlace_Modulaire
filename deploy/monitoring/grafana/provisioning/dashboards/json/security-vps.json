@@ -1,0 +1,103 @@
+{
+  "id": null,
+  "uid": "security-vps",
+  "title": "Sécurité VPS",
+  "tags": ["marketplace", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "SSH échouées (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 100 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(increase(ssh_failed_total[1h]))", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Bans Fail2ban (24h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(increase(fail2ban_banned_total[24h]))", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sessions root (24h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(increase(ssh_root_login_total[24h]))", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "CPU / RAM",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 80 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU", "refId": "A" },
+        { "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "legendFormat": "RAM", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Tentatives SSH échouées / min",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(count_over_time({job=\"auth\"} |~ `Failed password|Invalid user|authentication failure` [1m]))", "legendFormat": "échecs", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Bannissements Fail2ban / h",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(count_over_time({job=\"fail2ban\"} |= `Ban` [1h]))", "legendFormat": "bans", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Échecs d'authentification SSH",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 12 },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
+      "targets": [
+        { "expr": "{job=\"auth\"} |~ `Failed password|Invalid user|authentication failure`", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Journal Fail2ban (bannissements)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 12 },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
+      "targets": [
+        { "expr": "{job=\"fail2ban\"} |~ `Ban|Unban`", "refId": "A" }
+      ]
+    }
+  ]
+}

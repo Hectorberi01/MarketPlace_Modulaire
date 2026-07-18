@@ -1,0 +1,38 @@
+---
+# Durcissement / observabilité sécurité du VPS.
+#
+# Installe Fail2ban (bannissement des IP qui brute-forcent SSH) et garantit la
+# présence des journaux texte (/var/log/auth.log, /var/log/fail2ban.log) que
+# Promtail expédie ensuite vers Loki. rsyslog est explicitement installé car les
+# Ubuntu récents peuvent ne conserver que journald — sans lui, auth.log n'existe
+# pas et il n'y a rien à collecter.
+
+- name: Installer Fail2ban et rsyslog
+  ansible.builtin.apt:
+    name:
+      - fail2ban
+      - rsyslog
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: rsyslog démarré et activé (garantit /var/log/auth.log)
+  ansible.builtin.service:
+    name: rsyslog
+    state: started
+    enabled: true
+
+- name: Configurer la jail Fail2ban (sshd)
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Fail2ban
+
+- name: Fail2ban démarré et activé
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true

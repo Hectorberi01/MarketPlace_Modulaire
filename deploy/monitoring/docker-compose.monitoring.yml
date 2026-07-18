@@ -68,6 +68,8 @@ services:
       - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Journaux système de l'hôte (SSH, Fail2ban) en lecture seule → Loki.
+      - /var/log:/var/log/host:ro
       # Positions persistées : sans ça (positions dans /tmp), chaque redémarrage
       # relit tous les logs depuis le début → tempête de ré-ingestion + 429.
       - promtail-data:/var/lib/promtail
