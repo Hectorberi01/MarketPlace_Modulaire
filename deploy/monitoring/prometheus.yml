@@ -39,6 +39,10 @@ scrape_configs:
     static_configs:
       - targets: ["redis-exporter:9121"]
 
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
   # Alertmanager lui-même (santé du routage d'alertes).
   - job_name: "alertmanager"
     static_configs:

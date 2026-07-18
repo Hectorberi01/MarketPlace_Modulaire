@@ -172,6 +172,19 @@ services:
     networks: [monitoring]
     restart: unless-stopped
 
+  # Métriques PostgreSQL (connexions, TPS, cache, tailles, verrous, lignes…).
+  # Rejoint le réseau partagé → joint le service `postgres` de la stack app par
+  # son nom DNS. Le DSN est généré par Ansible (monitoring.env.j2) depuis le vault
+  # (postgres_user/password/db). Idéalement un rôle read-only avec pg_monitor.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      DATA_SOURCE_NAME: "${POSTGRES_EXPORTER_DSN:-}"
+      # Métriques par base (taille, stats) en plus des métriques cluster.
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+    networks: [monitoring]
+    restart: unless-stopped
+
   # Routage + notifications des alertes Prometheus (Slack + e-mail).
   # Le fichier alertmanager.yml est GÉNÉRÉ par Ansible depuis le vault (secrets) :
   # ne pas committer de secrets. Voir alertmanager.yml.example pour le format.
