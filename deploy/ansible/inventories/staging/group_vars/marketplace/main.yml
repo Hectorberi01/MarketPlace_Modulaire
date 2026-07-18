@@ -53,7 +53,7 @@ enable_ufw: false
 #   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB)
 # Sans ces deux verrous, le rôle échoue volontairement (pas d'exposition nue).
 # DNS requis : terminal.marketplace-staging.hba-marketplace.fr → IP du VPS.
-enable_web_terminal: false
+enable_web_terminal: true
 terminal_subdomain: "terminal"
 
 # --- Observabilité (stack deploy/monitoring/) ---
@@ -110,3 +110,4 @@ r2_media_key_prefix: MarketPlace-staging
 r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
+
