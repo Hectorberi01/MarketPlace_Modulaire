@@ -98,6 +98,21 @@
       "targets": [
         { "expr": "{job=\"fail2ban\"} |~ `Ban|Unban`", "refId": "A" }
       ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Ports les plus sollicités (pare-feu UFW)",
+      "description": "Nécessite enable_ufw. Ports de destination des paquets journalisés par UFW.",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
+      "options": { "showHeader": true },
+      "targets": [
+        { "expr": "topk(15, sum by (dpt) (count_over_time({job=\"ufw\"} | regexp `DPT=(?P<dpt>\\d+)` | dpt != \"\" [$__range])))", "queryType": "instant", "refId": "A" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ]
     }
   ]
 }

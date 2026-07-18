@@ -1,0 +1,76 @@
+# Requêtes personnalisées pour postgres-exporter (format legacy « extend query »).
+# Montées dans le conteneur + PG_EXPORTER_EXTEND_QUERY_PATH.
+# `master: true` = exécutées UNE fois sur la base du DSN (pas par base auto-découverte).
+
+# ── Requêtes les plus lentes (nécessite l'extension pg_stat_statements) ───────
+pg_slow_queries:
+  master: true
+  query: |
+    SELECT
+      queryid::text                AS queryid,
+      left(query, 120)             AS query,
+      calls                        AS calls,
+      mean_exec_time / 1000.0      AS mean_seconds,
+      total_exec_time / 1000.0     AS total_seconds
+    FROM pg_stat_statements
+    WHERE query NOT LIKE '%pg_stat_statements%'
+    ORDER BY mean_exec_time DESC
+    LIMIT 20
+  metrics:
+    - queryid:
+        usage: "LABEL"
+        description: "Identifiant de la requête normalisée"
+    - query:
+        usage: "LABEL"
+        description: "Extrait de la requête"
+    - calls:
+        usage: "GAUGE"
+        description: "Nombre d'appels"
+    - mean_seconds:
+        usage: "GAUGE"
+        description: "Temps d'exécution moyen (secondes)"
+    - total_seconds:
+        usage: "GAUGE"
+        description: "Temps d'exécution cumulé (secondes)"
+
+# ── Tables les plus volumineuses ─────────────────────────────────────────────
+pg_table_size:
+  master: true
+  query: |
+    SELECT
+      schemaname                        AS schema,
+      relname                           AS table,
+      pg_total_relation_size(relid)     AS bytes
+    FROM pg_catalog.pg_statio_user_tables
+    ORDER BY pg_total_relation_size(relid) DESC
+    LIMIT 20
+  metrics:
+    - schema:
+        usage: "LABEL"
+        description: "Schéma"
+    - table:
+        usage: "LABEL"
+        description: "Table"
+    - bytes:
+        usage: "GAUGE"
+        description: "Taille totale de la table (octets)"
+
+# ── Réplication (vide sur un nœud unique — aucun réplica) ─────────────────────
+pg_replication:
+  master: true
+  query: |
+    SELECT
+      client_addr::text                                          AS client,
+      state                                                      AS state,
+      COALESCE(EXTRACT(EPOCH FROM (now() - reply_time)), 0)      AS lag_seconds
+    FROM pg_stat_replication
+  metrics:
+    - client:
+        usage: "LABEL"
+        description: "Adresse du réplica"
+    - state:
+        usage: "LABEL"
+        description: "État de la réplication"
+    - lag_seconds:
+        usage: "GAUGE"
+        description: "Retard de réplication (secondes)"

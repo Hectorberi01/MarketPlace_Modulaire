@@ -95,3 +95,13 @@ scrape_configs:
             source: f2b_ban
             config:
               action: inc
+
+  # ── Sécurité : pare-feu UFW (ports sollicités) ─────────────────────────────
+  # Présent seulement si UFW est activé (enable_ufw). Les lignes contiennent le
+  # port de destination (DPT=…) : on l'exploite en LogQL pour le top des ports.
+  - job_name: ufw
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: ufw
+          __path__: /var/log/host/ufw.log

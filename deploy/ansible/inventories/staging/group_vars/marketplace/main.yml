@@ -42,6 +42,10 @@ enable_security: true
 fail2ban_bantime: "1h"
 fail2ban_findtime: "10m"
 fail2ban_sshd_maxretry: 4
+# Pare-feu UFW (« ports sollicités » dans Loki). OPT-IN : à passer à true SEULEMENT
+# après avoir vérifié que le port SSH (ansible_port = 8022) est correct — sinon
+# risque de se verrouiller dehors. Le rôle autorise SSH + 80/443 avant d'activer.
+enable_ufw: false
 
 # --- Observabilité (stack deploy/monitoring/) ---
 # Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).

@@ -184,6 +184,11 @@ services:
       DATA_SOURCE_NAME: "${POSTGRES_EXPORTER_DSN:-}"
       # Métriques par base (taille, stats) en plus des métriques cluster.
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+      # Requêtes custom : requêtes lentes (pg_stat_statements), tailles de tables,
+      # réplication.
+      PG_EXPORTER_EXTEND_QUERY_PATH: "/etc/postgres-exporter/queries.yaml"
+    volumes:
+      - ./postgres-queries.yaml:/etc/postgres-exporter/queries.yaml:ro
     networks: [monitoring]
     restart: unless-stopped
 

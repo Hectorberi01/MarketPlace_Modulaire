@@ -36,3 +36,37 @@
     name: fail2ban
     state: started
     enabled: true
+
+# ── Pare-feu UFW — OPT-IN (enable_ufw), pour les « ports sollicités » ─────────
+# Journalise les paquets (bloqués/autorisés) dans /var/log/ufw.log → Promtail →
+# Loki : on voit alors quels ports sont scannés/sollicités.
+#
+# ⚠️ RISQUE DE LOCKOUT : activer un pare-feu à distance peut couper SSH. On
+# AUTORISE donc le port SSH courant AVANT d'activer, plus 80/443. Laisser
+# enable_ufw à false tant qu'on n'a pas vérifié que le port SSH est le bon.
+- name: Pare-feu UFW (opt-in)
+  when: enable_ufw | default(false)
+  block:
+    - name: Installer UFW
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Autoriser le port SSH AVANT activation (anti-lockout)
+      ansible.builtin.command: "ufw allow {{ ansible_port | default(22) }}/tcp"
+      changed_when: false
+
+    - name: Autoriser HTTP et HTTPS
+      ansible.builtin.command: "ufw allow {{ item }}/tcp"
+      loop: ["80", "443"]
+      changed_when: false
+
+    - name: Activer la journalisation UFW (→ /var/log/ufw.log)
+      ansible.builtin.command: "ufw logging on"
+      changed_when: false
+
+    - name: Activer UFW (politique entrante = deny)
+      ansible.builtin.command: "ufw --force enable"
+      changed_when: false
