@@ -331,6 +331,10 @@ services:
       Monitoring__Surfaces__3__Url: "http://bff-seller:8080"
       Monitoring__Surfaces__4__Name: "BFF Admin"
       Monitoring__Surfaces__4__Url: "http://bff-admin:8080"
+      # KPIs live (Prometheus) + dashboards Grafana intégrés. Vides = masqués.
+      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
+      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
+      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
     depends_on:
       api:
         condition: service_healthy
