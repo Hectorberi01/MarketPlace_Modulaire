@@ -20,9 +20,20 @@ http:
           - "{{ u }}"
 {% endfor %}
 
+    # Retire X-Frame-Options (wetty l'envoie en SAMEORIGIN) pour permettre
+    # l'embarquement en iframe DANS la console (sous-domaine différent).
+    # customResponseHeaders à "" = suppression de l'en-tête.
+    terminal-headers:
+      headers:
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Frame-Options: ""
+          Server: ""
+
     terminal-guard:
       chain:
         middlewares:
           - terminal-ipallow
           - terminal-auth
-          - sec-headers-embed
+          - terminal-headers
