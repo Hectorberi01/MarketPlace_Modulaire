@@ -31,3 +31,6 @@
     - role: portainer
       tags: [portainer]
       when: enable_portainer | default(true)
+    - role: webterminal
+      tags: [webterminal]
+      when: enable_web_terminal | default(false)

@@ -1,0 +1,35 @@
+# ⚠️  TERMINAL WEB — ACCÈS SHELL À L'HÔTE. À MANIER AVEC EXTRÊME PRUDENCE.
+#
+# wetty ouvre une session SSH vers l'hôte (port {{SSH_PORT}}) depuis le navigateur.
+# L'authentification finale est celle de SSH (donc protégée par Fail2ban), et
+# Traefik ajoute DEVANT : liste blanche d'IP + auth HTTP (middleware terminal-guard).
+#
+# Déployé UNIQUEMENT si enable_web_terminal=true. Sans liste blanche d'IP ni
+# utilisateur d'auth configurés (vault), le middleware REFUSE tout : deny-by-default.
+services:
+  webterminal:
+    image: wettyoss/wetty:2.7.0
+    command:
+      - "--ssh-host=${SSH_HOST:-host.docker.internal}"
+      - "--ssh-port=${SSH_PORT:-8022}"
+      - "--base=/"
+      - "--title=HBA Terminal"
+      - "--port=3000"
+    # Permet au conteneur de joindre le SSH de l'HÔTE via host-gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [traefik]
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.terminal.rule=Host(`${TERMINAL_HOST}`)"
+      - "traefik.http.routers.terminal.entrypoints=websecure"
+      - "traefik.http.routers.terminal.tls.certresolver=letsencrypt"
+      # terminal-guard = ipAllowList (deny-all par défaut) + basicAuth + en-têtes.
+      - "traefik.http.routers.terminal.middlewares=terminal-guard@file"
+      - "traefik.http.services.terminal.loadbalancer.server.port=3000"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK}

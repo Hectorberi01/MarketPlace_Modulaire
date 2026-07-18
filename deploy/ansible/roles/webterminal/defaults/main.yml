@@ -1,0 +1,15 @@
+---
+# Sous-domaine du terminal (ex. terminal.<root_domain>).
+terminal_subdomain: "terminal"
+# Hôte/port SSH que wetty contacte (host-gateway → SSH de la machine).
+terminal_ssh_host: "host.docker.internal"
+terminal_ssh_port: "{{ ansible_port | default(8022) }}"
+# Image wetty épinglée.
+webterminal_image: "wettyoss/wetty:2.7.0"
+
+# ── VERROUS (à définir dans le vault pour que le terminal soit joignable) ──────
+# Liste blanche d'IP autorisées (CIDR). VIDE = Traefik REFUSE tout le monde.
+terminal_allowed_ips: []
+# Utilisateurs d'auth HTTP au format htpasswd (bcrypt/apr1). VIDE = REFUSE tout.
+#   Générer :  htpasswd -nbB admin 'MotDePasseFort'
+terminal_basic_auth_users: []

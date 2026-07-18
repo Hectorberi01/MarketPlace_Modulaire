@@ -47,6 +47,15 @@ fail2ban_sshd_maxretry: 4
 # risque de se verrouiller dehors. Le rôle autorise SSH + 80/443 avant d'activer.
 enable_ufw: false
 
+# ── Terminal web (shell root de l'hôte) — DÉSACTIVÉ par défaut ────────────────
+# ⚠️ TRÈS SENSIBLE. Ne passer à true qu'APRÈS avoir mis dans le VAULT :
+#   terminal_allowed_ips      : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
+#   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB)
+# Sans ces deux verrous, le rôle échoue volontairement (pas d'exposition nue).
+# DNS requis : terminal.marketplace-staging.hba-marketplace.fr → IP du VPS.
+enable_web_terminal: false
+terminal_subdomain: "terminal"
+
 # --- Observabilité (stack deploy/monitoring/) ---
 # Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).
 enable_monitoring: true
