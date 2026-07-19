@@ -48,7 +48,7 @@ fedapay_base_url: "https://api.fedapay.com/v1"
 fedapay_enable_payouts: false
 
 # E-mails transactionnels (Resend) — OBLIGATOIRE, sinon l'API refuse de démarrer.
-# ⚠️ Le domaine de email_from DOIT être vérifié chez Resend (SPF + DKIM), sinon
+# Le domaine de email_from DOIT être vérifié chez Resend (SPF + DKIM), sinon
 # les envois échouent en 403 (le démarrage, lui, passe). Ajuste si ton domaine
 # vérifié n'est pas hba-express.org. resend_api_key → vault.
 email_from: "no-reply@hba-express.org"

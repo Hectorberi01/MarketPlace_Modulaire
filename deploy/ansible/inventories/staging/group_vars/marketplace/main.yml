@@ -48,7 +48,7 @@ fail2ban_sshd_maxretry: 4
 enable_ufw: false
 
 # ── Terminal web (shell root de l'hôte) — DÉSACTIVÉ par défaut ────────────────
-# ⚠️ TRÈS SENSIBLE. Ne passer à true qu'APRÈS avoir mis dans le VAULT :
+#   TRÈS SENSIBLE. Ne passer à true qu'APRÈS avoir mis dans le VAULT :
 #   terminal_allowed_ips      : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
 #   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB)
 # Sans ces deux verrous, le rôle échoue volontairement (pas d'exposition nue).
@@ -81,7 +81,9 @@ portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth
 # même compte Resend que la prod). On envoie donc depuis @hba-express.org — le
 # sous-domaine updates.hbatechettrade.com n'était PAS vérifié, d'où l'échec.
 # Utiliser la MÊME clé Resend que la prod dans le vault (resend_api_key).
-email_from: "HBA Express <no-reply@hba-express.org>"
+
+#email_from: "HBA Express <no-reply@hba-express.org>"
+
 # Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
 # Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
 # admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
@@ -89,7 +91,9 @@ email_from: "HBA Express <no-reply@hba-express.org>"
 # ci-dessous : il faut (1) un enregistrement DNS A pour ce sous-domaine, et
 # (2) déployer la console derrière (service compose + Traefik). Tant que ce n'est
 # pas fait, les liens des e-mails ne seront pas cliquables (compléter le reset via l'API).
+email_from: "no-reply@hba-express.org"
 email_app_base_url: "https://console.marketplace-staging.hba-marketplace.fr"
+#email_app_base_url: "https://hba-express.org"
 
 # --- Alertmanager (notifications d'alerte) ---
 # Secrets DANS LE VAULT : alertmanager_slack_webhook_url, smtp_password.
@@ -109,7 +113,6 @@ r2_media_key_prefix: MarketPlace-staging
 r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
-
 
 terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
 
