@@ -1,18 +1,22 @@
 ---
-# Terminal web (wetty → SSH hôte). Gated par enable_web_terminal + tag webterminal.
-# Exécuté APRÈS le rôle marketplace (réseau Traefik + dossier deploy/ présents).
+# Terminal web (wetty → SSH hôte, AUTH PAR CLÉ). Gated par enable_web_terminal +
+# tag webterminal. Exécuté APRÈS le rôle marketplace (réseau Traefik + deploy/).
 #
-# ⚠️ Sécurité : voir deploy/webterminal/docker-compose.yml. Deny-by-default via le
-# middleware terminal-guard (liste blanche d'IP + auth HTTP) rendu depuis le vault.
+# ⚠️ Sécurité : deny-by-default via terminal-guard (IP + auth HTTP), + auth SSH
+# par CLÉ DÉDIÉE (l'hôte est en key-only). Voir deploy/webterminal/.
 
 - name: Garde-fou — refuser l'activation sans verrous configurés
   ansible.builtin.fail:
     msg: >-
-      enable_web_terminal=true mais terminal_allowed_ips ET/OU
-      terminal_basic_auth_users sont vides. Renseigne-les dans le vault AVANT
-      d'exposer un shell root. (Le middleware refuserait de toute façon, mais on
-      préfère échouer explicitement plutôt que déployer un terminal inutilisable.)
-  when: (terminal_allowed_ips | default([]) | length == 0) or (terminal_basic_auth_users | default([]) | length == 0)
+      enable_web_terminal=true mais un verrou manque. Requis (vault/group_vars) :
+      terminal_allowed_ips, terminal_basic_auth_users, terminal_ssh_private_key,
+      terminal_ssh_public_key. Génère la paire de clés :
+      ssh-keygen -t ed25519 -f id_terminal -N '' -C 'wetty-terminal'
+  when: >-
+    (terminal_allowed_ips | default([]) | length == 0) or
+    (terminal_basic_auth_users | default([]) | length == 0) or
+    (terminal_ssh_private_key | default('') | trim | length == 0) or
+    (terminal_ssh_public_key | default('') | trim | length == 0)
 
 - name: Générer le middleware de garde du terminal (Traefik dynamic)
   ansible.builtin.template:
@@ -20,18 +24,37 @@
     dest: "{{ app_dir }}/deploy/traefik/dynamic-{{ target_env }}/terminal.yml"
     mode: "0644"
 
+- name: Écrire la clé privée dédiée du terminal (montée dans wetty)
+  ansible.builtin.copy:
+    content: "{{ terminal_ssh_private_key }}"
+    dest: "{{ app_dir }}/deploy/webterminal/id_terminal"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Autoriser la clé publique du terminal pour l'utilisateur SSH cible
+  ansible.builtin.lineinfile:
+    path: "/{{ (terminal_ssh_user == 'root') | ternary('root', 'home/' ~ terminal_ssh_user) }}/.ssh/authorized_keys"
+    line: "{{ terminal_ssh_public_key }}"
+    create: true
+    owner: "{{ terminal_ssh_user }}"
+    mode: "0600"
+    state: present
+
 - name: Déployer le terminal web (docker compose)
   ansible.builtin.command:
-    cmd: docker compose -f deploy/webterminal/docker-compose.yml up -d
+    cmd: docker compose -f deploy/webterminal/docker-compose.yml up -d --force-recreate
     chdir: "{{ app_dir }}"
   environment:
     TERMINAL_HOST: "{{ terminal_subdomain }}.{{ root_domain }}"
     TRAEFIK_NETWORK: "{{ traefik_network }}"
     SSH_HOST: "{{ terminal_ssh_host }}"
     SSH_PORT: "{{ terminal_ssh_port }}"
+    SSH_USER: "{{ terminal_ssh_user }}"
   register: terminal_up
   changed_when: true
 
 - name: URL d'accès au terminal
   ansible.builtin.debug:
-    msg: "Terminal : https://{{ terminal_subdomain }}.{{ root_domain }} — accès filtré (IP + auth HTTP + SSH)."
+    msg: "Terminal : https://{{ terminal_subdomain }}.{{ root_domain }} — filtré (IP + auth HTTP), SSH par clé dédiée (user {{ terminal_ssh_user }})."

@@ -9,15 +9,23 @@
 services:
   webterminal:
     image: wettyoss/wetty:2.5.0
+    # Exécuté en root pour lire la clé privée montée en 0600 (appartenant à root).
+    user: "0:0"
     command:
       - "--ssh-host=${SSH_HOST:-host.docker.internal}"
-      - "--ssh-port=${SSH_PORT:-8022}"
+      - "--ssh-port=${SSH_PORT:-22}"
+      - "--ssh-user=${SSH_USER:-root}"
+      - "--ssh-auth=publickey"
+      - "--ssh-key=/root/.ssh/id_terminal"
       - "--base=/"
       - "--title=HBA Terminal"
       - "--port=3000"
     # Permet au conteneur de joindre le SSH de l'HÔTE via host-gateway.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # Clé privée dédiée (écrite par Ansible depuis le vault, 0600).
+      - ./id_terminal:/root/.ssh/id_terminal:ro
     networks: [traefik]
     restart: unless-stopped
     labels:

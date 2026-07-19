@@ -111,3 +111,6 @@ r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
 
+
+terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
+

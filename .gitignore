@@ -52,3 +52,6 @@ deploy/.env.example
 # Compte de service Firebase (push FCM) — écrit au déploiement, jamais commité.
 deploy/fcm/*
 !deploy/fcm/.gitkeep
+
+# Clé privée dédiée du terminal web (écrite au déploiement, jamais committée)
+deploy/webterminal/id_terminal
