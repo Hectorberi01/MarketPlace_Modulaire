@@ -30,7 +30,10 @@ public sealed record SellerSummary(
     decimal Rating,
     int SalesCount,
     PayoutAccountSummary? Payout,
-    IReadOnlyList<KybDocumentSummary> KybDocuments)
+    IReadOnlyList<KybDocumentSummary> KybDocuments,
+    // Informations société déclarées (jsonb). Réservé au propriétaire/admin — jamais
+    // dans la vitrine publique (voir ToPublic, qui ne l'inclut pas).
+    SellerCompanyInfoSummary? Metadata = null)
 {
     /// <summary>
     /// Projette la vitrine PUBLIQUE : uniquement ce qu'un visiteur anonyme a le droit
@@ -69,3 +72,17 @@ public sealed record PayoutAccountSummary(
     string Provider,
     string AccountNumber,
     string AccountName);
+
+/// <summary>
+/// Informations société déclarées par le vendeur (raison sociale, RCCM, IFU…).
+/// Miroir contractuel du VO domaine SellerCompanyInfo. Tous les champs optionnels.
+/// </summary>
+public sealed record SellerCompanyInfoSummary(
+    string? LegalName,
+    string? Rccm,
+    string? Ifu,
+    string? Address,
+    string? City,
+    string? Activity,
+    string? ManagerName,
+    string? Phone);

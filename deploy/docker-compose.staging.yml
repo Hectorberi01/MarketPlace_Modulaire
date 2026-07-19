@@ -144,6 +144,11 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     shm_size: "128mb"
+    # Écoute UNIQUEMENT sur la loopback de l'hôte (127.0.0.1) — JAMAIS sur Internet.
+    # Sert l'accès admin (pgAdmin) via un TUNNEL SSH : seul quelqu'un connecté en SSH
+    # au VPS peut atteindre ce port. Retirer cette ligne pour couper l'accès.
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"

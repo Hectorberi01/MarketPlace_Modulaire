@@ -120,4 +120,38 @@ public static class AccountEmailTemplates
 
         return new EmailMessage(to, "Réinitialisation de votre mot de passe — HBA Express", html, text);
     }
+
+    /// <summary>
+    /// Réinitialisation de mot de passe par CODE numérique (saisi dans l'app),
+    /// plutôt que par lien. Cohérent avec la vérification e-mail.
+    /// </summary>
+    public static EmailMessage PasswordResetCode(string to, string firstName, string code)
+    {
+        var name = WebUtility.HtmlEncode(firstName);
+        var safeCode = WebUtility.HtmlEncode(code);
+
+        var html = $"""
+            <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;color:#111;line-height:1.6">
+              <p>Bonjour {name},</p>
+              <p>Vous avez demandé à réinitialiser votre mot de passe HBA Express. Voici votre code :</p>
+              <p style="margin:28px 0;font-size:32px;font-weight:700;letter-spacing:6px">{safeCode}</p>
+              <p style="color:#555;font-size:14px">Saisissez ce code dans l'application pour choisir un nouveau mot de passe. <strong>Il expire dans 1 heure</strong> et ne peut servir qu'une fois.</p>
+              <p style="color:#555;font-size:14px">Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail : votre mot de passe reste inchangé.</p>
+            </div>
+            """;
+
+        var text = $"""
+            Bonjour {firstName},
+
+            Votre code de réinitialisation de mot de passe HBA Express : {code}
+
+            Saisissez-le dans l'application pour choisir un nouveau mot de passe.
+            Il expire dans 1 heure et ne peut servir qu'une fois.
+
+            Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail :
+            votre mot de passe reste inchangé.
+            """;
+
+        return new EmailMessage(to, "Votre code de réinitialisation — HBA Express", html, text);
+    }
 }

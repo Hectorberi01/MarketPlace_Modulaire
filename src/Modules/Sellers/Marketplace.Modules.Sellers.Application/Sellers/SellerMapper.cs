@@ -31,7 +31,14 @@ internal static class SellerMapper
                 ResolveDocStatus(d, seller.KybStatus),
                 d.UploadedOnUtc,
                 d.VerifiedAtUtc))
-            .ToList());
+            .ToList(),
+        MapMetadata(seller.Metadata));
+
+    private static SellerCompanyInfoSummary? MapMetadata(SellerCompanyInfo? m) =>
+        m is null
+            ? null
+            : new SellerCompanyInfoSummary(
+                m.LegalName, m.Rccm, m.Ifu, m.Address, m.City, m.Activity, m.ManagerName, m.Phone);
 
     /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>
     private static string ResolveDocStatus(KybDocument doc, KybStatus sellerStatus) =>

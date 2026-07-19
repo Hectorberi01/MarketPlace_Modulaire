@@ -8,6 +8,8 @@ using Marketplace.Modules.Sellers.Application.Sellers.Commands.RemoveKybDocument
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetPayoutAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.UpdateSellerProfile;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.UpdateSellerMetadata;
+using Marketplace.Modules.Sellers.Domain.Sellers;
 using Marketplace.Modules.Sellers.Application.Abstractions;
 using Marketplace.Modules.Catalog.Application.Abstractions;
 
@@ -27,6 +29,8 @@ public static class SellerShopEndpoints
         shop.MapGet("/", MyShopAsync);
         shop.MapPost("/", OnboardAsync);
         shop.MapPut("/profile", UpdateProfileAsync);
+        // Informations société déclarées (raison sociale, RCCM, IFU…).
+        shop.MapPut("/metadata", UpdateMetadataAsync);
         // Upload / mise à jour du logo de la boutique (multipart, champ « file »).
         shop.MapPost("/logo", UploadLogoAsync).DisableAntiforgery();
         shop.MapPut("/payout-account", SetPayoutAccountAsync);
@@ -101,6 +105,15 @@ public static class SellerShopEndpoints
         // On conserve nom + description existants, on ne remplace que le logo.
         return (await sender.Send(new UpdateSellerProfileCommand(seller.Id, seller.ShopName, upload.Value.Url, seller.Description), ct))
             .Match(() => Results.Ok(new { logoUrl = upload.Value.Url }));
+    }
+
+    /// <summary>Met à jour les informations société (metadata) de la boutique du jeton.</summary>
+    private static async Task<IResult> UpdateMetadataAsync(ClaimsPrincipal user, CompanyInfoRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        return seller is null
+            ? SellerBff.NotASeller()
+            : (await sender.Send(new UpdateSellerMetadataCommand(seller.Id, request.ToDomain()), ct)).Match(() => Results.NoContent());
     }
 
     /// <summary>Définit le compte de reversement (MoMo, Wave, banque…).</summary>
@@ -207,6 +220,21 @@ public static class SellerShopEndpoints
 
     public sealed record OnboardRequest(string ShopName);
     public sealed record ProfileRequest(string ShopName, string? LogoUrl, string? Description);
+
+    /// <summary>Infos société déclarées (toutes optionnelles) → metadata jsonb.</summary>
+    public sealed record CompanyInfoRequest(
+        string? LegalName,
+        string? Rccm,
+        string? Ifu,
+        string? Address,
+        string? City,
+        string? Activity,
+        string? ManagerName,
+        string? Phone)
+    {
+        public SellerCompanyInfo ToDomain()
+            => new(LegalName, Rccm, Ifu, Address, City, Activity, ManagerName, Phone);
+    }
     public sealed record PayoutAccountRequest(string Provider, string AccountNumber, string AccountName);
     public sealed record KybDocumentRequest(string Type, string FileUrl);
 }

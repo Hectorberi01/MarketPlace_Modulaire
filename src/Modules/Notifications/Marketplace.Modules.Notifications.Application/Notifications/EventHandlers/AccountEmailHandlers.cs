@@ -72,25 +72,22 @@ public sealed class SendEmailVerificationHandler : IIntegrationEventHandler<Emai
 public sealed class SendPasswordResetEmailHandler : IIntegrationEventHandler<PasswordResetRequestedIntegrationEvent>
 {
     private readonly IEmailSender _email;
-    private readonly IAccountLinkBuilder _links;
     private readonly ILogger<SendPasswordResetEmailHandler> _logger;
 
     public SendPasswordResetEmailHandler(
         IEmailSender email,
-        IAccountLinkBuilder links,
         ILogger<SendPasswordResetEmailHandler> logger)
     {
         _email = email;
-        _links = links;
         _logger = logger;
     }
 
     public async Task HandleAsync(
         PasswordResetRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
     {
-        var url = _links.PasswordReset(integrationEvent.Email, integrationEvent.ResetToken);
-        var message = AccountEmailTemplates.PasswordReset(
-            integrationEvent.Email, integrationEvent.FirstName, url);
+        // Le champ ResetToken porte désormais le CODE numérique à 6 chiffres.
+        var message = AccountEmailTemplates.PasswordResetCode(
+            integrationEvent.Email, integrationEvent.FirstName, integrationEvent.ResetToken);
 
         await _email.SendAsync(message, cancellationToken);
 

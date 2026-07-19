@@ -47,7 +47,9 @@ internal sealed class RequestPasswordResetCommandHandler : ICommandHandler<Reque
             return Result.Success();
         }
 
-        var (raw, hash) = _tokenGenerator.Generate();
+        // CODE numérique à 6 chiffres (comme la vérification e-mail) : bien plus simple
+        // à saisir dans l'app mobile qu'un lien à copier. Seul le hash est stocké.
+        var (raw, hash) = _tokenGenerator.GenerateNumericCode();
         var begin = user.BeginPasswordReset(hash, DateTime.UtcNow.AddHours(1));
         if (begin.IsFailure)
         {

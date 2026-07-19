@@ -102,7 +102,13 @@ internal sealed class SellerModuleApi : ISellerModuleApi
                 ResolveDocStatus(d, seller.KybStatus),
                 d.UploadedOnUtc,
                 d.VerifiedAtUtc))
-            .ToList());
+            .ToList(),
+        seller.Metadata is null
+            ? null
+            : new SellerCompanyInfoSummary(
+                seller.Metadata.LegalName, seller.Metadata.Rccm, seller.Metadata.Ifu,
+                seller.Metadata.Address, seller.Metadata.City, seller.Metadata.Activity,
+                seller.Metadata.ManagerName, seller.Metadata.Phone));
 
     /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>
     private static string ResolveDocStatus(KybDocument doc, KybStatus sellerStatus) =>

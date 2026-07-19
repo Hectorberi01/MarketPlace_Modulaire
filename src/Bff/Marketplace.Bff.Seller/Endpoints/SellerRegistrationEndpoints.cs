@@ -6,6 +6,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.AssignRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 using Marketplace.Modules.Identity.Application.Users.Commands.RequestEmailVerification;
 using Marketplace.Modules.Identity.Application.Users.Commands.VerifyEmailCode;
+using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Contracts;
@@ -43,8 +44,30 @@ public static class SellerRegistrationEndpoints
         auth.MapPost("/register", RegisterAsync).AllowAnonymous();
         auth.MapPost("/verify", VerifyAsync).AllowAnonymous();
 
+        // Mot de passe oublié : demande d'un code par e-mail, puis réinitialisation.
+        auth.MapPost("/password/forgot", ForgotPasswordAsync).AllowAnonymous();
+        auth.MapPost("/password/reset", ResetPasswordAsync).AllowAnonymous();
+
         return app;
     }
+
+    /// <summary>Envoie un code de réinitialisation à l'e-mail (réponse identique si compte inconnu).</summary>
+    private static async Task<IResult> ForgotPasswordAsync(SellerForgotRequest request, ISender sender, CancellationToken ct)
+    {
+        // Résultat volontairement ignoré : succès comme échec renvoient la MÊME réponse,
+        // pour ne pas révéler si un compte existe (anti-énumération).
+        _ = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
+        return Results.Ok(new
+        {
+            sent = true,
+            message = "Si un compte existe pour cette adresse, un code de réinitialisation vient d'être envoyé.",
+        });
+    }
+
+    /// <summary>Réinitialise le mot de passe à partir du code reçu par e-mail.</summary>
+    private static async Task<IResult> ResetPasswordAsync(SellerResetRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ResetPasswordCommand(request.Email, request.Code, request.NewPassword), ct))
+            .Match(() => Results.Ok(new { reset = true }));
 
     /// <summary>Étape 1 : crée le compte (ou identifie l'existant) et envoie le code.</summary>
     private static async Task<IResult> RegisterAsync(
@@ -179,4 +202,10 @@ public static class SellerRegistrationEndpoints
     }
 
     public sealed record SellerVerifyResponse(Guid SellerId, Guid UserId);
+
+    /// <summary>Demande de réinitialisation : juste l'e-mail.</summary>
+    public sealed record SellerForgotRequest(string Email);
+
+    /// <summary>Réinitialisation : e-mail + code reçu + nouveau mot de passe.</summary>
+    public sealed record SellerResetRequest(string Email, string Code, string NewPassword);
 }
