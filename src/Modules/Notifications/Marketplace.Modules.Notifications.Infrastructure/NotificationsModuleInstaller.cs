@@ -20,6 +20,7 @@ using Marketplace.Modules.Notifications.Infrastructure.Persistence;
 using Marketplace.Modules.Notifications.Infrastructure.Email;
 using Marketplace.Modules.Notifications.Infrastructure.Push;
 using Marketplace.Modules.Identity.Contracts.IntegrationEvents;
+using Marketplace.Modules.Sellers.Contracts.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
 using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
@@ -171,6 +172,10 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         //              qui vient d'être débité.
         services.AddScoped<IIntegrationEventHandler<ReturnRefundApprovedIntegrationEvent>, ReturnRefundApprovedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, ReturnRefundedNotificationHandler>();
+
+        // BOUTIQUE VALIDÉE. L'admin active le vendeur → e-mail de bienvenue + push/in-app :
+        // le vendeur passe de « en attente » à « peut publier », il doit le savoir tout de suite.
+        services.AddScoped<IIntegrationEventHandler<SellerActivatedIntegrationEvent>, SellerActivatedNotificationHandler>();
 
         services.AddOutboxProcessor<NotificationsDbContext>();
     }

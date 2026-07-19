@@ -154,4 +154,34 @@ public static class AccountEmailTemplates
 
         return new EmailMessage(to, "Votre code de réinitialisation — HBA Express", html, text);
     }
+
+    /// <summary>
+    /// Boutique VALIDÉE (profil vendeur activé par un administrateur) : le vendeur
+    /// peut désormais publier ses produits.
+    /// </summary>
+    public static EmailMessage SellerActivated(string to, string firstName, string shopName)
+    {
+        var name = WebUtility.HtmlEncode(firstName);
+        var shop = WebUtility.HtmlEncode(shopName);
+
+        var html = $"""
+            <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;color:#111;line-height:1.6">
+              <p>Bonjour {name},</p>
+              <p>Bonne nouvelle : votre boutique <strong>{shop}</strong> est <strong>validée</strong> 🎉</p>
+              <p>Vous pouvez désormais <strong>publier vos produits</strong> et recevoir des commandes. Ouvrez l'application HbaExpress PRO pour commencer.</p>
+              <p style="color:#555;font-size:14px">Merci de faire partie de HBA Express.</p>
+            </div>
+            """;
+
+        var text = $"""
+            Bonjour {firstName},
+
+            Votre boutique {shopName} est validée ! Vous pouvez désormais publier vos
+            produits et recevoir des commandes depuis l'application HbaExpress PRO.
+
+            Merci de faire partie de HBA Express.
+            """;
+
+        return new EmailMessage(to, "Votre boutique est validée — HBA Express", html, text);
+    }
 }
