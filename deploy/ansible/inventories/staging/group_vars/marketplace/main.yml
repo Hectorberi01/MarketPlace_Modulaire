@@ -59,7 +59,7 @@ terminal_subdomain: "terminal"
 # --- Observabilité (stack deploy/monitoring/) ---
 # Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).
 enable_monitoring: true
-grafana_host: "grafana.hba-marketplace.fr"
+grafana_host: "grafana.marketplace-staging.hba-marketplace.fr"
 # grafana_password : dans le vault (secret).
 # URLs INTERNES (noms de services Docker) : nécessitent que la stack monitoring
 
@@ -67,8 +67,8 @@ grafana_host: "grafana.hba-marketplace.fr"
 otel_endpoint: "http://otel-collector:4317"
 prometheus_url: "http://prometheus:9090"
 # URLs navigateur (Grafana) : renseigner quand Grafana est exposé (sous-domaine).
-grafana_url: "https://grafana.hba-marketplace.fr"
-grafana_embed_url: "https://grafana.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
+grafana_url: "https://grafana.marketplace-staging.hba-marketplace.fr"
+grafana_embed_url: "https://grafana.marketplace-staging.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
 # Portainer (gestion des conteneurs) — bouton dans la page Système.
 # Le fragment « /#!/auth » ouvre directement l'écran de connexion Portainer.
 portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth"
