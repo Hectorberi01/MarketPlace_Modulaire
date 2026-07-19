@@ -75,14 +75,13 @@ portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth
 
 # --- E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe ---
 # Secret DANS LE VAULT : resend_api_key. Ici, uniquement du non-sensible.
-# Expéditeur : le DOMAINE (ici le SOUS-DOMAINE d'envoi) doit être « Verified »
-# chez Resend (SPF+DKIM). La partie locale (no-reply, etc.) est libre.
-#  On vérifie le sous-domaine updates.hbatechettrade.com → l'adresse DOIT être
-#    @updates.hbatechettrade.com (une adresse @hbatechettrade.com ne serait PAS
-#    couverte par la vérification du sous-domaine → 403).
-#    Tant que le sous-domaine n'est pas « Verified », repasser à
-#    "onboarding@resend.dev" (bac à sable : ne livre qu'à l'adresse du compte Resend).
-email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
+# Expéditeur : le DOMAINE de email_from doit être « Verified » chez Resend (SPF+DKIM).
+#
+# ALIGNÉ SUR LA PROD : le domaine vérifié chez Resend est « hba-express.org » (le
+# même compte Resend que la prod). On envoie donc depuis @hba-express.org — le
+# sous-domaine updates.hbatechettrade.com n'était PAS vérifié, d'où l'échec.
+# Utiliser la MÊME clé Resend que la prod dans le vault (resend_api_key).
+email_from: "HBA Express <no-reply@hba-express.org>"
 # Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
 # Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
 # admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
