@@ -5,7 +5,7 @@ terminal_subdomain: "terminal"
 terminal_ssh_host: "host.docker.internal"
 terminal_ssh_port: "{{ ansible_port | default(8022) }}"
 # Image wetty épinglée.
-webterminal_image: "wettyoss/wetty:2.7.0"
+webterminal_image: "wettyoss/wetty:2.5.0"
 
 # ── VERROUS (à définir dans le vault pour que le terminal soit joignable) ──────
 # Liste blanche d'IP autorisées (CIDR). VIDE = Traefik REFUSE tout le monde.

@@ -8,7 +8,7 @@
 # utilisateur d'auth configurés (vault), le middleware REFUSE tout : deny-by-default.
 services:
   webterminal:
-    image: wettyoss/wetty:2.7.0
+    image: wettyoss/wetty:2.5.0
     command:
       - "--ssh-host=${SSH_HOST:-host.docker.internal}"
       - "--ssh-port=${SSH_PORT:-8022}"
