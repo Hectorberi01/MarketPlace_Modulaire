@@ -6,6 +6,8 @@ using Marketplace.Modules.Identity.Application.Users.Commands.Logout;
 using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 using Marketplace.Modules.Identity.Application.Users.Commands.RefreshToken;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
+using Marketplace.Modules.Identity.Application.Users.Commands.RequestEmailVerification;
+using Marketplace.Modules.Identity.Contracts;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
 
@@ -36,6 +38,11 @@ public static class MobileAuthEndpoints
         // antivirus PRÉ-CHARGENT les liens des e-mails pour les analyser. Une confirmation
         // sur GET serait déclenchée par le scanner, avant même que l'utilisateur ne clique.
         auth.MapPost("/email/confirm", ConfirmEmailAsync).AllowAnonymous();
+
+        // Renvoi du code de vérification : un acheteur qui a abandonné la
+        // vérification puis revient sur l'écran de connexion peut s'en refaire
+        // envoyer un.
+        auth.MapPost("/email/resend", ResendEmailAsync).AllowAnonymous();
 
         // OTP par SMS : nécessite un fournisseur SMS (non encore branché).
         auth.MapPost("/otp/request", () => MobileBff.NotImplemented("identity.sms_otp")).AllowAnonymous();
@@ -90,6 +97,24 @@ public static class MobileAuthEndpoints
         => (await sender.Send(new ConfirmEmailCommand(request.UserId, request.Token), ct))
             .Match(() => Results.Ok(new { confirmed = true }));
 
+    /// <summary>
+    /// Renvoie un code de vérification à un compte EXISTANT non vérifié (résout
+    /// e-mail → UserId). Réponse neutre si le compte n'existe pas — l'app affiche le
+    /// même message. L'UserId est nécessaire à l'écran de saisie du code.
+    /// </summary>
+    private static async Task<IResult> ResendEmailAsync(
+        ResendRequest request, ISender sender, IIdentityModuleApi identity, CancellationToken ct)
+    {
+        var user = await identity.GetUserByEmailAsync(request.Email, ct);
+        if (user is null)
+        {
+            return Results.Ok(new { userId = (Guid?)null });
+        }
+
+        _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
+        return Results.Ok(new { userId = (Guid?)user.Id });
+    }
+
     /// <summary>Réinitialise le mot de passe à partir du jeton reçu.</summary>
     private static async Task<IResult> ResetPasswordAsync(ResetRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new ResetPasswordCommand(request.Email, request.Token, request.NewPassword), ct))
@@ -135,6 +160,7 @@ public static class MobileAuthEndpoints
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);
     public sealed record ConfirmEmailRequest(Guid UserId, string Token);
+    public sealed record ResendRequest(string Email);
     public sealed record ForgotRequest(string Email);
     public sealed record ResetRequest(string Email, string Token, string NewPassword);
 }

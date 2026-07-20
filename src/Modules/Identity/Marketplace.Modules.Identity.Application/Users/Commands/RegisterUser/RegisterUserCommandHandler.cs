@@ -111,11 +111,18 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
         //
         // Désormais l'activation est une DÉCISION, prise par un administrateur ou
         // par la configuration — jamais une confirmation fabriquée.
-        var requiresApproval = command.CreatedByAdmin
-            ? _registrationPolicy.RequireApprovalForAdminCreated
-            : _registrationPolicy.RequireApprovalForBuyers;
-
-        if (!requiresApproval)
+        // ACTIVATION.
+        //
+        // LIBRE-SERVICE (CreatedByAdmin == false) : le compte N'EST PAS activé ici.
+        // Il naît PendingVerification et n'est activé que lorsque l'utilisateur
+        // confirme son adresse e-mail (VerifyEmailCode). Sans cela, un compte
+        // pourrait se connecter sans jamais prouver qu'il possède l'adresse — c'est
+        // exactement le trou qu'on ferme (un non-vérifié ne doit pas entrer).
+        //
+        // CRÉÉ PAR UN ADMIN : l'administrateur se porte garant de l'adresse, on peut
+        // donc activer d'emblée (sauf si la politique exige tout de même une
+        // approbation manuelle).
+        if (command.CreatedByAdmin && !_registrationPolicy.RequireApprovalForAdminCreated)
         {
             user.Approve();
         }

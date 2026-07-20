@@ -43,6 +43,9 @@ public static class SellerRegistrationEndpoints
 
         auth.MapPost("/register", RegisterAsync).AllowAnonymous();
         auth.MapPost("/verify", VerifyAsync).AllowAnonymous();
+        // Renvoi du code : un vendeur qui a abandonné la vérification puis revient
+        // sur l'écran de connexion peut se refaire envoyer un code.
+        auth.MapPost("/verify/resend", ResendCodeAsync).AllowAnonymous();
 
         // Mot de passe oublié : demande d'un code par e-mail, puis réinitialisation.
         auth.MapPost("/password/forgot", ForgotPasswordAsync).AllowAnonymous();
@@ -68,6 +71,28 @@ public static class SellerRegistrationEndpoints
     private static async Task<IResult> ResetPasswordAsync(SellerResetRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new ResetPasswordCommand(request.Email, request.Code, request.NewPassword), ct))
             .Match(() => Results.Ok(new { reset = true }));
+
+    /// <summary>
+    /// Renvoie un code de vérification à un compte EXISTANT non vérifié. Utilisé
+    /// depuis l'écran de connexion quand l'utilisateur a abandonné la vérification.
+    /// Renvoie l'UserId (nécessaire à l'écran de saisie du code) quand le compte
+    /// existe ; sinon un corps neutre — l'app affiche le même message dans tous les cas.
+    /// </summary>
+    private static async Task<IResult> ResendCodeAsync(
+        SellerResendRequest request,
+        ISender sender,
+        IIdentityModuleApi identity,
+        CancellationToken ct)
+    {
+        var user = await identity.GetUserByEmailAsync(request.Email, ct);
+        if (user is null)
+        {
+            return Results.Ok(new SellerResendResponse(UserId: null));
+        }
+
+        _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
+        return Results.Ok(new SellerResendResponse(UserId: user.Id));
+    }
 
     /// <summary>Étape 1 : crée le compte (ou identifie l'existant) et envoie le code.</summary>
     private static async Task<IResult> RegisterAsync(
@@ -204,6 +229,10 @@ public static class SellerRegistrationEndpoints
     public sealed record SellerVerifyResponse(Guid SellerId, Guid UserId);
 
     /// <summary>Demande de réinitialisation : juste l'e-mail.</summary>
+    public sealed record SellerResendRequest(string Email);
+
+    public sealed record SellerResendResponse(Guid? UserId);
+
     public sealed record SellerForgotRequest(string Email);
 
     /// <summary>Réinitialisation : e-mail + code reçu + nouveau mot de passe.</summary>

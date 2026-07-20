@@ -40,6 +40,15 @@ internal sealed class VerifyEmailCodeCommandHandler : ICommandHandler<VerifyEmai
             return result;
         }
 
+        // La confirmation de l'e-mail ACTIVE le compte en libre-service : c'est
+        // l'instant où l'on sait que l'adresse est réelle. Tant qu'il n'a pas
+        // confirmé, le compte reste PendingVerification et ne peut pas se connecter.
+        // Idempotent : Approve() n'est appelé que sur un compte encore en attente.
+        if (user.Status == UserStatus.PendingVerification)
+        {
+            user.Approve();
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }

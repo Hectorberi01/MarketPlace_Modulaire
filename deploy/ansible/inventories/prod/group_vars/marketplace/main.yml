@@ -51,7 +51,11 @@ fedapay_enable_payouts: false
 # Le domaine de email_from DOIT être vérifié chez Resend (SPF + DKIM), sinon
 # les envois échouent en 403 (le démarrage, lui, passe). Ajuste si ton domaine
 # vérifié n'est pas hba-express.org. resend_api_key → vault.
-email_from: "no-reply@hba-express.org"
+# Expéditeur : le DOMAINE doit être « Verified » chez Resend (compte de resend_api_key).
+# Aligné sur le domaine vérifié updates.hbatechettrade.com (le même que staging) — car
+# hba-express.org n'est PAS vérifié dans ce compte (Resend renvoyait 403). Pour repasser
+# sur no-reply@hba-express.org, il faut d'abord vérifier ce domaine dans Resend (SPF+DKIM).
+email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
 email_app_base_url: "https://hba-express.org"
 
 # Amorçage du 1er admin : compte créé au 1er démarrage (admin_password → vault).
