@@ -7,6 +7,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.AcceptTerms;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Identity.Application.Users.Commands.DeleteAccount;
+using Marketplace.Modules.Identity.Application.Users.Commands.Mfa;
 using Marketplace.Modules.Disputes.Application.Disputes;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
@@ -28,6 +29,9 @@ public sealed record MobileDeviceUnregisterRequest(string Token);
 /// téléphone déverrouillé laissé sans surveillance ne doit pas suffire à l'exécuter.
 /// </summary>
 public sealed record DeleteAccountRequest(string Password);
+
+/// <summary>Corps d'une action MFA nécessitant un code TOTP (confirmation / désactivation).</summary>
+public sealed record MfaCodeRequest(string Code);
 
 /// <summary>BFF Mobile — compte, favoris et notifications (scopés au jeton).</summary>
 public static class MobileAccountEndpoints
@@ -63,6 +67,11 @@ public static class MobileAccountEndpoints
         mobile.MapDelete("/account/payment-methods/{id:guid}", DeletePaymentMethodAsync);
         mobile.MapPut("/account/payment-methods/{id:guid}/default", SetDefaultPaymentMethodAsync);
 
+        // Double authentification (TOTP) — activer / confirmer / désactiver.
+        mobile.MapPost("/account/me/mfa/setup", MfaSetupAsync);
+        mobile.MapPost("/account/me/mfa/confirm", MfaConfirmAsync);
+        mobile.MapPost("/account/me/mfa/disable", MfaDisableAsync);
+
         // Préférences de notification et enregistrement de token push (FCM/APNs) :
         // capacités Notifications à exposer (NotificationPreference + device tokens).
         mobile.MapPut("/notifications/preferences", () => MobileBff.NotImplemented("notifications.preferences"));
@@ -71,6 +80,24 @@ public static class MobileAccountEndpoints
 
         return app;
     }
+
+    /// <summary>Démarre la configuration MFA : renvoie le secret TOTP + l'URI otpauth (QR).</summary>
+    private static async Task<IResult> MfaSetupAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new BeginMfaSetupCommand(userId), ct)).Match(r => Results.Ok(r));
+
+    /// <summary>Confirme l'activation MFA avec un premier code TOTP.</summary>
+    private static async Task<IResult> MfaConfirmAsync(ClaimsPrincipal user, MfaCodeRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new ConfirmMfaCommand(userId, request.Code), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Désactive la MFA après vérification d'un code TOTP valide.</summary>
+    private static async Task<IResult> MfaDisableAsync(ClaimsPrincipal user, MfaCodeRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new DisableMfaCommand(userId, request.Code), ct)).Match(() => Results.NoContent());
 
     /// <summary>
     /// SUPPRESSION DU COMPTE (Apple Guideline 5.1.1(v)).
