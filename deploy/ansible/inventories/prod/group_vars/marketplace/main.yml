@@ -58,4 +58,19 @@ email_app_base_url: "https://hba-express.org"
 admin_email: "hector.adjakpa@hbatechettrade.com"
 
 
+# ── Terminal web (shell de l'hôte) — ACTIVÉ en prod ──────────────────────────
+# TRÈS SENSIBLE. Le rôle échoue volontairement tant que les DEUX verrous ne sont
+# pas dans le VAULT prod (pas d'exposition nue) :
+#   terminal_allowed_ips      : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
+#   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB admin '…')
+#   terminal_ssh_private_key  : la clé privée wetty (paire de terminal_ssh_public_key)
+# DNS REQUIS : terminal.hba-express.org → 79.137.35.129 (IP du VPS).
+enable_web_terminal: true
+terminal_subdomain: "terminal"
+# Le VPS OVH écoute le SSH sur 8022 et n'autorise pas root : wetty se connecte en
+# « ubuntu » (shell sudo-capable). La clé publique ci-dessous est ajoutée aux
+# authorized_keys de cet utilisateur par le rôle.
+terminal_ssh_user: "ubuntu"
+terminal_ssh_port: "8022"
+
 terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
