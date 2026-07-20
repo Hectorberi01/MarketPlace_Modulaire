@@ -98,6 +98,16 @@
   register: compose_up
   changed_when: true
 
+# La config STATIQUE de Traefik (traefik.<env>.yml : entrypoints, metrics :8082) n'est
+# relue qu'à la RECRÉATION du conteneur — un « up -d » ne suffit pas quand seul le
+# fichier bind-monté a changé. On recrée donc Traefik explicitement, sinon les
+# métriques Prometheus (dashboard Traefik) restent à « No data ».
+- name: Recréer Traefik (recharge sa config statique — metrics, entrypoints)
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} up -d --no-build --force-recreate traefik"
+    chdir: "{{ app_dir }}"
+  changed_when: true
+
 - name: Statut des conteneurs
   ansible.builtin.command:
     cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} ps"

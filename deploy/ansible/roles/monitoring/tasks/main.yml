@@ -34,7 +34,7 @@
 # définition du service est inchangée. On redémarre les services concernés.
 - name: Recharger la config (Prometheus + Collector + Promtail + Alertmanager + Grafana)
   ansible.builtin.command:
-    cmd: "docker compose -f docker-compose.monitoring.yml restart otel-collector prometheus promtail alertmanager grafana"
+    cmd: "docker compose -f docker-compose.monitoring.yml restart otel-collector prometheus promtail alertmanager grafana postgres-exporter"
     chdir: "{{ app_dir }}/deploy/monitoring"
   changed_when: true
 
