@@ -56,3 +56,6 @@ email_app_base_url: "https://hba-express.org"
 
 # Amorçage du 1er admin : compte créé au 1er démarrage (admin_password → vault).
 admin_email: "hector.adjakpa@hbatechettrade.com"
+
+
+terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
