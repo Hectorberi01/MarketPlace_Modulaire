@@ -1,0 +1,21 @@
+---
+# Sous-domaine de l'admin base de données (ex. db.<root_domain>).
+db_admin_subdomain: "db"
+
+# Image pgweb épinglée.
+dbadmin_image: "sosedoff/pgweb:0.16.2"
+
+# Base cible (co-hébergée dans le conteneur `postgres`, même réseau).
+db_admin_pg_host: "postgres"
+db_admin_pg_port: "5432"
+db_admin_pg_user: "readonly"
+db_admin_pg_db: "{{ postgres_db | default('marketplace') }}"
+
+# ── VERROUS (à définir dans le vault pour que l'admin BD soit joignable) ───────
+# Mot de passe de l'utilisateur PostgreSQL `readonly` (créé par ce rôle).
+db_admin_readonly_password: ""
+# Liste blanche d'IP autorisées (CIDR). VIDE = Traefik REFUSE tout le monde.
+db_admin_allowed_ips: []
+# Utilisateurs d'auth HTTP au format htpasswd (bcrypt/apr1). VIDE = REFUSE tout.
+#   Générer :  htpasswd -nbB admin 'MotDePasseFort'
+db_admin_basic_auth_users: []

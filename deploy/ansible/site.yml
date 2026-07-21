@@ -34,3 +34,6 @@
     - role: webterminal
       tags: [webterminal]
       when: enable_web_terminal | default(false)
+    - role: dbadmin
+      tags: [dbadmin]
+      when: enable_db_admin | default(false)

@@ -1,0 +1,74 @@
+---
+# Admin base de données (pgweb → PostgreSQL co-hébergé, LECTURE SEULE). Gated par
+# enable_db_admin + tag dbadmin. Exécuté APRÈS le rôle marketplace (réseau Traefik,
+# conteneur postgres démarré, deploy/ synchronisé).
+#
+# ⚠️ Sécurité (triple verrou) :
+#   1. utilisateur PostgreSQL `readonly` (pg_read_all_data → SELECT partout) ;
+#   2. pgweb --readonly + --lock-session (connexion figée) ;
+#   3. Traefik dbadmin-guard : liste blanche d'IP + auth HTTP (deny-by-default).
+
+- name: Garde-fou — refuser l'activation sans verrous configurés
+  ansible.builtin.fail:
+    msg: >-
+      enable_db_admin=true mais un verrou manque. Requis (vault/group_vars) :
+      db_admin_allowed_ips (liste blanche IP), db_admin_basic_auth_users (htpasswd),
+      db_admin_readonly_password (mot de passe du rôle readonly, sans " ni $).
+  when: >-
+    (db_admin_allowed_ips | default([]) | length == 0) or
+    (db_admin_basic_auth_users | default([]) | length == 0) or
+    (db_admin_readonly_password | default('') | trim | length == 0)
+
+# --- Utilisateur PostgreSQL en lecture seule -------------------------------
+# Le mot de passe transite par une variable d'environnement ($RO_PW) puis par la
+# variable psql :'ro_pw' (échappement SQL sûr) → jamais concaténé dans le SQL.
+- name: Vérifier si le rôle readonly existe déjà
+  ansible.builtin.shell:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+      exec -T postgres psql -U {{ postgres_user | default('postgres') }} -d {{ db_admin_pg_db }}
+      -tAc "SELECT 1 FROM pg_roles WHERE rolname = '{{ db_admin_pg_user }}'"
+    chdir: "{{ app_dir }}"
+  register: dbadmin_role_exists
+  changed_when: false
+
+- name: Créer/mettre à jour le rôle readonly + accorder la lecture globale
+  ansible.builtin.shell:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+      exec -T postgres psql -U {{ postgres_user | default('postgres') }} -d {{ db_admin_pg_db }}
+      -v ON_ERROR_STOP=1 -v ro_pw="$RO_PW"
+      -c "{{ 'CREATE' if (dbadmin_role_exists.stdout | trim) != '1' else 'ALTER' }} ROLE {{ db_admin_pg_user }} WITH LOGIN PASSWORD :'ro_pw'"
+      -c "GRANT pg_read_all_data TO {{ db_admin_pg_user }}"
+    chdir: "{{ app_dir }}"
+  environment:
+    RO_PW: "{{ db_admin_readonly_password }}"
+  no_log: true
+  changed_when: true
+
+# --- Garde Traefik (IP + auth HTTP) ----------------------------------------
+- name: Générer le middleware de garde de l'admin BD (Traefik dynamic)
+  ansible.builtin.template:
+    src: dbadmin-middleware.yml.j2
+    dest: "{{ app_dir }}/deploy/traefik/dynamic-{{ target_env }}/dbadmin.yml"
+    mode: "0644"
+
+# --- Conteneur pgweb -------------------------------------------------------
+- name: Déployer l'admin base de données (pgweb, docker compose)
+  ansible.builtin.command:
+    cmd: docker compose -f deploy/dbadmin/docker-compose.yml up -d --force-recreate
+    chdir: "{{ app_dir }}"
+  environment:
+    DBADMIN_HOST: "{{ db_admin_subdomain }}.{{ root_domain }}"
+    TRAEFIK_NETWORK: "{{ traefik_network }}"
+    DBADMIN_PG_HOST: "{{ db_admin_pg_host }}"
+    DBADMIN_PG_PORT: "{{ db_admin_pg_port }}"
+    DBADMIN_PG_USER: "{{ db_admin_pg_user }}"
+    DBADMIN_PG_PASS: "{{ db_admin_readonly_password }}"
+    DBADMIN_PG_DB: "{{ db_admin_pg_db }}"
+  no_log: true
+  changed_when: true
+
+- name: URL d'accès à l'admin base de données
+  ansible.builtin.debug:
+    msg: "Base de données : https://{{ db_admin_subdomain }}.{{ root_domain }} — filtré (IP + auth HTTP), lecture seule (rôle {{ db_admin_pg_user }})."
