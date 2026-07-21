@@ -80,6 +80,7 @@ grafana_host: "grafana.marketplace-staging.hba-marketplace.fr"
 # partage le réseau « marketplace-staging-net ». Vides = monitoring désactivé.
 otel_endpoint: "http://otel-collector:4317"
 prometheus_url: "http://prometheus:9090"
+loki_url: "http://loki:3100"                       # interne → panneau Logs de la console
 # URLs navigateur (Grafana) : renseigner quand Grafana est exposé (sous-domaine).
 grafana_url: "https://grafana.marketplace-staging.hba-marketplace.fr"
 grafana_embed_url: "https://grafana.marketplace-staging.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
