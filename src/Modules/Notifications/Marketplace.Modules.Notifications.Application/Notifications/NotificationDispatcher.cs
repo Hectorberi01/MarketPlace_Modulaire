@@ -1,6 +1,7 @@
 using Marketplace.Modules.Notifications.Application.Abstractions;
 using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Notifications.Domain.Notifications;
+using Marketplace.Modules.Notifications.Domain.Preferences;
 using Microsoft.Extensions.Logging;
 
 namespace Marketplace.Modules.Notifications.Application.Notifications;
@@ -15,6 +16,7 @@ public sealed class NotificationDispatcher
     private readonly INotificationRepository _repository;
     private readonly INotificationsUnitOfWork _unitOfWork;
     private readonly IDeviceTokenRepository _deviceTokens;
+    private readonly INotificationPreferenceRepository _preferences;
     private readonly IPushSender _pushSender;
     private readonly ILogger<NotificationDispatcher> _logger;
 
@@ -22,12 +24,14 @@ public sealed class NotificationDispatcher
         INotificationRepository repository,
         INotificationsUnitOfWork unitOfWork,
         IDeviceTokenRepository deviceTokens,
+        INotificationPreferenceRepository preferences,
         IPushSender pushSender,
         ILogger<NotificationDispatcher> logger)
     {
         _repository = repository;
         _unitOfWork = unitOfWork;
         _deviceTokens = deviceTokens;
+        _preferences = preferences;
         _pushSender = pushSender;
         _logger = logger;
     }
@@ -60,6 +64,20 @@ public sealed class NotificationDispatcher
     {
         try
         {
+            // Préférence vendeur : si la catégorie de cette notification a été coupée,
+            // on n'envoie PAS le push (la notif in-app reste enregistrée par ailleurs).
+            var category = NotificationCategories.FromRelatedType(relatedType);
+            if (category is not null)
+            {
+                var pref = await _preferences.GetByUserAsync(userId, ct);
+                if (pref is not null && pref.IsMuted(category))
+                {
+                    _logger.LogInformation(
+                        "Push: user={UserId} catégorie « {Category} » coupée — push ignoré.", userId, category);
+                    return;
+                }
+            }
+
             var devices = await _deviceTokens.ListByUserAsync(userId, ct);
 
             // DIAGNOSTIC : quel adaptateur d'envoi est actif (FcmPushSender vs
