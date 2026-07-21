@@ -9,6 +9,8 @@ using Marketplace.Modules.Identity.Application.Users.Commands.ChangePassword;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Commands.AcceptTerms;
 using Marketplace.Modules.Identity.Application.Users.Commands.Mfa;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.RequestSellerClosure;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.RequestSellerReactivation;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -35,7 +37,41 @@ public static class SellerAccountEndpoints
         account.MapPost("/me/mfa/confirm", MfaConfirmAsync);
         account.MapPost("/me/mfa/disable", MfaDisableAsync);
 
+        // Cycle de vie du compte vendeur (suppression partielle / réactivation).
+        account.MapPost("/me/close", CloseAccountAsync);
+        account.MapPost("/me/request-reactivation", RequestReactivationAsync);
+
         return app;
+    }
+
+    /// <summary>
+    /// Fermeture du compte demandée par le vendeur (suppression partielle) : bascule
+    /// le compte en « fermé » et retire ses produits de la vente. La suppression
+    /// définitive relève de l'admin ; le vendeur garde un accès restreint.
+    /// </summary>
+    private static async Task<IResult> CloseAccountAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        return (await sender.Send(new RequestSellerClosureCommand(seller.Id), ct))
+            .Match(() => Results.NoContent());
+    }
+
+    /// <summary>Le vendeur (compte fermé) demande la réactivation : soumise à validation admin.</summary>
+    private static async Task<IResult> RequestReactivationAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        return (await sender.Send(new RequestSellerReactivationCommand(seller.Id), ct))
+            .Match(() => Results.NoContent());
     }
 
     /// <summary>Identité du vendeur connecté : compte Identity + boutique (null si pas encore onboardé).</summary>

@@ -7,7 +7,9 @@ public sealed class AddProductVariantCommandValidator : AbstractValidator<AddPro
     public AddProductVariantCommandValidator()
     {
         RuleFor(c => c.ProductId).NotEmpty();
-        RuleFor(c => c.Sku).NotEmpty().MaximumLength(64);
+        // Le SKU est optionnel : vide, il est généré à partir de l'ID vendeur.
+        // On ne valide la longueur que s'il est fourni.
+        RuleFor(c => c.Sku).MaximumLength(64);
         RuleFor(c => c.WeightGrams).GreaterThanOrEqualTo(0);
     }
 }

@@ -30,6 +30,11 @@ internal sealed class ProductRepository : IProductRepository
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Product>> ListBySellerForUpdateAsync(Guid sellerId, CancellationToken cancellationToken = default)
+        => await _dbContext.Products
+            .Where(p => p.SellerId == sellerId)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
         => await _dbContext.Products
             .AsNoTracking()

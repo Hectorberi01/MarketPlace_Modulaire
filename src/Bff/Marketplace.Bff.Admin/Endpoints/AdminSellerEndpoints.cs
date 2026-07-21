@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ActivateSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.AddKybDocument;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveSellerReactivation;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.DeleteSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
@@ -36,6 +38,9 @@ public static class AdminSellerEndpoints
         sellers.MapPost("/{id:guid}/kyb-documents/upload", UploadKybDocumentAsync).DisableAntiforgery();
         sellers.MapPost("/{id:guid}/activate", ActivateAsync);
         sellers.MapPost("/{id:guid}/suspend", SuspendAsync);
+        // Réactivation d'un compte fermé (approbation de la demande vendeur) + suppression définitive.
+        sellers.MapPost("/{id:guid}/reactivate", ReactivateAsync);
+        sellers.MapDelete("/{id:guid}", DeleteAsync);
         // TEST push : envoie une notification au compte du vendeur (in-app + push FCM),
         // pour vérifier que le vendeur reçoit bien les notifications sur son app.
         sellers.MapPost("/{id:guid}/test-notification", SendTestNotificationAsync);
@@ -216,6 +221,14 @@ public static class AdminSellerEndpoints
     /// <summary>Suspend le vendeur.</summary>
     private static async Task<IResult> SuspendAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new SuspendSellerCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Approuve la demande de réactivation d'un compte fermé : le vendeur redevient actif.</summary>
+    private static async Task<IResult> ReactivateAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ApproveSellerReactivationCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Suppression DÉFINITIVE du vendeur (et archivage de ses produits).</summary>
+    private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new DeleteSellerCommand(id), ct)).Match(() => Results.NoContent());
 
     /// <summary>Corps de création d'un compte vendeur par l'admin.</summary>
     /// <param name="UserId">

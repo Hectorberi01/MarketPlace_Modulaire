@@ -7,6 +7,8 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
+using Marketplace.Modules.Sellers.Contracts.IntegrationEvents;
 using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Catalog.Application.Brands.EventHandlers;
 using Marketplace.Modules.Catalog.Application.Categories.EventHandlers;
@@ -117,6 +119,12 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         services.AddScoped<IDomainEventHandler<ProductStatusChangedDomainEvent>, ProductStatusChangedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<BrandCreatedDomainEvent>, BrandCreatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<CategoryCreatedDomainEvent>, CategoryCreatedDomainEventHandler>();
+
+        // Handlers d'events d'intégration venus du module Sellers : Catalog réagit au
+        // cycle de vie du compte vendeur (fermeture -> dépublication, suppression ->
+        // archivage des produits).
+        services.AddScoped<IIntegrationEventHandler<SellerClosedIntegrationEvent>, SellerClosedProductInvalidationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerDeletedIntegrationEvent>, SellerDeletedProductPurgeHandler>();
 
         // Validators FluentValidation du module.
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);

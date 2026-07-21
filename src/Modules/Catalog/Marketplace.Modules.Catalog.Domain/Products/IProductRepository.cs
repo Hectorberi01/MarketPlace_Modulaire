@@ -16,6 +16,14 @@ public interface IProductRepository
     /// <summary>Liste les produits d'un vendeur (back-office vendeur).</summary>
     Task<IReadOnlyList<Product>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Liste TRACKÉE des produits d'un vendeur, destinée à une mutation en masse
+    /// (fermeture de compte : dépublication ; suppression : archivage). Contrairement
+    /// à <see cref="ListBySellerAsync"/> (AsNoTracking), les entités renvoyées sont
+    /// suivies par le contexte, donc leurs changements sont persistés au SaveChanges.
+    /// </summary>
+    Task<IReadOnlyList<Product>> ListBySellerForUpdateAsync(Guid sellerId, CancellationToken cancellationToken = default);
+
     /// <summary>Liste tous les produits de la plateforme (gouvernance admin).</summary>
     Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
 
