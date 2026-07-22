@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Api.RealTime;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Messaging.Application.Conversations;
 
@@ -19,6 +20,9 @@ public static class SellerMessagingEndpoints
         conv.MapGet("/", ListAsync);
         conv.MapGet("/{id:guid}/messages", MessagesAsync);
         conv.MapPost("/{id:guid}/messages", SendAsync);
+        // Upload d'une image de pièce jointe (multipart, champ « file ») : renvoie l'URL
+        // à joindre ensuite au message. Réutilise le stockage média de la plateforme.
+        conv.MapPost("/attachments", UploadAttachmentAsync).DisableAntiforgery();
 
         // Réactions et suppression (voir sémantique dans les handlers).
         conv.MapPost("/{id:guid}/messages/{messageId:guid}/reactions", ReactAsync);
@@ -97,6 +101,7 @@ public static class SellerMessagingEndpoints
             id = m.Id,
             fromSeller = m.SenderId == userId,
             body = m.Body,
+            attachments = m.Attachments,
             sentAt = m.CreatedAtUtc,
             isDeleted = m.IsDeleted,
             reactions = m.Reactions.Select(r => new { emoji = r.Emoji, count = r.Count, mine = r.Mine }),
@@ -145,6 +150,7 @@ public static class SellerMessagingEndpoints
                     id = created.Id,
                     fromSeller = true,
                     body = created.Body,
+                    attachments = created.Attachments,
                     sentAt = created.CreatedAtUtc,
                 });
             }
@@ -158,6 +164,35 @@ public static class SellerMessagingEndpoints
             body = request.Body,
             sentAt = DateTime.UtcNow,
         });
+    }
+
+    /// <summary>
+    /// Upload d'une image de pièce jointe de message. Valide le type RÉEL (déduit des
+    /// octets), stocke sur le service média, renvoie l'URL à joindre au message.
+    /// </summary>
+    private static async Task<IResult> UploadAttachmentAsync(
+        ClaimsPrincipal user, IFormFile file, IMediaStorage mediaStorage, CancellationToken ct)
+    {
+        if (SellerBff.CurrentUserId(user) is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
+        {
+            return invalid;
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+
+        var upload = await mediaStorage.UploadAsync(
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
+
+        return upload.IsFailure
+            ? Results.BadRequest(new { error = upload.Error.Message })
+            : Results.Ok(new { url = upload.Value.Url });
     }
 
     /// <summary>
