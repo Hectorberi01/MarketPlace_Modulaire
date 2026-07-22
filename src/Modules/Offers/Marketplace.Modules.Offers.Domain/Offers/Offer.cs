@@ -74,6 +74,25 @@ public sealed class Offer : AggregateRoot<OfferId>
     public OfferStatus Status { get; private set; }
     public DateTime CreatedOnUtc { get; private set; }
 
+    // ---- Remise (promo financée par le vendeur) ----------------------------------
+    //
+    // Modèle « changement de prix + prix de comparaison » : quand une remise est
+    // active, SellerPrice/CommissionAmount/BasePrice portent DÉJÀ le prix réduit, et
+    // ces trois champs mémorisent l'origine (pour restaurer et afficher le prix barré).
+    // Aucun calcul dynamique à la lecture : le client lit BasePrice (réduit) + CompareAtPrice.
+
+    /// <summary>Prix vendeur d'origine, mémorisé tant qu'une remise est active (null sinon).</summary>
+    public decimal? OriginalSellerPrice { get; private set; }
+
+    /// <summary>Prix acheteur d'origine (barré) tant qu'une remise est active (null sinon).</summary>
+    public Money? CompareAtPrice { get; private set; }
+
+    /// <summary>Fin de la promo, à titre d'affichage. Null = sans échéance.</summary>
+    public DateTime? DiscountEndsOnUtc { get; private set; }
+
+    /// <summary>Vrai si une remise est active.</summary>
+    public bool HasDiscount => CompareAtPrice is not null;
+
     public static Result<Offer> Create(
         Guid productId,
         Guid sellerId,
@@ -169,7 +188,106 @@ public sealed class Offer : AggregateRoot<OfferId>
         ProviderFeeAmount = providerFeeAmount;
         BasePrice = priceResult.Value;
 
+        // Un changement de prix manuel ANNULE toute remise en cours (le nouveau prix
+        // devient la référence).
+        OriginalSellerPrice = null;
+        CompareAtPrice = null;
+        DiscountEndsOnUtc = null;
+
         // L'événement porte le PRIX PRODUIT (payé par l'acheteur), pas le prix vendeur.
+        Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, BasePrice.Amount, BasePrice.Currency));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Applique une remise (financée par le vendeur) : le prix vendeur baisse, la
+    /// commission est recalculée sur le prix réduit, et le prix acheteur d'origine est
+    /// mémorisé comme prix barré. Ré-appliquer repart TOUJOURS du prix d'origine (pas
+    /// d'empilement de remises).
+    /// </summary>
+    public Result ApplyDiscount(
+        DiscountType type, decimal value, DateTime? endsOnUtc, decimal commissionRate, decimal providerFeeRate)
+    {
+        if (value <= 0m)
+        {
+            return Result.Failure(Error.Validation("offers.discount.value_invalid", "La remise doit être strictement positive."));
+        }
+
+        if (type == DiscountType.Percentage && value >= 100m)
+        {
+            return Result.Failure(Error.Validation("offers.discount.percentage_invalid", "Le pourcentage doit être inférieur à 100."));
+        }
+
+        if (endsOnUtc is { } end && end <= DateTime.UtcNow)
+        {
+            return Result.Failure(Error.Validation("offers.discount.end_past", "La date de fin doit être dans le futur."));
+        }
+
+        // On repart toujours du prix d'origine, jamais du prix déjà réduit.
+        var reference = OriginalSellerPrice ?? SellerPrice;
+
+        var discounted = type == DiscountType.Percentage
+            ? Math.Round(reference * (1m - value / 100m))
+            : reference - Math.Round(value);
+
+        if (discounted <= 0m || discounted >= reference)
+        {
+            return Result.Failure(Error.Validation(
+                "offers.discount.result_invalid",
+                "La remise doit produire un prix réduit strictement positif et inférieur au prix d'origine."));
+        }
+
+        var (_, _, referenceBuyerPrice) = ComputeBreakdown(reference, commissionRate, providerFeeRate);
+        var compareAt = Money.Create(referenceBuyerPrice, BasePrice.Currency);
+        if (compareAt.IsFailure)
+        {
+            return Result.Failure(compareAt.Error);
+        }
+
+        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(discounted, commissionRate, providerFeeRate);
+        var newPrice = Money.Create(productPrice, BasePrice.Currency);
+        if (newPrice.IsFailure)
+        {
+            return Result.Failure(newPrice.Error);
+        }
+
+        OriginalSellerPrice = reference;
+        CompareAtPrice = compareAt.Value;
+        DiscountEndsOnUtc = endsOnUtc;
+
+        SellerPrice = discounted;
+        CommissionAmount = commissionAmount;
+        ProviderFeeAmount = providerFeeAmount;
+        BasePrice = newPrice.Value;
+
+        Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, BasePrice.Amount, BasePrice.Currency));
+        return Result.Success();
+    }
+
+    /// <summary>Retire la remise : restaure le prix vendeur d'origine (et le prix acheteur).</summary>
+    public Result RemoveDiscount(decimal commissionRate, decimal providerFeeRate)
+    {
+        if (OriginalSellerPrice is not { } original)
+        {
+            return Result.Success(); // pas de remise : rien à faire
+        }
+
+        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(original, commissionRate, providerFeeRate);
+        var priceResult = Money.Create(productPrice, BasePrice.Currency);
+        if (priceResult.IsFailure)
+        {
+            return Result.Failure(priceResult.Error);
+        }
+
+        SellerPrice = original;
+        CommissionAmount = commissionAmount;
+        ProviderFeeAmount = providerFeeAmount;
+        BasePrice = priceResult.Value;
+
+        OriginalSellerPrice = null;
+        CompareAtPrice = null;
+        DiscountEndsOnUtc = null;
+
         Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, BasePrice.Amount, BasePrice.Currency));
         return Result.Success();
     }

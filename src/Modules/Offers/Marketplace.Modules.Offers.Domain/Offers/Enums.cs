@@ -22,3 +22,13 @@ public enum OfferStatus
     Paused = 1,
     OutOfStock = 2
 }
+
+/// <summary>Type de remise appliquée à une mise en vente (financée par le vendeur).</summary>
+public enum DiscountType
+{
+    /// <summary>Pourcentage du prix vendeur (ex. 15 %).</summary>
+    Percentage = 0,
+
+    /// <summary>Montant fixe déduit du prix vendeur.</summary>
+    Amount = 1
+}
