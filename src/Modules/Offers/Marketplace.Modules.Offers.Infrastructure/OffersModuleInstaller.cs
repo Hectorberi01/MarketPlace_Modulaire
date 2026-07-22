@@ -67,5 +67,8 @@ public sealed class OffersModuleInstaller : IModuleInstaller
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
         services.AddOutboxProcessor<OffersDbContext>();
+
+        // Retire automatiquement les remises échues (date de fin dépassée).
+        services.AddHostedService<DiscountExpiryService>();
     }
 }

@@ -36,4 +36,10 @@ internal sealed class OfferRepository : IOfferRepository
 
     public async Task<IReadOnlyList<Offer>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
         => await _dbContext.Offers.Where(o => o.SellerId == sellerId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Offer>> ListExpiredDiscountsAsync(DateTime nowUtc, int take, CancellationToken cancellationToken = default)
+        => await _dbContext.Offers
+            .Where(o => o.OriginalSellerPrice != null && o.DiscountEndsOnUtc != null && o.DiscountEndsOnUtc <= nowUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 }
