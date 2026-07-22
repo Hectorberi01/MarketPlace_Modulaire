@@ -91,3 +91,12 @@ terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDH
 # DNS REQUIS : db.hba-express.org → 79.137.35.129 (IP du VPS).
 enable_db_admin: true
 db_admin_subdomain: "db"
+
+# ── Fail2ban — durcissement contre le brute-force LENT ───────────────────────
+# Un attaquant qui espace ses tentatives (~2 toutes les ~12 min) passait sous le
+# radar : avec findtime=10m / maxretry=4, le seuil n'était jamais atteint → 0 ban
+# malgré 114 échecs SSH constatés. On élargit la fenêtre d'observation, on abaisse
+# la tolérance et on allonge le bannissement.
+fail2ban_findtime: "1h"
+fail2ban_bantime: "24h"
+fail2ban_sshd_maxretry: 3
