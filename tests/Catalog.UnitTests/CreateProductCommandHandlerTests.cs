@@ -26,23 +26,30 @@ public class CreateProductCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_refuse_un_slug_deja_pris()
+    public async Task Handle_deduplique_un_slug_deja_pris()
     {
-        var repository = new FakeProductRepository { SlugAlreadyExists = true };
-        var handler = new CreateProductCommandHandler(repository, new FakeUnitOfWork());
+        // Le slug de base « doublon » est déjà pris : on ne refuse plus, on suffixe.
+        var repository = new FakeProductRepository();
+        repository.ExistingSlugs.Add("doublon");
+        var unitOfWork = new FakeUnitOfWork();
+        var handler = new CreateProductCommandHandler(repository, unitOfWork);
 
         var command = new CreateProductCommand(Guid.NewGuid(), Guid.NewGuid(), "Doublon", "x");
 
         var result = await handler.Handle(command, CancellationToken.None);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("catalog.product.slug_taken");
+        result.IsSuccess.Should().BeTrue();
+        repository.Products.Should().ContainSingle();
+        repository.Products.Single().Slug.Value.Should().Be("doublon-2");
+        unitOfWork.SaveCount.Should().Be(1);
     }
 
     private sealed class FakeProductRepository : IProductRepository
     {
         public List<Product> Products { get; } = new();
-        public bool SlugAlreadyExists { get; init; }
+
+        /// Slugs considérés comme DÉJÀ pris (le handler doit alors dédupliquer).
+        public HashSet<string> ExistingSlugs { get; } = new();
 
         public Task AddAsync(Product product, CancellationToken cancellationToken = default)
         {
@@ -67,7 +74,7 @@ public class CreateProductCommandHandlerTests
             => Task.FromResult(((IReadOnlyList<Product>)Products.ToList(), Products.Count, (IReadOnlyDictionary<string, int>)new Dictionary<string, int>()));
 
         public Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
-            => Task.FromResult(SlugAlreadyExists);
+            => Task.FromResult(ExistingSlugs.Contains(slug));
 
         public void Remove(Product product) => Products.Remove(product);
     }
