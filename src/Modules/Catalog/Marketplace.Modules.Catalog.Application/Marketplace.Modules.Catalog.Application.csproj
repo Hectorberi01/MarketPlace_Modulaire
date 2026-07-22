@@ -5,6 +5,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Marketplace.Modules.Catalog.Domain\Marketplace.Modules.Catalog.Domain.csproj" />
     <ProjectReference Include="..\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <!-- Contracts d'intégration du module Sellers : Catalog réagit à la fermeture /
+         suppression d'un vendeur (retrait / purge de ses produits). -->
+    <ProjectReference Include="..\..\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
   </ItemGroup>

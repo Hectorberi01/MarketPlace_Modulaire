@@ -87,6 +87,10 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DiscountEndsOnUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discount_ends_on_utc");
+
                     b.Property<string>("FulfillmentType")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -94,6 +98,10 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
 
                     b.Property<int>("HandlingTime")
                         .HasColumnType("integer");
+
+                    b.Property<decimal?>("OriginalSellerPrice")
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("original_seller_price");
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
@@ -158,8 +166,32 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
                                 .HasForeignKey("OfferId");
                         });
 
+                    b.OwnsOne("Marketplace.BuildingBlocks.Domain.Primitives.Money", "CompareAtPrice", b1 =>
+                        {
+                            b1.Property<Guid>("OfferId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("compare_at_amount");
+
+                            b1.Property<string>("Currency")
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("compare_at_currency");
+
+                            b1.HasKey("OfferId");
+
+                            b1.ToTable("offers", "offers");
+
+                            b1.WithOwner()
+                                .HasForeignKey("OfferId");
+                        });
+
                     b.Navigation("BasePrice")
                         .IsRequired();
+
+                    b.Navigation("CompareAtPrice");
                 });
 #pragma warning restore 612, 618
         }

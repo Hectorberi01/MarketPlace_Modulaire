@@ -1,4 +1,5 @@
 using FluentValidation;
+using Marketplace.Modules.Offers.Domain.Offers;
 
 namespace Marketplace.Modules.Offers.Application.Offers.Commands.CreateOffer;
 
@@ -15,9 +16,14 @@ public sealed class CreateOfferCommandValidator : AbstractValidator<CreateOfferC
         RuleFor(c => c.SellerPrice).GreaterThan(0);
         RuleFor(c => c.ShipFromLocationId).NotEmpty();
         RuleFor(c => c.HandlingTime).GreaterThanOrEqualTo(0);
-        RuleFor(c => c.Condition).Must(v => v is "New" or "Used" or "Refurbished")
+        // Insensible à la casse, comme le fait le handler (Enum.TryParse ignoreCase).
+        // Le validator était strict sur la casse : l'app envoie « new » / « fbs » en
+        // minuscules, ce qui était refusé AVANT même d'atteindre le handler.
+        RuleFor(c => c.Condition)
+            .Must(v => Enum.TryParse<OfferCondition>(v, ignoreCase: true, out _))
             .WithMessage("Condition invalide (New, Used, Refurbished).");
-        RuleFor(c => c.FulfillmentType).Must(v => v is "Fbs" or "Fbp")
+        RuleFor(c => c.FulfillmentType)
+            .Must(v => Enum.TryParse<FulfillmentType>(v, ignoreCase: true, out _))
             .WithMessage("Mode de fulfillment invalide (Fbs, Fbp).");
     }
 }

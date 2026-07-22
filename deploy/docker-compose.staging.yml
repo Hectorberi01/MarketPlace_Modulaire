@@ -335,6 +335,8 @@ services:
       Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
       Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
       Monitoring__PortainerUrl: "${PORTAINER_URL:-}"
+      # Logs des conteneurs (panneau « Logs » de la page Système) via l'API Loki.
+      Monitoring__LokiUrl: "${LOKI_URL:-}"
     depends_on:
       api:
         condition: service_healthy

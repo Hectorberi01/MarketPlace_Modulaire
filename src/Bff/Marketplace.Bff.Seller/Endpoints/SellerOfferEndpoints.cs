@@ -4,7 +4,9 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Sellers.Contracts;
+using Marketplace.Modules.Offers.Application.Offers.Commands.ApplyOfferDiscount;
 using Marketplace.Modules.Offers.Application.Offers.Commands.ChangeOfferPrice;
+using Marketplace.Modules.Offers.Application.Offers.Commands.RemoveOfferDiscount;
 using Marketplace.Modules.Offers.Application.Offers.Commands.ChangeOfferStatus;
 using Marketplace.Modules.Offers.Application.Offers.Commands.CreateOffer;
 using Marketplace.Modules.Offers.Application.Offers.Commands.SetHandlingTime;
@@ -28,6 +30,9 @@ public static class SellerOfferEndpoints
         offers.MapPatch("/{id:guid}/price", ChangePriceAsync);
         offers.MapPatch("/{id:guid}/status", ChangeStatusAsync);
         offers.MapPatch("/{id:guid}/handling-time", SetHandlingTimeAsync);
+        // Remise (promo vendeur) : appliquer / retirer.
+        offers.MapPost("/{id:guid}/discount", ApplyDiscountAsync);
+        offers.MapDelete("/{id:guid}/discount", RemoveDiscountAsync);
 
         return app;
     }
@@ -109,7 +114,8 @@ public static class SellerOfferEndpoints
             names.TryGetValue(o.ProductId, out var name) ? name : "Produit introuvable",
             o.SellerId, o.Sku, o.BasePriceAmount, o.Currency, o.Condition, o.FulfillmentType,
             o.ShipFromLocationId, o.HandlingTime, o.Status,
-            o.SellerPrice, o.CommissionAmount, o.ProviderFeeAmount, o.ProductPrice)).ToList();
+            o.SellerPrice, o.CommissionAmount, o.ProviderFeeAmount, o.ProductPrice,
+            o.CompareAtAmount, o.DiscountEndsOnUtc)).ToList();
     }
 
     private static async Task<IResult> CreateAsync(ClaimsPrincipal user, CreateOfferRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
@@ -138,6 +144,14 @@ public static class SellerOfferEndpoints
     private static async Task<IResult> SetHandlingTimeAsync(ClaimsPrincipal user, Guid id, HandlingTimeRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct,
             () => sender.Send(new SetHandlingTimeCommand(id, request.HandlingTime), ct));
+
+    private static async Task<IResult> ApplyDiscountAsync(ClaimsPrincipal user, Guid id, DiscountRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new ApplyOfferDiscountCommand(id, request.Type, request.Value, request.EndsOnUtc), ct));
+
+    private static async Task<IResult> RemoveDiscountAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new RemoveOfferDiscountCommand(id), ct));
 
     /// <summary>Résout le vendeur, vérifie la propriété de l'offre, puis exécute la commande.</summary>
     private static async Task<IResult> GuardAsync(
@@ -179,7 +193,9 @@ public static class SellerOfferEndpoints
         decimal SellerPrice,
         decimal CommissionAmount,
         decimal ProviderFeeAmount,
-        decimal ProductPrice);
+        decimal ProductPrice,
+        decimal? CompareAtAmount,
+        DateTime? DiscountEndsOnUtc);
 
     public sealed record CreateOfferRequest(
         Guid ProductId, string Sku, decimal SellerPrice, string Currency, string Condition,
@@ -188,4 +204,5 @@ public static class SellerOfferEndpoints
     public sealed record PriceRequest(decimal SellerPrice);
     public sealed record StatusRequest(string Status);
     public sealed record HandlingTimeRequest(int HandlingTime);
+    public sealed record DiscountRequest(string Type, decimal Value, DateTime? EndsOnUtc);
 }

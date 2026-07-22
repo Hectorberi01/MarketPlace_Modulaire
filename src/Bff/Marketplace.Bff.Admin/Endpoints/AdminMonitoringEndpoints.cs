@@ -28,6 +28,8 @@ public static class AdminMonitoringEndpoints
         monitoring.MapGet("/containers", GetContainersAsync);
         monitoring.MapGet("/config", GetConfigAsync);
         monitoring.MapGet("/env", GetConfigViewAsync);
+        monitoring.MapGet("/logs/sources", GetLogSourcesAsync);
+        monitoring.MapGet("/logs", GetLogsAsync);
         return app;
     }
 
@@ -97,7 +99,8 @@ public static class AdminMonitoringEndpoints
         {
             grafanaUrl = config["Monitoring:GrafanaUrl"],
             grafanaEmbedUrl = config["Monitoring:GrafanaEmbedUrl"],
-            portainerUrl = config["Monitoring:PortainerUrl"]
+            portainerUrl = config["Monitoring:PortainerUrl"],
+            logsAvailable = !string.IsNullOrWhiteSpace(config["Monitoring:LokiUrl"])
         });
 
     // Clés de config NON sensibles affichées en clair (vue lecture seule).
@@ -203,6 +206,213 @@ public static class AdminMonitoringEndpoints
             entries.Add(new { key, value = string.IsNullOrWhiteSpace(config[key]) ? "non défini" : "défini", sensitive = true });
         }
         return Results.Ok(entries);
+    }
+
+    // ---- Logs (Loki) ----
+
+    /// <summary>
+    /// Liste des sources de logs (valeurs du label « service » de Loki ; repli sur
+    /// « container »). Alimente le menu déroulant du panneau Logs de la console.
+    /// </summary>
+    private static async Task<IResult> GetLogSourcesAsync(
+        IHttpClientFactory httpFactory, IConfiguration config, CancellationToken ct)
+    {
+        var lokiUrl = config["Monitoring:LokiUrl"];
+        if (string.IsNullOrWhiteSpace(lokiUrl))
+        {
+            return Results.Ok(new { configured = false, label = "service", sources = Array.Empty<string>() });
+        }
+
+        var client = httpFactory.CreateClient(HttpClientName);
+        var baseUrl = lokiUrl.TrimEnd('/');
+        var now = DateTimeOffset.UtcNow;
+        var start = now.AddHours(-6);
+
+        var label = "service";
+        var sources = await LokiLabelValuesAsync(client, baseUrl, label, start, now, ct);
+        if (sources.Count == 0)
+        {
+            label = "container";
+            sources = await LokiLabelValuesAsync(client, baseUrl, label, start, now, ct);
+        }
+
+        return Results.Ok(new { configured = true, label, sources });
+    }
+
+    /// <summary>
+    /// Lignes de logs d'un conteneur/service via l'API Loki (query_range). Lecture
+    /// seule. Filtres : niveau (label « level ») et recherche plein-texte (|=).
+    /// </summary>
+    private static async Task<IResult> GetLogsAsync(
+        IHttpClientFactory httpFactory, IConfiguration config,
+        string? target, string? label, string? level, string? q, int? minutes, int? limit,
+        CancellationToken ct)
+    {
+        var lokiUrl = config["Monitoring:LokiUrl"];
+        if (string.IsNullOrWhiteSpace(lokiUrl))
+        {
+            return Results.Ok(new { configured = false, lines = Array.Empty<object>() });
+        }
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return Results.Ok(new { configured = true, lines = Array.Empty<object>() });
+        }
+
+        var client = httpFactory.CreateClient(HttpClientName);
+        var baseUrl = lokiUrl.TrimEnd('/');
+        var now = DateTimeOffset.UtcNow;
+        var start = now.AddMinutes(-Math.Clamp(minutes ?? 60, 1, 1440));
+        var take = Math.Clamp(limit ?? 300, 1, 1000);
+
+        // Sélecteur de flux : label imposé (service|container), valeur échappée.
+        var labelKey = label == "container" ? "container" : "service";
+        var selector = $"{labelKey}=\"{EscapeLabelValue(target)}\"";
+        if (!string.IsNullOrWhiteSpace(level) && !level.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            selector += $", level=\"{EscapeLabelValue(level)}\"";
+        }
+        var query = "{" + selector + "}";
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            query += $" |= \"{EscapeLabelValue(q)}\"";
+        }
+
+        var lines = await LokiQueryRangeAsync(client, baseUrl, query, start, now, take, ct);
+        return Results.Ok(new { configured = true, query, count = lines.Count, lines });
+    }
+
+    /// <summary>Échappe une valeur pour l'insérer dans une chaîne LogQL entre guillemets.</summary>
+    private static string EscapeLabelValue(string value)
+        => value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ");
+
+    /// <summary>Loki : valeurs distinctes d'un label sur la fenêtre donnée (triées).</summary>
+    private static async Task<List<string>> LokiLabelValuesAsync(
+        HttpClient client, string baseUrl, string label, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
+    {
+        var result = new List<string>();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            var url = $"{baseUrl}/loki/api/v1/label/{label}/values" +
+                      $"?start={start.ToUnixTimeMilliseconds()}000000&end={end.ToUnixTimeMilliseconds()}000000";
+            using var resp = await client.GetAsync(url, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return result;
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in data.EnumerateArray())
+                {
+                    var s = v.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        result.Add(s);
+                    }
+                }
+            }
+            result.Sort(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Best-effort : Loki indisponible → liste vide (le panneau affiche « — »).
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Loki : exécute une requête LogQL (query_range, sens antichronologique) et
+    /// projette chaque ligne. Pour les logs .NET (JSON Serilog compact), on extrait
+    /// le message « @m » ; sinon on renvoie la ligne brute.
+    /// </summary>
+    private static async Task<List<object>> LokiQueryRangeAsync(
+        HttpClient client, string baseUrl, string query, DateTimeOffset start, DateTimeOffset end, int limit, CancellationToken ct)
+    {
+        var buffer = new List<(long ts, object item)>();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            var url = $"{baseUrl}/loki/api/v1/query_range?query={Uri.EscapeDataString(query)}" +
+                      $"&start={start.ToUnixTimeMilliseconds()}000000&end={end.ToUnixTimeMilliseconds()}000000" +
+                      $"&limit={limit}&direction=backward";
+            using var resp = await client.GetAsync(url, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return new List<object>();
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
+            // { data: { result: [ { stream: {labels}, values: [ [ "<ns>", "<line>" ], … ] } ] } }
+            foreach (var series in doc.RootElement.GetProperty("data").GetProperty("result").EnumerateArray())
+            {
+                var labels = series.GetProperty("stream");
+                var container = labels.TryGetProperty("container", out var c) ? c.GetString() : null;
+                var labelLevel = labels.TryGetProperty("level", out var l) ? l.GetString() : null;
+                var std = labels.TryGetProperty("stream", out var st) ? st.GetString() : null;
+
+                foreach (var val in series.GetProperty("values").EnumerateArray())
+                {
+                    if (!long.TryParse(val[0].GetString(), out var tsNs))
+                    {
+                        continue;
+                    }
+                    var raw = val[1].GetString() ?? string.Empty;
+                    var (message, parsedLevel) = ExtractMessage(raw);
+                    buffer.Add((tsNs, new
+                    {
+                        ts = DateTimeOffset.FromUnixTimeMilliseconds(tsNs / 1_000_000).ToString("o"),
+                        level = labelLevel ?? parsedLevel,
+                        container,
+                        stream = std,
+                        message,
+                        raw
+                    }));
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort : ne jamais faire échouer la page pour un souci de logs.
+        }
+
+        return buffer.OrderByDescending(x => x.ts).Take(limit).Select(x => x.item).ToList();
+    }
+
+    /// <summary>
+    /// Extrait un message lisible d'une ligne. Logs .NET = JSON compact Serilog
+    /// (CLEF) : clé « @m » (message rendu) ou « @mt » (template), « @l » (niveau ;
+    /// absent pour Information). Sinon, on renvoie la ligne telle quelle.
+    /// </summary>
+    private static (string message, string? level) ExtractMessage(string raw)
+    {
+        var trimmed = raw.TrimStart();
+        if (trimmed.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var m = root.TryGetProperty("@m", out var mp) ? mp.GetString()
+                      : root.TryGetProperty("@mt", out var mt) ? mt.GetString()
+                      : null;
+                var lvl = root.TryGetProperty("@l", out var lp) ? lp.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(m))
+                {
+                    return (m!, lvl);
+                }
+            }
+            catch
+            {
+                // Pas du JSON valide → ligne brute.
+            }
+        }
+        return (raw, null);
     }
 
     // ---- Helpers ----

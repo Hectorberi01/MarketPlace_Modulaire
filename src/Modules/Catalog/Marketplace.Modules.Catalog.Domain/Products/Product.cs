@@ -385,6 +385,24 @@ public sealed class Product : AggregateRoot<ProductId>
     }
 
     /// <summary>
+    /// Dépublie un produit actif (Active -> Draft) : il est retiré de la vente mais
+    /// reste éditable et republiable d'un geste. Utilisé quand le vendeur ferme son
+    /// compte (retrait réversible, contrairement à l'archivage terminal). Sans effet
+    /// sur un produit déjà en brouillon ou archivé.
+    /// </summary>
+    public Result Unpublish()
+    {
+        if (Status != ProductStatus.Active)
+        {
+            return Result.Success();
+        }
+
+        Status = ProductStatus.Draft;
+        Raise(new ProductStatusChangedDomainEvent(Id.Value, Status.ToString()));
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Met à jour les champs descriptifs du produit. Le slug est recalculé à
     /// partir du nouveau nom ; l'unicité éventuelle est vérifiée par l'Application.
     /// Ne touche ni aux variantes ni aux médias (gérés par leurs propres opérations).

@@ -20,5 +20,7 @@ internal static class OfferMapper
         offer.SellerPrice,
         offer.CommissionAmount,
         offer.ProviderFeeAmount,
-        offer.BasePrice.Amount);
+        offer.BasePrice.Amount,
+        offer.CompareAtPrice?.Amount,
+        offer.DiscountEndsOnUtc);
 }

@@ -16,6 +16,7 @@ using Marketplace.Modules.Notifications.Application.Emails;
 using Marketplace.Modules.Notifications.Application.Notifications.Queries;
 using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Notifications.Domain.Notifications;
+using Marketplace.Modules.Notifications.Domain.Preferences;
 using Marketplace.Modules.Notifications.Infrastructure.Persistence;
 using Marketplace.Modules.Notifications.Infrastructure.Email;
 using Marketplace.Modules.Notifications.Infrastructure.Push;
@@ -49,6 +50,7 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
 
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
+        services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
         services.AddScoped<NotificationDispatcher>();
 
         // Push (FCM) : si un compte de service Firebase est configuré, on branche

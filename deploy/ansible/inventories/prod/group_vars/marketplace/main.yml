@@ -29,6 +29,7 @@ enable_monitoring: true
 grafana_host: "grafana.hba-express.org"
 otel_endpoint: "http://otel-collector:4317"
 prometheus_url: "http://prometheus:9090"          # interne (réseau Docker) → KPIs live
+loki_url: "http://loki:3100"                       # interne → panneau Logs de la console
 grafana_url: "https://grafana.hba-express.org"     # navigateur (iframe)
 grafana_embed_url: "https://grafana.hba-express.org/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
 

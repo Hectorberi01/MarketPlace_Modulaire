@@ -56,6 +56,20 @@ enable_ufw: false
 enable_web_terminal: true
 terminal_subdomain: "terminal"
 
+# ── Admin base de données (pgweb, LECTURE SEULE) — DÉSACTIVÉ par défaut ───────
+#   Explorateur web des tables + éditeur SQL SELECT. Trois verrous :
+#   1) rôle PostgreSQL `readonly` (créé par le rôle Ansible) — SELECT partout ;
+#   2) pgweb --readonly + --lock-session ;
+#   3) Traefik : liste blanche d'IP + auth HTTP (deny-all si vide).
+#   À passer à true qu'APRÈS avoir mis dans le VAULT :
+#     db_admin_readonly_password : "<mot de passe fort, sans \" ni $>"
+#     db_admin_allowed_ips       : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
+#     db_admin_basic_auth_users  : [ "admin:$apr1$…" ]         (htpasswd -nbB)
+# Sans ces trois verrous, le rôle échoue volontairement (pas d'exposition nue).
+# DNS requis : db.marketplace-staging.hba-marketplace.fr → IP du VPS.
+enable_db_admin: true
+db_admin_subdomain: "db"
+
 # --- Observabilité (stack deploy/monitoring/) ---
 # Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).
 enable_monitoring: true
@@ -66,6 +80,7 @@ grafana_host: "grafana.marketplace-staging.hba-marketplace.fr"
 # partage le réseau « marketplace-staging-net ». Vides = monitoring désactivé.
 otel_endpoint: "http://otel-collector:4317"
 prometheus_url: "http://prometheus:9090"
+loki_url: "http://loki:3100"                       # interne → panneau Logs de la console
 # URLs navigateur (Grafana) : renseigner quand Grafana est exposé (sous-domaine).
 grafana_url: "https://grafana.marketplace-staging.hba-marketplace.fr"
 grafana_embed_url: "https://grafana.marketplace-staging.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"

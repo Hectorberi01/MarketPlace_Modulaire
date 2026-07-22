@@ -25,8 +25,15 @@ internal sealed class AddProductVariantCommandHandler : ICommandHandler<AddProdu
             return Error.NotFound("catalog.product.not_found", $"Produit {command.ProductId} introuvable.");
         }
 
+        // SKU laissé vide par l'app : on le génère à partir de l'ID vendeur du
+        // produit (le vendeur n'a pas à inventer une référence unique). S'il en a
+        // saisi un, on le respecte.
+        var sku = string.IsNullOrWhiteSpace(command.Sku)
+            ? Sku.Generate(product.SellerId).Value
+            : command.Sku;
+
         var result = product.AddVariant(
-            command.Sku,
+            sku,
             command.Attributes,
             command.Barcode,
             command.WeightGrams,

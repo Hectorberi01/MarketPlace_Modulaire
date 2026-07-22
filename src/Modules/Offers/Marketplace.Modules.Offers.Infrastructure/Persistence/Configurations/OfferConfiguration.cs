@@ -38,6 +38,16 @@ internal sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.CommissionAmount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.ProviderFeeAmount).HasColumnType("numeric(18,2)").IsRequired();
 
+        // Remise (promo vendeur), toutes nullable. CompareAtPrice = prix acheteur d'origine
+        // (barré) en owned optionnel ; OriginalSellerPrice permet de restaurer.
+        builder.OwnsOne(o => o.CompareAtPrice, money =>
+        {
+            money.Property(m => m.Amount).HasColumnName("compare_at_amount").HasColumnType("numeric(18,2)");
+            money.Property(m => m.Currency).HasColumnName("compare_at_currency").HasMaxLength(3);
+        });
+        builder.Property(o => o.OriginalSellerPrice).HasColumnName("original_seller_price").HasColumnType("numeric(18,2)");
+        builder.Property(o => o.DiscountEndsOnUtc).HasColumnName("discount_ends_on_utc");
+
         builder.Property(o => o.Condition).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(o => o.FulfillmentType).HasConversion<string>().HasMaxLength(10).IsRequired();
         builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(20).IsRequired();

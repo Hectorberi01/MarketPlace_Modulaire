@@ -56,6 +56,9 @@ public class CreateProductCommandHandlerTests
         public Task<IReadOnlyList<Product>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Product>>(Products.Where(p => p.SellerId == sellerId).ToList());
 
+        public Task<IReadOnlyList<Product>> ListBySellerForUpdateAsync(Guid sellerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Product>>(Products.Where(p => p.SellerId == sellerId).ToList());
+
         public Task<IReadOnlyList<Product>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Product>>(Products.Take(take).ToList());
 

@@ -238,6 +238,69 @@ public sealed class Seller : AggregateRoot<SellerId>
         return Result.Success();
     }
 
+    /// <summary>
+    /// Fermeture demandée par le vendeur lui-même (suppression partielle). Le compte
+    /// bascule en <see cref="SellerStatus.Closed"/> : l'événement déclenche le retrait
+    /// des produits de la vente (module Catalog). Le compte n'est PAS effacé — seul
+    /// l'admin peut le supprimer définitivement.
+    /// </summary>
+    public Result RequestClosure()
+    {
+        if (Status is SellerStatus.Closed or SellerStatus.PendingReactivation)
+        {
+            return Result.Failure(Error.Conflict("sellers.seller.already_closed", "Le compte est déjà fermé."));
+        }
+
+        Status = SellerStatus.Closed;
+        Raise(new SellerClosedDomainEvent(Id.Value, UserId));
+        return Result.Success();
+    }
+
+    /// <summary>Le vendeur (compte fermé) demande la réactivation : passe en attente de validation admin.</summary>
+    public Result RequestReactivation()
+    {
+        if (Status != SellerStatus.Closed)
+        {
+            return Result.Failure(Error.Conflict("sellers.seller.not_closed", "Seul un compte fermé peut demander une réactivation."));
+        }
+
+        Status = SellerStatus.PendingReactivation;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// L'admin approuve la demande de réactivation : le compte redevient actif et
+    /// l'événement permet au Catalog de reprendre le vendeur en compte. Les produits
+    /// restés en brouillon depuis la fermeture sont republiés par le vendeur.
+    /// </summary>
+    public Result ApproveReactivation()
+    {
+        if (Status is not (SellerStatus.PendingReactivation or SellerStatus.Closed))
+        {
+            return Result.Failure(Error.Conflict("sellers.seller.no_reactivation_request", "Aucune demande de réactivation en cours."));
+        }
+
+        if (KybStatus != KybStatus.Verified)
+        {
+            return Result.Failure(Error.Conflict("sellers.seller.kyb_not_verified", "Le KYB doit être validé."));
+        }
+
+        Status = SellerStatus.Active;
+        Raise(new SellerReactivatedDomainEvent(Id.Value, UserId));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Prépare la suppression DÉFINITIVE (admin) : émet l'événement qui purge les
+    /// produits du vendeur avant que l'agrégat ne soit retiré du dépôt. À appeler
+    /// juste avant <c>Remove</c> côté Application.
+    /// </summary>
+    public Result MarkForDeletion()
+    {
+        Raise(new SellerDeletedDomainEvent(Id.Value, UserId));
+        return Result.Success();
+    }
+
     /// <summary>Met à jour la note moyenne (0 à 5), alimentée par le module Reviews.</summary>
     public Result UpdateRating(decimal rating)
     {

@@ -172,7 +172,21 @@ public sealed class CatalogDbContext : ModuleDbContext, ICatalogUnitOfWork
         // garde alors la seule trace du parent.
         var raw = property.CurrentValue ?? property.OriginalValue;
 
-        if (raw is Guid value && value != Guid.Empty)
+        // La FK « ProductId » référence Product.Id, qui est un value object
+        // fortement typé (`readonly record struct ProductId(Guid Value)`). Dans le
+        // ChangeTracker sa valeur CLR est donc un ProductId, PAS un Guid nu — ne
+        // tester que `is Guid` renvoyait toujours false, la fiche produit n'était
+        // jamais purgée après un ajout de variante/média sur un produit existant,
+        // et le cache servait 0 variante pendant tout le TTL. On accepte les deux
+        // formes par prudence (une future config pourrait exposer le Guid brut).
+        var value = raw switch
+        {
+            ProductId typed => typed.Value,
+            Guid guid => guid,
+            _ => Guid.Empty,
+        };
+
+        if (value != Guid.Empty)
         {
             productId = value;
             return true;

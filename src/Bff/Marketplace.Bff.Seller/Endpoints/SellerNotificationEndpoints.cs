@@ -3,6 +3,7 @@ using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Notifications.Application.Devices;
 using Marketplace.Modules.Notifications.Application.Notifications.Commands;
+using Marketplace.Modules.Notifications.Application.Notifications.Preferences;
 using Marketplace.Modules.Notifications.Application.Notifications.Queries;
 
 namespace Marketplace.Bff.Seller.Endpoints;
@@ -12,6 +13,9 @@ public sealed record DeviceRegisterRequest(string Token, string? Platform);
 
 /// <summary>Corps de désenregistrement d'un appareil.</summary>
 public sealed record DeviceUnregisterRequest(string Token);
+
+/// <summary>Corps de mise à jour des préférences : catégories dont le push est coupé.</summary>
+public sealed record NotificationPreferencesRequest(List<string>? MutedCategories);
 
 /// <summary>
 /// BFF Vendeur — notifications in-app. Scopées à l'utilisateur du jeton
@@ -32,9 +36,24 @@ public static class SellerNotificationEndpoints
         // Push : enregistrement/retrait du jeton d'appareil (FCM).
         notifications.MapPost("/devices", RegisterDeviceAsync);
         notifications.MapPost("/devices/unregister", UnregisterDeviceAsync);
+        // Préférences : quelles catégories de push le vendeur souhaite recevoir.
+        notifications.MapGet("/preferences", GetPreferencesAsync);
+        notifications.MapPut("/preferences", UpdatePreferencesAsync);
 
         return app;
     }
+
+    /// <summary>Préférences de notification du vendeur (état activé/coupé par catégorie).</summary>
+    private static async Task<IResult> GetPreferencesAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+        => SellerBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new GetNotificationPreferencesQuery(userId), ct)).Match(p => Results.Ok(p));
+
+    /// <summary>Met à jour les catégories de push coupées.</summary>
+    private static async Task<IResult> UpdatePreferencesAsync(ClaimsPrincipal user, NotificationPreferencesRequest request, ISender sender, CancellationToken ct)
+        => SellerBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new UpdateNotificationPreferencesCommand(userId, request.MutedCategories ?? new List<string>()), ct)).Match(() => Results.NoContent());
 
     /// <summary>Enregistre le jeton d'appareil du vendeur pour recevoir les push.</summary>
     private static async Task<IResult> RegisterDeviceAsync(ClaimsPrincipal user, DeviceRegisterRequest request, ISender sender, CancellationToken ct)
