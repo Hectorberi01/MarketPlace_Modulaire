@@ -16,4 +16,7 @@ public sealed record OfferSummary(
     decimal SellerPrice,
     decimal CommissionAmount,
     decimal ProviderFeeAmount,
-    decimal ProductPrice);
+    decimal ProductPrice,
+    // Remise : prix acheteur d'origine (barré) et fin de promo. Null si pas de remise.
+    decimal? CompareAtAmount = null,
+    DateTime? DiscountEndsOnUtc = null);
