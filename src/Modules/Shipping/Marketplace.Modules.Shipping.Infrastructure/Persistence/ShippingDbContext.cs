@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Shipping.Application.Abstractions;
+using Marketplace.Modules.Shipping.Domain.Carriers;
 using Marketplace.Modules.Shipping.Domain.Shipments;
 
 namespace Marketplace.Modules.Shipping.Infrastructure.Persistence;
@@ -21,6 +22,7 @@ public sealed class ShippingDbContext : ModuleDbContext, IShippingUnitOfWork
     }
 
     public DbSet<Shipment> Shipments => Set<Shipment>();
+    public DbSet<Carrier> Carriers => Set<Carrier>();
 
     protected override string Schema => SchemaName;
 

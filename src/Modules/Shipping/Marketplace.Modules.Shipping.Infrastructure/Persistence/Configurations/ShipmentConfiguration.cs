@@ -23,6 +23,7 @@ internal sealed class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         builder.Property(s => s.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(s => s.Carrier).HasMaxLength(100);
         builder.Property(s => s.TrackingNumber).HasMaxLength(100);
+        builder.Property(s => s.TrackingUrl).HasMaxLength(300);
         builder.Property(s => s.CreatedAtUtc).IsRequired();
         builder.Property(s => s.ShippedAtUtc);
         builder.Property(s => s.DeliveredAtUtc);

@@ -38,6 +38,9 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     public ShipmentStatus Status { get; private set; }
     public string? Carrier { get; private set; }
     public string? TrackingNumber { get; private set; }
+
+    /// <summary>Lien de suivi cliquable, dérivé du transporteur du catalogue (null si aucun modèle).</summary>
+    public string? TrackingUrl { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? ShippedAtUtc { get; private set; }
     public DateTime? DeliveredAtUtc { get; private set; }
@@ -79,7 +82,12 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         return Result.Success();
     }
 
-    public Result MarkShipped(string carrier, string trackingNumber)
+    /// <summary>
+    /// Marque « expédiée ». [trackingUrl] est le lien cliquable pré-calculé depuis le
+    /// transporteur du catalogue (facultatif : null si le transporteur n'a pas de
+    /// modèle d'URL, ou si le nom a été saisi librement).
+    /// </summary>
+    public Result MarkShipped(string carrier, string trackingNumber, string? trackingUrl = null)
     {
         if (Status is not (ShipmentStatus.Pending or ShipmentStatus.Preparing))
         {
@@ -94,6 +102,7 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         Status = ShipmentStatus.Shipped;
         Carrier = carrier.Trim();
         TrackingNumber = trackingNumber.Trim();
+        TrackingUrl = string.IsNullOrWhiteSpace(trackingUrl) ? null : trackingUrl.Trim();
         ShippedAtUtc = DateTime.UtcNow;
         Raise(new ShipmentShippedDomainEvent(Id.Value, OrderId, Carrier, TrackingNumber));
         return Result.Success();

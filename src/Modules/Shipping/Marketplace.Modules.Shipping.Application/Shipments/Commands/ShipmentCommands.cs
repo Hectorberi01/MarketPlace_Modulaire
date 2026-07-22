@@ -1,6 +1,7 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Shipping.Application.Abstractions;
+using Marketplace.Modules.Shipping.Domain.Carriers;
 using Marketplace.Modules.Shipping.Domain.Shipments;
 
 namespace Marketplace.Modules.Shipping.Application.Shipments.Commands;
@@ -8,8 +9,12 @@ namespace Marketplace.Modules.Shipping.Application.Shipments.Commands;
 /// <summary>Marque l'expédition « en préparation ».</summary>
 public sealed record MarkShipmentPreparingCommand(Guid ShipmentId) : ICommand;
 
-/// <summary>Marque l'expédition « expédiée » (transporteur + numéro de suivi).</summary>
-public sealed record MarkShipmentShippedCommand(Guid ShipmentId, string Carrier, string TrackingNumber) : ICommand;
+/// <summary>
+/// Marque l'expédition « expédiée » (transporteur + numéro de suivi). Si [CarrierId]
+/// est fourni (transporteur du catalogue), il fait AUTORITÉ : son nom remplace le
+/// texte libre et son modèle d'URL produit le lien de suivi cliquable.
+/// </summary>
+public sealed record MarkShipmentShippedCommand(Guid ShipmentId, string Carrier, string TrackingNumber, Guid? CarrierId = null) : ICommand;
 
 /// <summary>Marque l'expédition « livrée ».</summary>
 public sealed record MarkShipmentDeliveredCommand(Guid ShipmentId) : ICommand;
@@ -58,11 +63,39 @@ internal sealed class MarkShipmentPreparingCommandHandler : ShipmentCommandHandl
 
 internal sealed class MarkShipmentShippedCommandHandler : ShipmentCommandHandlerBase, ICommandHandler<MarkShipmentShippedCommand>
 {
-    public MarkShipmentShippedCommandHandler(IShipmentRepository repository, IShippingUnitOfWork unitOfWork)
-        : base(repository, unitOfWork) { }
+    private readonly ICarrierRepository _carriers;
 
-    public Task<Result> Handle(MarkShipmentShippedCommand command, CancellationToken cancellationToken)
-        => MutateAsync(command.ShipmentId, s => s.MarkShipped(command.Carrier, command.TrackingNumber), cancellationToken);
+    public MarkShipmentShippedCommandHandler(IShipmentRepository repository, IShippingUnitOfWork unitOfWork, ICarrierRepository carriers)
+        : base(repository, unitOfWork) => _carriers = carriers;
+
+    public async Task<Result> Handle(MarkShipmentShippedCommand command, CancellationToken cancellationToken)
+    {
+        var carrierName = command.Carrier;
+        string? trackingUrl = null;
+
+        // Transporteur du catalogue : il fait autorité (nom + lien de suivi).
+        if (command.CarrierId is { } carrierId)
+        {
+            var carrier = await _carriers.GetByIdAsync(new CarrierId(carrierId), cancellationToken);
+            if (carrier is null)
+            {
+                return Result.Failure(Error.NotFound("shipping.carrier.not_found", "Transporteur introuvable."));
+            }
+
+            if (!carrier.IsActive)
+            {
+                return Result.Failure(Error.Conflict("shipping.carrier.inactive", "Ce transporteur n'est plus actif."));
+            }
+
+            carrierName = carrier.Name;
+            trackingUrl = carrier.BuildTrackingUrl(command.TrackingNumber);
+        }
+
+        return await MutateAsync(
+            command.ShipmentId,
+            s => s.MarkShipped(carrierName, command.TrackingNumber, trackingUrl),
+            cancellationToken);
+    }
 }
 
 internal sealed class MarkShipmentDeliveredCommandHandler : ShipmentCommandHandlerBase, ICommandHandler<MarkShipmentDeliveredCommand>

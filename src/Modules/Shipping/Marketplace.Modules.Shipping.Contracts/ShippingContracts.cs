@@ -1,5 +1,15 @@
 namespace Marketplace.Modules.Shipping.Contracts;
 
+/// <summary>Vue publique d'un transporteur du catalogue.</summary>
+public sealed record CarrierSummary(
+    Guid Id,
+    string Name,
+    string Code,
+    string? TrackingUrlTemplate,
+    string? LogoUrl,
+    bool IsActive,
+    DateTime CreatedAtUtc);
+
 /// <summary>Ligne d'une expédition.</summary>
 public sealed record ShipmentItemSummary(string Sku, int Quantity);
 
@@ -13,6 +23,7 @@ public sealed record ShipmentSummary(
     string Status,
     string? Carrier,
     string? TrackingNumber,
+    string? TrackingUrl,
     DateTime CreatedAtUtc,
     DateTime? ShippedAtUtc,
     DateTime? DeliveredAtUtc,

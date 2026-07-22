@@ -14,6 +14,7 @@ internal static class ShipmentMapper
         s.Status.ToString(),
         s.Carrier,
         s.TrackingNumber,
+        s.TrackingUrl,
         s.CreatedAtUtc,
         s.ShippedAtUtc,
         s.DeliveredAtUtc,

@@ -9,8 +9,7 @@ public sealed class ShipmentItem : Entity<Guid>
     {
     }
 
-    internal ShipmentItem(Guid id, string sku, int quantity)
-        : base(id)
+    internal ShipmentItem(Guid id, string sku, int quantity) : base(id)
     {
         Sku = sku;
         Quantity = quantity;

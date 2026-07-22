@@ -279,6 +279,7 @@ app.MapAdminWalletEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapAdminProductEndpoints();
 app.MapAdminPlatformEndpoints();
+app.MapAdminShippingEndpoints();
 app.MapAdminMonitoringEndpoints();
 app.MapAdminRefundEndpoints();
 app.MapAdminOutboxEndpoints();

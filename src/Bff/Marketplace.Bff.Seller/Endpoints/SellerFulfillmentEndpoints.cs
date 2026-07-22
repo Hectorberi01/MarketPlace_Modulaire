@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Sellers.Contracts;
+using Marketplace.Modules.Shipping.Application.Carriers;
 using Marketplace.Modules.Shipping.Application.Shipments.Commands;
 using Marketplace.Modules.Shipping.Application.Shipments.Queries;
 using Marketplace.Modules.Shipping.Contracts;
@@ -28,8 +29,16 @@ public static class SellerFulfillmentEndpoints
         ship.MapPost("/{id:guid}/deliver", DeliverAsync);
         ship.MapPost("/{id:guid}/cancel", CancelAsync);
 
+        // Catalogue des transporteurs actifs (le vendeur choisit à l'expédition).
+        var carriers = app.MapSellerGroup("/seller/carriers", "Vendeur · Transporteurs");
+        carriers.MapGet("/", ListActiveCarriersAsync);
+
         return app;
     }
+
+    /// <summary>Transporteurs actifs proposés au vendeur (référentiel plateforme, lecture seule).</summary>
+    private static async Task<IResult> ListActiveCarriersAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListActiveCarriersQuery(), ct)).Match(c => Results.Ok(c));
 
     /// <summary>
     /// File d'exécution : toutes les expéditions de la boutique du jeton, enrichies
@@ -94,6 +103,7 @@ public static class SellerFulfillmentEndpoints
                 status = DashboardStatus(s.Status),
                 carrier = s.Carrier,
                 trackingNumber = s.TrackingNumber,
+                trackingUrl = s.TrackingUrl,
                 itemCount = s.Items.Sum(i => i.Quantity),
                 createdAt = s.CreatedAtUtc,
             });
@@ -129,7 +139,8 @@ public static class SellerFulfillmentEndpoints
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentPreparingCommand(id), ct));
 
     private static async Task<IResult> ShipAsync(ClaimsPrincipal user, Guid id, ShipRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
-        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentShippedCommand(id, request.Carrier, request.TrackingNumber), ct));
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new MarkShipmentShippedCommand(id, request.Carrier, request.TrackingNumber, request.CarrierId), ct));
 
     private static async Task<IResult> DeliverAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentDeliveredCommand(id), ct));
@@ -155,5 +166,9 @@ public static class SellerFulfillmentEndpoints
         return (await action()).Match(() => Results.NoContent());
     }
 
-    public sealed record ShipRequest(string Carrier, string TrackingNumber);
+    /// <summary>
+    /// [CarrierId] : transporteur du catalogue (recommandé — produit le lien de suivi).
+    /// [Carrier] : nom libre, repli si le catalogue n'est pas utilisé.
+    /// </summary>
+    public sealed record ShipRequest(string Carrier, string TrackingNumber, Guid? CarrierId = null);
 }

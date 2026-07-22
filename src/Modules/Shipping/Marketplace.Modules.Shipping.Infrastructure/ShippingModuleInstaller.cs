@@ -13,6 +13,7 @@ using Marketplace.Modules.Shipping.Application.Abstractions;
 using Marketplace.Modules.Shipping.Application.Shipments.Commands;
 using Marketplace.Modules.Shipping.Application.Shipments.EventHandlers;
 using Marketplace.Modules.Shipping.Contracts;
+using Marketplace.Modules.Shipping.Domain.Carriers;
 using Marketplace.Modules.Shipping.Domain.Shipments;
 using Marketplace.Modules.Shipping.Domain.Shipments.Events;
 using Marketplace.Modules.Shipping.Infrastructure.Persistence;
@@ -39,6 +40,7 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
         services.AddScoped<IShippingUnitOfWork>(sp => sp.GetRequiredService<ShippingDbContext>());
 
         services.AddScoped<IShipmentRepository, ShipmentRepository>();
+        services.AddScoped<ICarrierRepository, CarrierRepository>();
         services.AddScoped<IShippingModuleApi, ShippingModuleApi>();
 
         services.AddScoped<IDomainEventHandler<ShipmentShippedDomainEvent>, ShipmentShippedDomainEventHandler>();
