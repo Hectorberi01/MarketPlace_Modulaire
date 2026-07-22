@@ -1,5 +1,6 @@
 using MediatR;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Identity.Contracts;
@@ -9,8 +10,11 @@ using Marketplace.Modules.Identity.Application.Users.Commands.ChangePassword;
 using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Commands.AcceptTerms;
 using Marketplace.Modules.Identity.Application.Users.Commands.Mfa;
+using Marketplace.Modules.Identity.Application.Users.Commands.DeleteAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RequestSellerClosure;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RequestSellerReactivation;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.DeleteSeller;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -41,7 +45,92 @@ public static class SellerAccountEndpoints
         account.MapPost("/me/close", CloseAccountAsync);
         account.MapPost("/me/request-reactivation", RequestReactivationAsync);
 
+        // Suppression DÉFINITIVE en libre-service (exigence App Store 5.1.1(v)) :
+        // l'utilisateur initie ET confirme depuis l'app, sans passer par un admin.
+        account.MapDelete("/me", DeleteAccountAsync);
+
         return app;
+    }
+
+    /// <summary>
+    /// Suppression DÉFINITIVE du compte vendeur, en libre-service.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// Pourquoi cet endpoint existe : Apple (App Store Review 5.1.1(v)) exige qu'une
+    /// app permettant de CRÉER un compte permette aussi de le SUPPRIMER — réellement,
+    /// pas seulement le suspendre — sans devoir contacter le service client.
+    ///
+    /// Ce que l'on fait :
+    ///   1. Garde-fou buyer-friendly : on refuse si des commandes sont EN COURS (le
+    ///      vendeur doit d'abord les livrer/annuler). C'est auto-résolvable, jamais un
+    ///      « contactez le support » — Apple accepte les garde-fous, pas les murs.
+    ///   2. Mot de passe exigé (via DeleteAccountCommand) : l'action est irréversible.
+    ///   3. Anonymisation de l'identité (RGPD) + purge de la boutique et des produits.
+    ///
+    /// Les enregistrements exigés par la loi (factures, versements) restent conservés
+    /// côté serveur, détachés de toute donnée personnelle — ce qu'Apple autorise.
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> DeleteAccountAsync(
+        ClaimsPrincipal user,
+        // DELETE n'infère pas de corps en minimal-API : [FromBody] est obligatoire,
+        // sinon le démarrage échoue.
+        [FromBody] DeleteAccountRequest request,
+        ISender sender,
+        ISellerModuleApi sellers,
+        CancellationToken ct)
+    {
+        if (SellerBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        // La boutique peut être absente (compte créé, onboarding non terminé) : dans
+        // ce cas il n'y a que l'identité à supprimer.
+        var seller = await sellers.GetSellerByUserIdAsync(userId, ct);
+
+        // Garde-fou : commandes en cours (ni livrées, ni annulées). Supprimer un
+        // vendeur au milieu d'une expédition laisserait l'acheteur sans interlocuteur.
+        if (seller is not null)
+        {
+            var ordersResult = await sender.Send(new ListOrdersBySellerQuery(seller.Id), ct);
+            if (ordersResult.IsSuccess)
+            {
+                var ongoing = ordersResult.Value.Count(o =>
+                    !string.Equals(o.Status, "Delivered", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(o.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(o.Status, "Failed", StringComparison.OrdinalIgnoreCase));
+
+                if (ongoing > 0)
+                {
+                    return Results.Problem(
+                        title: "sellers.account.orders_in_progress",
+                        detail: ongoing == 1
+                            ? "Vous avez une commande en cours. Livrez-la (ou annulez-la) avant de supprimer votre compte : "
+                              + "sans compte, l'acheteur n'aurait plus d'interlocuteur."
+                            : $"Vous avez {ongoing} commandes en cours. Livrez-les (ou annulez-les) avant de supprimer votre compte : "
+                              + "sans compte, les acheteurs n'auraient plus d'interlocuteur.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+        }
+
+        // Mot de passe vérifié + identité anonymisée. Si le mot de passe est faux,
+        // rien de destructeur n'a lieu (l'échec sort ici).
+        var deleted = await sender.Send(new DeleteAccountCommand(userId, request.Password), ct);
+        if (deleted.IsFailure)
+        {
+            return deleted.Match(() => Results.NoContent());
+        }
+
+        // Identité anonymisée : on purge la boutique et ses produits. Un échec ici
+        // laisserait une boutique orpheline (PII déjà effacée) — l'admin peut nettoyer.
+        if (seller is not null)
+        {
+            await sender.Send(new DeleteSellerCommand(seller.Id), ct);
+        }
+
+        return Results.NoContent();
     }
 
     /// <summary>
@@ -215,4 +304,7 @@ public static class SellerAccountEndpoints
     public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
     public sealed record MfaCodeRequest(string Code);
     public sealed record AcceptTermsRequest(string Version);
+
+    /// <summary>Suppression définitive : le mot de passe confirme que c'est bien le titulaire.</summary>
+    public sealed record DeleteAccountRequest(string Password);
 }
