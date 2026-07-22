@@ -79,3 +79,15 @@ terminal_ssh_user: "ubuntu"
 terminal_ssh_port: "8022"
 
 terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
+
+# ── Admin base de données (pgweb, LECTURE SEULE) — ACTIVÉ en prod ─────────────
+# Sans cette activation, le rôle `dbadmin` est SAUTÉ (défaut false) : c'est
+# pourquoi db.hba-express.org n'avait aucun backend en prod.
+# Triple verrou : le rôle échoue volontairement tant que les secrets ne sont pas
+# dans le VAULT prod (pas d'exposition nue) :
+#   db_admin_allowed_ips       : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
+#   db_admin_basic_auth_users  : [ "admin:$apr1$…" ]         (htpasswd -nbB admin '…')
+#   db_admin_readonly_password : "<mot de passe fort, sans \" ni $>"
+# DNS REQUIS : db.hba-express.org → 79.137.35.129 (IP du VPS).
+enable_db_admin: true
+db_admin_subdomain: "db"
