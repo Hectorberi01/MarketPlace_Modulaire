@@ -61,22 +61,25 @@ internal sealed class CreateProductWithImagesCommandHandler
         }
         var stored = uploadResult.Value;
 
-        // 2) Création du produit.
+        // 2) Création du produit. Slug UNIQUE résolu ici : deux produits homonymes
+        //    (ou une reprise après un échec partiel de l'assistant) ne doivent pas
+        //    être bloqués — on suffixe « -2 », « -3 »… au lieu de refuser.
+        var slugResult = await ResolveUniqueSlugAsync(command.Name, cancellationToken);
+        if (slugResult.IsFailure)
+        {
+            return Result.Failure<ProductWithImagesResult>(slugResult.Error);
+        }
+
         var result = Product.Create(
             command.SellerId, command.CategoryId, command.Name, command.Description,
             command.BrandId, command.Gtin, command.Ean, command.ProductGroupId,
-            command.Attributes, command.Tags);
+            command.Attributes, command.Tags, slug: slugResult.Value);
         if (result.IsFailure)
         {
             return Result.Failure<ProductWithImagesResult>(result.Error);
         }
 
         var product = result.Value;
-
-        if (await _productRepository.SlugExistsAsync(product.Slug.Value, cancellationToken))
-        {
-            return Error.Conflict("catalog.product.slug_taken", $"Le slug « {product.Slug.Value} » existe déjà.");
-        }
 
         // 3) Association des médias (la 1re image devient principale automatiquement).
         foreach (var media in stored)
@@ -92,5 +95,41 @@ internal sealed class CreateProductWithImagesCommandHandler
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new ProductWithImagesResult(product.Id.Value, stored.Select(m => m.Url).ToList());
+    }
+
+    /// <summary>
+    /// Renvoie un slug LIBRE dérivé du nom (« base-2 », « base-3 »… si le nom est
+    /// déjà pris), pour ne jamais bloquer la création sur un homonyme.
+    /// </summary>
+    private async Task<Result<Slug>> ResolveUniqueSlugAsync(string name, CancellationToken ct)
+    {
+        var baseResult = Slug.Create(name);
+        if (baseResult.IsFailure)
+        {
+            return baseResult;
+        }
+
+        var baseValue = baseResult.Value.Value;
+        if (!await _productRepository.SlugExistsAsync(baseValue, ct))
+        {
+            return baseResult.Value;
+        }
+
+        for (var n = 2; n <= 100; n++)
+        {
+            var candidate = Slug.Create($"{baseValue}-{n}");
+            if (candidate.IsFailure)
+            {
+                return candidate;
+            }
+
+            if (!await _productRepository.SlugExistsAsync(candidate.Value.Value, ct))
+            {
+                return candidate.Value;
+            }
+        }
+
+        var suffixed = $"{baseValue}-{Guid.NewGuid():N}";
+        return Slug.Create(suffixed[..Math.Min(suffixed.Length, 200)]);
     }
 }

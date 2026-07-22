@@ -92,7 +92,11 @@ public sealed class Product : AggregateRoot<ProductId>
         string? ean = null,
         Guid? productGroupId = null,
         IReadOnlyDictionary<string, string>? attributes = null,
-        IEnumerable<string>? tags = null)
+        IEnumerable<string>? tags = null,
+        // Slug déjà résolu (dédupliqué) par l'Application. Null → dérivé du nom.
+        // Passer un slug garantit que l'événement de création porte le slug DÉFINITIF,
+        // ce qui serait faux si on le corrigeait après construction.
+        Slug? slug = null)
     {
         if (sellerId == Guid.Empty)
         {
@@ -109,10 +113,20 @@ public sealed class Product : AggregateRoot<ProductId>
             return Error.Validation("catalog.product.name_required", "Le nom du produit est obligatoire.");
         }
 
-        var slugResult = Slug.Create(name);
-        if (slugResult.IsFailure)
+        Slug productSlug;
+        if (slug is not null)
         {
-            return Result.Failure<Product>(slugResult.Error);
+            productSlug = slug;
+        }
+        else
+        {
+            var slugResult = Slug.Create(name);
+            if (slugResult.IsFailure)
+            {
+                return Result.Failure<Product>(slugResult.Error);
+            }
+
+            productSlug = slugResult.Value;
         }
 
         var product = new Product(
@@ -121,7 +135,7 @@ public sealed class Product : AggregateRoot<ProductId>
             categoryId,
             brandId == Guid.Empty ? null : brandId,
             name.Trim(),
-            slugResult.Value,
+            productSlug,
             description?.Trim() ?? string.Empty,
             Clean(gtin),
             Clean(ean),
