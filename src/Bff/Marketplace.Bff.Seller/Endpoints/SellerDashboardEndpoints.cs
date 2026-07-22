@@ -83,6 +83,12 @@ public static class SellerDashboardEndpoints
         var ordersTotal = orders.Count;
         var ordersToProcess = orders.Count(o => o.Status is not ("Delivered" or "Cancelled"));
 
+        // Répartition par statut : la liste est déjà chargée, l'agrégation est
+        // gratuite. Alimente le donut « commandes par statut » côté app.
+        var ordersByStatus = orders
+            .GroupBy(o => o.Status)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         // Relevé financier sur 30 jours (brut, commissions, net).
         decimal grossSales = 0, netPayout = 0;
         string currency = "XOF";
@@ -101,7 +107,7 @@ public static class SellerDashboardEndpoints
         var averageRating = reviewsCount > 0 ? Math.Round(reviews.Average(r => r.Rating), 2) : 0d;
 
         return Results.Ok(new SellerDashboard(
-            ordersTotal, ordersToProcess, grossSales, netPayout, currency, reviewsCount, averageRating));
+            ordersTotal, ordersToProcess, grossSales, netPayout, currency, reviewsCount, averageRating, ordersByStatus));
     }
 
     public sealed record SellerDashboard(
@@ -111,5 +117,6 @@ public static class SellerDashboardEndpoints
         decimal NetPayout30d,
         string Currency,
         int ReviewsCount,
-        double AverageRating);
+        double AverageRating,
+        IReadOnlyDictionary<string, int> OrdersByStatus);
 }
