@@ -44,9 +44,19 @@ internal sealed class CreateOfferCommandHandler : ICommandHandler<CreateOfferCom
             return Error.NotFound("offers.offer.product_not_found", "Produit introuvable.");
         }
 
-        if (!await _sellerModuleApi.IsActiveSellerAsync(command.SellerId, cancellationToken))
+        // Un vendeur peut PRÉPARER son catalogue (produit + offre) dès l'inscription,
+        // même KYB en cours (statut « Pending ») : le produit reste en brouillon et
+        // n'est pas achetable tant qu'il n'est pas publié — et la publication, elle,
+        // exige un compte actif. On refuse donc seulement les comptes fermés/suspendus.
+        // (« KYB pour publier et être payé », pas pour créer — cf. onboarding vendeur.)
+        var seller = await _sellerModuleApi.GetSellerAsync(command.SellerId, cancellationToken);
+        if (seller is null)
         {
-            return Error.Forbidden("offers.offer.seller_inactive", "Le vendeur doit être actif pour publier une offre.");
+            return Error.NotFound("offers.offer.seller_not_found", "Vendeur introuvable.");
+        }
+        if (seller.Status is not ("Active" or "Pending"))
+        {
+            return Error.Forbidden("offers.offer.seller_inactive", "Votre compte ne permet pas encore de créer des offres.");
         }
 
         var skuResult = Sku.Create(command.Sku);
