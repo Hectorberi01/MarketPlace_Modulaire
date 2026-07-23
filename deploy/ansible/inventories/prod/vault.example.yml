@@ -38,20 +38,19 @@ cloudinary_cloud_name: "CHANGE_ME"
 cloudinary_api_key: "CHANGE_ME"
 cloudinary_api_secret: "CHANGE_ME"
 
-# Firebase Cloud Messaging (notifications push). COLLER ICI le JSON intégral du
-# compte de service Firebase (Console Firebase > Paramètres > Comptes de service
-# > Générer une nouvelle clé privée). Conserver le bloc « | » et l'indentation ;
-# ne PAS retirer les « \n » dans "private_key".
-fcm_service_account_json: |
-  {
-    "type": "service_account",
-    "project_id": "CHANGE_ME",
-    "private_key_id": "CHANGE_ME",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nCHANGE_ME\n-----END PRIVATE KEY-----\n",
-    "client_email": "firebase-adminsdk-xxxxx@CHANGE_ME.iam.gserviceaccount.com",
-    "client_id": "CHANGE_ME",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "CHANGE_ME"
-  }
+# Firebase Cloud Messaging (notifications push).
+#
+# RECOMMANDÉ — JSON encodé en base64 sur UNE seule ligne (insensible à
+# l'indentation YAML ; un bloc « | » casse au moindre décalage d'indentation).
+# Générer :  base64 -w0 service-account.json                (Linux)
+#            base64 -i service-account.json | tr -d '\n'    (macOS)
+fcm_service_account_b64: "CHANGE_ME_BASE64_SUR_UNE_LIGNE"
+
+# Alternative (repli) — JSON brut en bloc « | ». N'utiliser que si l'indentation
+# est parfaitement maîtrisée ; ne PAS retirer les « \n » dans "private_key".
+# fcm_service_account_json: |
+#   {
+#     "type": "service_account",
+#     "project_id": "CHANGE_ME",
+#     ...
+#   }

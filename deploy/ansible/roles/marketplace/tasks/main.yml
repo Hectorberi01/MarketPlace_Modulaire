@@ -42,20 +42,39 @@
     mode: "0600"
 
 # --- Push FCM : compte de service Firebase (secret Vault -> fichier monté) ---
+#
+# Deux façons de fournir le secret dans le vault, par ordre de préférence :
+#   1. fcm_service_account_b64 : le JSON encodé en base64 sur UNE seule ligne.
+#      FORTEMENT recommandé — insensible à l'indentation YAML. Le JSON du compte
+#      de service est multi-lignes (clé privée), et un bloc littéral « | » casse
+#      dès qu'une ligne se retrouve mal indentée au copier-coller (« did not find
+#      expected key »). Le base64 supprime ce piège entièrement.
+#      Générer :  base64 -w0 service-account.json      (Linux)
+#                 base64 -i service-account.json | tr -d '\n'   (macOS)
+#   2. fcm_service_account_json : le JSON brut (bloc « | »). Repli de compat ;
+#      ne l'utiliser que si l'indentation est parfaitement maîtrisée.
+- name: Résoudre le compte de service FCM (base64 prioritaire, JSON brut en repli)
+  ansible.builtin.set_fact:
+    fcm_service_account_resolved: >-
+      {{ (fcm_service_account_b64 | b64decode)
+         if (fcm_service_account_b64 | default('') | trim | length > 0)
+         else (fcm_service_account_json | default('')) }}
+  no_log: true
+
 - name: Créer le répertoire du compte de service FCM
   ansible.builtin.file:
     path: "{{ app_dir }}/deploy/fcm"
     state: directory
     mode: "0700"
-  when: fcm_service_account_json is defined and (fcm_service_account_json | trim | length > 0)
+  when: fcm_service_account_resolved | default('') | trim | length > 0
 
 - name: Écrire le JSON du compte de service FCM (push)
   ansible.builtin.copy:
-    content: "{{ fcm_service_account_json }}"
+    content: "{{ fcm_service_account_resolved }}"
     dest: "{{ app_dir }}/deploy/fcm/service-account.json"
     mode: "0600"
   no_log: true
-  when: fcm_service_account_json is defined and (fcm_service_account_json | trim | length > 0)
+  when: fcm_service_account_resolved | default('') | trim | length > 0
 
 # --- MODE REGISTRY (use_registry=true) : le serveur ne compile PAS, il PULL ---
 - name: Connexion au registry (images privées)
