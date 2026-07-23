@@ -142,7 +142,7 @@ namespace Marketplace.Modules.Messaging.Infrastructure.Migrations
                     b.Property<Guid>("SenderId")
                         .HasColumnType("uuid");
 
-                    b.Property<List<string>>("_attachments")
+                    b.Property<string>("AttachmentsJson")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("attachments");

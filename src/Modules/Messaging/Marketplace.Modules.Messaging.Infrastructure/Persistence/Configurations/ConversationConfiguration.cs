@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Marketplace.Modules.Messaging.Domain.Conversations;
 
@@ -119,27 +114,18 @@ internal sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         // seule cette date est posée. La projection se charge de masquer le contenu.
         builder.Property(m => m.DeletedAtUtc);
 
-        // Pièces jointes : liste d'URLs, stockée en JSON dans une colonne `text`.
+        // Pièces jointes : stockées en JSON dans la colonne `attachments` (type `text`).
         //
-        // ⚠️ Historique : la colonne était `text[]`. EF Core 8 traite un `List<string>`
-        // comme une « collection primitive » et, contre une colonne `text[]`, l'aller-retour
-        // revenait VIDE en silence (le message se créait, mais la pièce jointe disparaissait) —
-        // même en forçant une conversion vers `string[]`. On coupe court à toute ambiguïté :
-        // le type PROVIDER est une simple `string` (JSON). EF ne voit plus une collection ni
-        // un tableau, mais un scalaire → persistance et relecture 100 % déterministes.
-        builder.Property<List<string>>("_attachments")
+        // ⚠️ On mappe la propriété SCALAIRE `AttachmentsJson` (une `string`), et NON la
+        // collection `_attachments`. Raison : EF Core 8 traite tout `List<string>` mappé
+        // comme une « collection primitive » et IGNORE même une conversion de valeur — il
+        // écrivait le JSON mais le relisait vide. En n'exposant qu'une `string` à EF, il n'y
+        // a plus aucune collection ni tableau à mal interpréter : lecture/écriture
+        // 100 % déterministes. La (dé)sérialisation vit dans l'entité `Message`.
+        builder.Property<string>("AttachmentsJson")
             .HasColumnName("attachments")
             .HasColumnType("text")
-            .HasConversion(
-                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                v => string.IsNullOrEmpty(v)
-                    ? new List<string>()
-                    : (JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()),
-                new ValueComparer<List<string>>(
-                    (a, b) => (a == null && b == null) || (a != null && b != null && a.SequenceEqual(b)),
-                    v => v.Aggregate(0, (acc, s) => HashCode.Combine(acc, s.GetHashCode())),
-                    v => v.ToList()))
-            .UsePropertyAccessMode(PropertyAccessMode.Field)
+            .UsePropertyAccessMode(PropertyAccessMode.Property)
             .IsRequired();
         builder.Ignore(m => m.Attachments);
 

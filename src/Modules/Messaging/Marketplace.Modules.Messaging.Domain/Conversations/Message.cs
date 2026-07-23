@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Marketplace.BuildingBlocks.Domain.Primitives;
 
 namespace Marketplace.Modules.Messaging.Domain.Conversations;
@@ -38,6 +39,30 @@ public sealed class Message : Entity<Guid>
     public Guid SenderId { get; private set; }
     public string Body { get; private set; } = default!;
     public IReadOnlyCollection<string> Attachments => _attachments.AsReadOnly();
+
+    /// <summary>
+    /// Forme PERSISTÉE des pièces jointes : une chaîne JSON, mappée sur la colonne
+    /// `attachments`. EF ne voit ainsi qu'un scalaire `string`, JAMAIS une collection —
+    /// ce qui contourne le bug EF Core 8 des « collections primitives » (`List&lt;string&gt;`
+    /// contre une colonne, qui écrivait du JSON mais le relisait vide). Le domaine
+    /// (dé)sérialise lui-même la liste ; rien de tout ça ne fuit hors de l'entité.
+    /// </summary>
+    private string AttachmentsJson
+    {
+        get => _attachments.Count == 0 ? "[]" : JsonSerializer.Serialize(_attachments);
+        set
+        {
+            _attachments.Clear();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                var list = JsonSerializer.Deserialize<List<string>>(value);
+                if (list is not null)
+                {
+                    _attachments.AddRange(list.Where(a => !string.IsNullOrWhiteSpace(a)));
+                }
+            }
+        }
+    }
     public DateTime? ReadAtUtc { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
