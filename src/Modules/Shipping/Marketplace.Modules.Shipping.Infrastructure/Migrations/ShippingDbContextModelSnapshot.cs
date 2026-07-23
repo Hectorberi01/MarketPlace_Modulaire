@@ -71,6 +71,43 @@ namespace Marketplace.Modules.Shipping.Infrastructure.Migrations
                     b.ToTable("outbox_messages", "shipping");
                 });
 
+            modelBuilder.Entity("Marketplace.Modules.Shipping.Domain.Carriers.Carrier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("TrackingUrlTemplate")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("carriers", "shipping");
+                });
+
             modelBuilder.Entity("Marketplace.Modules.Shipping.Domain.Shipments.Shipment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -109,6 +146,10 @@ namespace Marketplace.Modules.Shipping.Infrastructure.Migrations
                     b.Property<string>("TrackingNumber")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("TrackingUrl")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.HasKey("Id");
 
