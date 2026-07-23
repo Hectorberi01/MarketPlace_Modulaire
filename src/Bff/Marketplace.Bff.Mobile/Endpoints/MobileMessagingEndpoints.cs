@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Api.RealTime;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Messaging.Application.Conversations;
 using Marketplace.Modules.Sellers.Contracts;
@@ -21,6 +22,9 @@ public static class MobileMessagingEndpoints
         conv.MapPost("/seller/{sellerId:guid}", StartWithSellerAsync);
         conv.MapGet("/{id:guid}/messages", MessagesAsync);
         conv.MapPost("/{id:guid}/messages", SendAsync);
+        // Upload d'une image de pièce jointe (multipart, champ « file ») : renvoie l'URL
+        // à joindre ensuite au message. Même stockage média que côté vendeur.
+        conv.MapPost("/attachments", UploadAttachmentAsync).DisableAntiforgery();
 
         // Réactions et suppression — mêmes règles que côté vendeur (le domaine tranche).
         conv.MapPost("/{id:guid}/messages/{messageId:guid}/reactions", ReactAsync);
@@ -189,6 +193,36 @@ public static class MobileMessagingEndpoints
         }
 
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Upload d'une image de pièce jointe de message (acheteur). Valide le type RÉEL
+    /// (déduit des octets), stocke sur le service média, renvoie l'URL à joindre au
+    /// message. Même implémentation que côté vendeur.
+    /// </summary>
+    private static async Task<IResult> UploadAttachmentAsync(
+        ClaimsPrincipal user, IFormFile file, IMediaStorage mediaStorage, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
+        {
+            return invalid;
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+
+        var upload = await mediaStorage.UploadAsync(
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
+
+        return upload.IsFailure
+            ? Results.BadRequest(new { error = upload.Error.Message })
+            : Results.Ok(new { url = upload.Value.Url });
     }
 
     /// <summary>

@@ -44,7 +44,13 @@ public sealed class SendMessageCommandValidator : AbstractValidator<SendMessageC
     {
         RuleFor(c => c.ConversationId).NotEmpty();
         RuleFor(c => c.SenderId).NotEmpty();
-        RuleFor(c => c.Body).NotEmpty().MaximumLength(4000);
+        // Le corps est facultatif SI le message porte au moins une pièce jointe :
+        // une photo sans légende est un message légitime. On refuse seulement le
+        // message totalement vide (ni texte, ni pièce jointe).
+        RuleFor(c => c.Body).MaximumLength(4000);
+        RuleFor(c => c)
+            .Must(c => !string.IsNullOrWhiteSpace(c.Body) || (c.Attachments is { Count: > 0 }))
+            .WithMessage("Un message doit contenir du texte ou au moins une pièce jointe.");
     }
 }
 

@@ -1,6 +1,7 @@
 using MediatR;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Messaging.Application.Conversations;
 
 namespace Marketplace.Bff.Web.Endpoints;
@@ -15,6 +16,8 @@ public static class WebMessagingEndpoints
         conv.MapGet("/", ListAsync);
         conv.MapGet("/{id:guid}/messages", MessagesAsync);
         conv.MapPost("/{id:guid}/messages", SendAsync);
+        // Upload d'une image de pièce jointe (multipart, champ « file ») → URL à joindre.
+        conv.MapPost("/attachments", UploadAttachmentAsync).DisableAntiforgery();
 
         return app;
     }
@@ -36,6 +39,35 @@ public static class WebMessagingEndpoints
         => WebBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new SendMessageCommand(id, userId, request.Body, request.Attachments), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Upload d'une image de pièce jointe de message (acheteur web). Valide le type
+    /// RÉEL (magic bytes), stocke sur le service média, renvoie l'URL à joindre.
+    /// </summary>
+    private static async Task<IResult> UploadAttachmentAsync(
+        ClaimsPrincipal user, IFormFile file, IMediaStorage mediaStorage, CancellationToken ct)
+    {
+        if (WebBff.CurrentUserId(user) is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var check = await UploadValidation.CheckImageAsync(file, ct);
+        if (check.Error is { } invalid)
+        {
+            return invalid;
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+
+        var upload = await mediaStorage.UploadAsync(
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
+
+        return upload.IsFailure
+            ? Results.BadRequest(new { error = upload.Error.Message })
+            : Results.Ok(new { url = upload.Value.Url });
+    }
 
     public sealed record SendRequest(string Body, IReadOnlyList<string>? Attachments);
 }
