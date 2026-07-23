@@ -18,9 +18,16 @@ internal sealed class ConversationRepository : IConversationRepository
             // Les collections enfants des messages DOIVENT être chargées : sans elles,
             // la projection verrait zéro réaction, zéro pièce jointe et aucun masquage
             // (« supprimer pour moi » n'aurait plus aucun effet visible).
+            //
+            // ⚠️ AsSplitQuery : avec PLUSIEURS collections `.Include` (attachments +
+            // reactions + hiddenFor), une requête unique produit un cartésien qu'EF Core 8
+            // bufferise mal — certaines collections reviennent VIDES. On charge donc chaque
+            // collection dans sa propre requête. C'était la vraie cause du bug des pièces
+            // jointes (la 3ᵉ collection incluse).
             .Include(c => c.Messages).ThenInclude(m => m.Attachments)
             .Include(c => c.Messages).ThenInclude(m => m.Reactions)
             .Include(c => c.Messages).ThenInclude(m => m.HiddenFor)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
     public async Task<IReadOnlyList<Conversation>> ListByParticipantAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -31,6 +38,7 @@ internal sealed class ConversationRepository : IConversationRepository
             .Include(c => c.Messages).ThenInclude(m => m.Attachments)
             .Include(c => c.Messages).ThenInclude(m => m.Reactions)
             .Include(c => c.Messages).ThenInclude(m => m.HiddenFor)
+            .AsSplitQuery()
             .Where(c => c.Participants.Any(p => p.UserId == userId))
             .OrderByDescending(c => c.LastMessageAtUtc)
             .ToListAsync(cancellationToken);

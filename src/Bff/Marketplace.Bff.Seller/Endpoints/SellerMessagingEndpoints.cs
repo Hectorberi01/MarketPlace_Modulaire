@@ -157,7 +157,7 @@ public static class SellerMessagingEndpoints
                     receivedAttachments = request.Attachments?.Count ?? -1,
                     // MARQUEUR DE VERSION : prouve quel build tourne réellement (le tag
                     // d'image `:staging` ne le dit pas). À bumper à chaque déploiement.
-                    buildMarker = "child-entity-v1",
+                    buildMarker = "split-query-v2",
                     sentAt = created.CreatedAtUtc,
                 });
             }
