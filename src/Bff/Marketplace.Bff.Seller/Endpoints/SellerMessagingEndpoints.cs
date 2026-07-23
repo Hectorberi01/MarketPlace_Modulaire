@@ -151,6 +151,10 @@ public static class SellerMessagingEndpoints
                     fromSeller = true,
                     body = created.Body,
                     attachments = created.Attachments,
+                    // DIAGNOSTIC TEMPORAIRE : nombre de pièces jointes REÇUES dans la
+                    // requête (avant persistance). Comparé au count de `attachments`
+                    // (après persistance+relecture), ça localise la panne.
+                    receivedAttachments = request.Attachments?.Count ?? -1,
                     sentAt = created.CreatedAtUtc,
                 });
             }
