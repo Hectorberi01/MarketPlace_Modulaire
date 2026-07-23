@@ -37,7 +37,7 @@ internal static class ConversationMapper
                 m.Id,
                 m.SenderId,
                 m.IsDeleted ? DeletedPlaceholder : m.Body,
-                m.IsDeleted ? Array.Empty<string>() : m.Attachments.ToList(),
+                m.IsDeleted ? Array.Empty<string>() : m.Attachments.Select(a => a.Url).ToList(),
                 m.ReadAtUtc,
                 m.CreatedAtUtc,
                 m.IsDeleted,

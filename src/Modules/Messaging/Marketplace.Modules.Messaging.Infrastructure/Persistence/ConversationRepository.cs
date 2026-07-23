@@ -16,8 +16,9 @@ internal sealed class ConversationRepository : IConversationRepository
         => await _dbContext.Conversations
             .Include(c => c.Participants)
             // Les collections enfants des messages DOIVENT être chargées : sans elles,
-            // la projection verrait zéro réaction et aucun masquage (« supprimer pour
-            // moi » n'aurait plus aucun effet visible).
+            // la projection verrait zéro réaction, zéro pièce jointe et aucun masquage
+            // (« supprimer pour moi » n'aurait plus aucun effet visible).
+            .Include(c => c.Messages).ThenInclude(m => m.Attachments)
             .Include(c => c.Messages).ThenInclude(m => m.Reactions)
             .Include(c => c.Messages).ThenInclude(m => m.HiddenFor)
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
@@ -26,8 +27,8 @@ internal sealed class ConversationRepository : IConversationRepository
         => await _dbContext.Conversations
             .Include(c => c.Participants)
             // Les collections enfants des messages DOIVENT être chargées : sans elles,
-            // la projection verrait zéro réaction et aucun masquage (« supprimer pour
-            // moi » n'aurait plus aucun effet visible).
+            // la projection verrait zéro réaction, zéro pièce jointe et aucun masquage.
+            .Include(c => c.Messages).ThenInclude(m => m.Attachments)
             .Include(c => c.Messages).ThenInclude(m => m.Reactions)
             .Include(c => c.Messages).ThenInclude(m => m.HiddenFor)
             .Where(c => c.Participants.Any(p => p.UserId == userId))

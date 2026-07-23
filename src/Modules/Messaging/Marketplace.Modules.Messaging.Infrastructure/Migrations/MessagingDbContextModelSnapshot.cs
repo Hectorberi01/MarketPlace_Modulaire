@@ -142,16 +142,34 @@ namespace Marketplace.Modules.Messaging.Infrastructure.Migrations
                     b.Property<Guid>("SenderId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AttachmentsJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("attachments");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ConversationId");
 
                     b.ToTable("conversation_messages", "messaging");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Messaging.Domain.Conversations.MessageAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.ToTable("message_attachments", "messaging");
                 });
 
             modelBuilder.Entity("Marketplace.Modules.Messaging.Domain.Conversations.MessageHiddenFor", b =>
@@ -221,6 +239,15 @@ namespace Marketplace.Modules.Messaging.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Marketplace.Modules.Messaging.Domain.Conversations.MessageAttachment", b =>
+                {
+                    b.HasOne("Marketplace.Modules.Messaging.Domain.Conversations.Message", null)
+                        .WithMany("Attachments")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Marketplace.Modules.Messaging.Domain.Conversations.MessageHiddenFor", b =>
                 {
                     b.HasOne("Marketplace.Modules.Messaging.Domain.Conversations.Message", null)
@@ -248,6 +275,8 @@ namespace Marketplace.Modules.Messaging.Infrastructure.Migrations
 
             modelBuilder.Entity("Marketplace.Modules.Messaging.Domain.Conversations.Message", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("HiddenFor");
 
                     b.Navigation("Reactions");

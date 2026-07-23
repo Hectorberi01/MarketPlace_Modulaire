@@ -114,20 +114,15 @@ internal sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         // seule cette date est posée. La projection se charge de masquer le contenu.
         builder.Property(m => m.DeletedAtUtc);
 
-        // Pièces jointes : stockées en JSON dans la colonne `attachments` (type `text`).
-        //
-        // ⚠️ On mappe la propriété SCALAIRE `AttachmentsJson` (une `string`), et NON la
-        // collection `_attachments`. Raison : EF Core 8 traite tout `List<string>` mappé
-        // comme une « collection primitive » et IGNORE même une conversion de valeur — il
-        // écrivait le JSON mais le relisait vide. En n'exposant qu'une `string` à EF, il n'y
-        // a plus aucune collection ni tableau à mal interpréter : lecture/écriture
-        // 100 % déterministes. La (dé)sérialisation vit dans l'entité `Message`.
-        builder.Property<string>("AttachmentsJson")
-            .HasColumnName("attachments")
-            .HasColumnType("text")
-            .UsePropertyAccessMode(PropertyAccessMode.Property)
-            .IsRequired();
-        builder.Ignore(m => m.Attachments);
+        // Pièces jointes : collection ENFANT (table `message_attachments`), exactement le
+        // même pattern que les réactions ci-dessous. On abandonne définitivement la colonne
+        // tableau/JSON qu'EF Core 8 persistait mais relisait VIDE (« collection primitive »).
+        builder.HasMany(m => m.Attachments)
+            .WithOne()
+            .HasForeignKey("MessageId")
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(m => m.Attachments).UsePropertyAccessMode(PropertyAccessMode.Field);
 
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
@@ -206,6 +201,23 @@ internal sealed class MessageReactionConfiguration : IEntityTypeConfiguration<Me
         // Invariant DB : une seule réaction par personne et par message. Le domaine
         // l'assure déjà, mais on le grave aussi en base (défense en profondeur).
         builder.HasIndex("MessageId", "UserId").IsUnique();
+    }
+}
+
+internal sealed class MessageAttachmentConfiguration : IEntityTypeConfiguration<MessageAttachment>
+{
+    public void Configure(EntityTypeBuilder<MessageAttachment> builder)
+    {
+        builder.ToTable("message_attachments");
+
+        builder.HasKey(a => a.Id);
+        builder.Property(a => a.Id).ValueGeneratedNever();
+
+        builder.Property(a => a.Url).HasMaxLength(1000).IsRequired();
+        // Enum stocké en int (valeurs figées : Image=1 … Other=6).
+        builder.Property(a => a.Type).HasConversion<int>().IsRequired();
+
+        builder.HasIndex("MessageId");
     }
 }
 
