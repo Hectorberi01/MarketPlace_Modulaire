@@ -155,6 +155,9 @@ public static class SellerMessagingEndpoints
                     // requête (avant persistance). Comparé au count de `attachments`
                     // (après persistance+relecture), ça localise la panne.
                     receivedAttachments = request.Attachments?.Count ?? -1,
+                    // MARQUEUR DE VERSION : prouve quel build tourne réellement (le tag
+                    // d'image `:staging` ne le dit pas). À bumper à chaque déploiement.
+                    buildMarker = "attach-json-scalar",
                     sentAt = created.CreatedAtUtc,
                 });
             }
