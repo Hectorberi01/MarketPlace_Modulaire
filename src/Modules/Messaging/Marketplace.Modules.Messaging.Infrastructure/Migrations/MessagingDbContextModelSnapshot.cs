@@ -144,7 +144,7 @@ namespace Marketplace.Modules.Messaging.Infrastructure.Migrations
 
                     b.Property<List<string>>("_attachments")
                         .IsRequired()
-                        .HasColumnType("text[]")
+                        .HasColumnType("text")
                         .HasColumnName("attachments");
 
                     b.HasKey("Id");
