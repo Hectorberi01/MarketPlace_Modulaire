@@ -77,12 +77,17 @@ public sealed class Conversation : AggregateRoot<ConversationId>
             return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
         }
 
-        if (string.IsNullOrWhiteSpace(body))
+        // Une photo sans légende est un message légitime : on n'exige un corps de
+        // texte QUE s'il n'y a aucune pièce jointe. On refuse seulement le message
+        // totalement vide (ni texte, ni pièce jointe).
+        var hasAttachment = attachments.Any(a => !string.IsNullOrWhiteSpace(a));
+        if (string.IsNullOrWhiteSpace(body) && !hasAttachment)
         {
-            return Result.Failure(Error.Validation("messaging.body_required", "Le message ne peut pas être vide."));
+            return Result.Failure(Error.Validation(
+                "messaging.body_required", "Un message doit contenir du texte ou au moins une pièce jointe."));
         }
 
-        var message = new Message(Guid.NewGuid(), senderId, body.Trim(), attachments ?? Array.Empty<string>());
+        var message = new Message(Guid.NewGuid(), senderId, (body ?? string.Empty).Trim(), attachments ?? Array.Empty<string>());
         _messages.Add(message);
         LastMessageAtUtc = message.CreatedAtUtc;
         Raise(new MessageSentDomainEvent(Id.Value, message.Id, senderId));
