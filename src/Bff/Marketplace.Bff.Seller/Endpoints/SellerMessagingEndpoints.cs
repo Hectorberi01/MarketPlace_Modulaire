@@ -103,6 +103,10 @@ public static class SellerMessagingEndpoints
             body = m.Body,
             attachments = m.Attachments,
             sentAt = m.CreatedAtUtc,
+            // Accusé de lecture PAR MESSAGE : date à laquelle l'AUTRE participant a lu ce
+            // message (posée par MarkConversationReadCommand quand il ouvre le fil). Null =
+            // pas encore lu. L'app affiche ✓ (envoyé) vs ✓✓ (lu) sur les messages du vendeur.
+            readAt = m.ReadAtUtc,
             isDeleted = m.IsDeleted,
             reactions = m.Reactions.Select(r => new { emoji = r.Emoji, count = r.Count, mine = r.Mine }),
         });
@@ -151,6 +155,9 @@ public static class SellerMessagingEndpoints
                     fromSeller = true,
                     body = created.Body,
                     attachments = created.Attachments,
+                    // Un message qu'on vient d'envoyer n'est pas encore lu (readAt null) :
+                    // l'app affichera un simple ✓ jusqu'à ce que l'acheteur ouvre le fil.
+                    readAt = created.ReadAtUtc,
                     sentAt = created.CreatedAtUtc,
                 });
             }
