@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Marketplace.Modules.Messaging.Domain.Conversations;
 
@@ -115,9 +119,23 @@ internal sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         builder.Property(m => m.DeletedAtUtc);
 
         // Pièces jointes en text[] natif (stockage uniquement, jamais filtré).
+        //
+        // ⚠️ EF Core 8 traite par défaut un `List<string>` comme une « collection
+        // primitive » sérialisée en JSON — et cet aller-retour JSON contre une colonne
+        // `text[]` revient VIDE en silence (le message se crée, mais la pièce jointe
+        // disparaît). On force donc le mapping tableau NATIF de Npgsql via une
+        // conversion `List<string>` ↔ `string[]`, avec le comparateur de valeurs requis
+        // pour le suivi des modifications d'une collection.
         builder.Property<List<string>>("_attachments")
             .HasColumnName("attachments")
             .HasColumnType("text[]")
+            .HasConversion(
+                v => v.ToArray(),
+                v => v.ToList(),
+                new ValueComparer<List<string>>(
+                    (a, b) => (a == null && b == null) || (a != null && b != null && a.SequenceEqual(b)),
+                    v => v.Aggregate(0, (acc, s) => HashCode.Combine(acc, s.GetHashCode())),
+                    v => v.ToList()))
             .UsePropertyAccessMode(PropertyAccessMode.Field)
             .IsRequired();
         builder.Ignore(m => m.Attachments);
