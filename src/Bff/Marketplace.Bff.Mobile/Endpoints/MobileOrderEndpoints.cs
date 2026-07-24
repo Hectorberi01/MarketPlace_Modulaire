@@ -70,6 +70,9 @@ public static class MobileOrderEndpoints
             {
                 offerId = l.OfferId,
                 productId = l.ProductId,
+                // Vendeur du produit : permet à l'app d'ouvrir la conversation avec LE
+                // vendeur de cette commande (bouton « Vendeur » du détail commande).
+                sellerId = product?.SellerId,
                 sku = l.Sku,
                 productName = name ?? l.Sku,
                 imageUrl,
