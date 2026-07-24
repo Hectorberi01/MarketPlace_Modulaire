@@ -13,6 +13,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.UpdateProfile;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Notifications.Application.Devices;
 using Marketplace.Modules.Notifications.Application.Notifications.Commands;
+using Marketplace.Modules.Notifications.Application.Notifications.Preferences;
 using Marketplace.Modules.Notifications.Application.Notifications.Queries;
 using Marketplace.Modules.Wishlist.Application.Wishlists;
 
@@ -32,6 +33,9 @@ public sealed record DeleteAccountRequest(string Password);
 
 /// <summary>Corps d'une action MFA nécessitant un code TOTP (confirmation / désactivation).</summary>
 public sealed record MfaCodeRequest(string Code);
+
+/// <summary>Catégories de push que l'acheteur souhaite couper (opt-out).</summary>
+public sealed record MobileNotificationPreferencesRequest(List<string>? MutedCategories);
 
 /// <summary>BFF Mobile — compte, favoris et notifications (scopés au jeton).</summary>
 public static class MobileAccountEndpoints
@@ -72,9 +76,11 @@ public static class MobileAccountEndpoints
         mobile.MapPost("/account/me/mfa/confirm", MfaConfirmAsync);
         mobile.MapPost("/account/me/mfa/disable", MfaDisableAsync);
 
-        // Préférences de notification et enregistrement de token push (FCM/APNs) :
-        // capacités Notifications à exposer (NotificationPreference + device tokens).
-        mobile.MapPut("/notifications/preferences", () => MobileBff.NotImplemented("notifications.preferences"));
+        // Préférences de notification (catégories de push coupées) + enregistrement
+        // de token push (FCM/APNs). Branché sur le module Notifications, comme le BFF
+        // vendeur : opt-out par catégorie, l'acheteur reste notifié par défaut.
+        mobile.MapGet("/notifications/preferences", GetNotificationPreferencesAsync);
+        mobile.MapPut("/notifications/preferences", UpdateNotificationPreferencesAsync);
         mobile.MapPost("/devices", RegisterDeviceAsync);
         mobile.MapPost("/devices/unregister", UnregisterDeviceAsync);
 
@@ -199,6 +205,20 @@ public static class MobileAccountEndpoints
         => MobileBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new RegisterDeviceTokenCommand(userId, request.Token, request.Platform ?? "unknown"), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Préférences de notification de l'acheteur (catégories + état activé/coupé).</summary>
+    private static async Task<IResult> GetNotificationPreferencesAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new GetNotificationPreferencesQuery(userId), ct)).Match(p => Results.Ok(p));
+
+    /// <summary>Met à jour les catégories de push coupées (opt-out).</summary>
+    private static async Task<IResult> UpdateNotificationPreferencesAsync(
+        ClaimsPrincipal user, MobileNotificationPreferencesRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new UpdateNotificationPreferencesCommand(userId, request.MutedCategories ?? new List<string>()), ct))
+                .Match(() => Results.NoContent());
 
     /// <summary>Retire un jeton d'appareil (déconnexion / désabonnement push).</summary>
     private static async Task<IResult> UnregisterDeviceAsync(ClaimsPrincipal user, MobileDeviceUnregisterRequest request, ISender sender, CancellationToken ct)
