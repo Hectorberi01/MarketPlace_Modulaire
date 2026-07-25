@@ -59,6 +59,7 @@ public static class MobileAccountEndpoints
 
         mobile.MapGet("/wishlist", WishlistAsync);
         mobile.MapPost("/wishlist/items", AddWishlistAsync);
+        mobile.MapPut("/wishlist/items/{productId:guid}/alerts", SetWishlistAlertsAsync);
         mobile.MapDelete("/wishlist/items/{productId:guid}", RemoveWishlistAsync);
 
         mobile.MapGet("/notifications", NotificationsAsync);
@@ -262,6 +263,14 @@ public static class MobileAccountEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new AddToWishlistCommand(userId, request.ProductId, request.OfferId, request.PriceAlert, request.StockAlert), ct)).Match(() => Results.NoContent());
 
+    /// <summary>Active/désactive les alertes (baisse de prix, retour en stock) d'un favori.</summary>
+    private static async Task<IResult> SetWishlistAlertsAsync(
+        ClaimsPrincipal user, Guid productId, WishlistAlertsRequest request, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new SetWishlistAlertsCommand(userId, productId, request.PriceAlert, request.StockAlert), ct))
+                .Match(() => Results.NoContent());
+
     /// <summary>Retire des favoris.</summary>
     private static async Task<IResult> RemoveWishlistAsync(ClaimsPrincipal user, Guid productId, ISender sender, CancellationToken ct)
         => MobileBff.CurrentUserId(user) is not { } userId
@@ -330,6 +339,7 @@ public static class MobileAccountEndpoints
     public sealed record ProfileRequest(string FirstName, string LastName, string PhoneNumber);
     public sealed record AcceptTermsRequest(string Version);
     public sealed record WishlistRequest(Guid ProductId, Guid? OfferId, bool PriceAlert, bool StockAlert);
+    public sealed record WishlistAlertsRequest(bool PriceAlert, bool StockAlert);
 
     public sealed record PaymentMethodRequest(
         string Type,
