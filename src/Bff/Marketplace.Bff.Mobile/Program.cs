@@ -242,6 +242,7 @@ app.MapMobileMessagingEndpoints();
 app.MapMobileContentEndpoints();
 app.MapMobileEngagementEndpoints();
 app.MapMobileAppEndpoints();
+app.MapMobileDeepLinkEndpoints();
 
 // Hub temps réel (messagerie). Sous /mobile pour être routé par Traefik.
 
