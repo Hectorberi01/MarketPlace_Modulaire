@@ -9,7 +9,7 @@ namespace Marketplace.Bff.Mobile.Endpoints;
 /// BFF Mobile — LIENS UNIVERSELS (deep linking).
 ///
 /// Trois routes, toutes anonymes, servies à la racine du domaine mobile
-/// (ex. https://m.marketplace.hba-marketplace.fr) :
+/// (prod https://m.hba-express.org, staging m.marketplace-staging.hba-marketplace.fr) :
 ///
 ///   • /.well-known/apple-app-site-association  → dit à iOS quelles URLs ouvrir
 ///     directement dans l'app (Universal Links).
