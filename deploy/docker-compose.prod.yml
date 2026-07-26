@@ -245,6 +245,9 @@ services:
       <<: *app-env
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
+      # Fiche App Store de l'app PROD (fr.hbamarket.app).
+      MobileApp__UpdateUrlIos: "https://apps.apple.com/app/id6786785756"
+      DeepLink__AppStoreUrl: "https://apps.apple.com/app/id6786785756"
     depends_on:
       api:
         condition: service_healthy

@@ -234,6 +234,9 @@ services:
       <<: *app-env
       RunMigrationsAtStartup: "false"
       OUTBOX_ENABLED: "false"
+      # Fiche App Store de l'app STAGING (fr.hbamarket.app.staging).
+      MobileApp__UpdateUrlIos: "https://apps.apple.com/app/id6793095820"
+      DeepLink__AppStoreUrl: "https://apps.apple.com/app/id6793095820"
     depends_on:
       api:
         condition: service_healthy
