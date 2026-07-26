@@ -40,9 +40,15 @@ internal sealed class SubmitReviewCommandHandler : ICommandHandler<SubmitReviewC
             return Result.Failure<Guid>(Error.Forbidden("reviews.not_owner", "Cette commande n'appartient pas à l'acheteur."));
         }
 
-        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
+        // Une commande PAYÉE peut être notée : « Confirmed » (payée, en cours) ou
+        // « Delivered » (livrée). L'app n'affiche « Noter » qu'après livraison —
+        // exiger « Confirmed » SEUL rejetait donc toute commande livrée, rendant
+        // l'avis impossible en pratique.
+        var reviewable = string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(order.Status, "Delivered", StringComparison.OrdinalIgnoreCase);
+        if (!reviewable)
         {
-            return Result.Failure<Guid>(Error.Conflict("reviews.order_not_confirmed", "Seule une commande confirmée peut être notée."));
+            return Result.Failure<Guid>(Error.Conflict("reviews.order_not_confirmed", "Seule une commande payée peut être notée."));
         }
 
         var line = order.Lines.FirstOrDefault(l => l.ProductId == command.ProductId);
