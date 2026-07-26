@@ -33,6 +33,7 @@ public static class MobileEngagementEndpoints
         grp.MapGet("/disputes", ListDisputesAsync);
         grp.MapGet("/disputes/{id:guid}", GetDisputeAsync);
         grp.MapPost("/disputes", OpenDisputeAsync);
+        grp.MapPost("/disputes/{id:guid}/messages", ReplyDisputeAsync);
 
         return app;
     }
@@ -99,7 +100,27 @@ public static class MobileEngagementEndpoints
         return result.Match(id => Results.Ok(new { disputeId = id }));
     }
 
+    /// <summary>Répond à un litige (message de l'acheteur dans le fil).</summary>
+    private static async Task<IResult> ReplyDisputeAsync(ClaimsPrincipal user, Guid id, DisputeReplyRequest request, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        // Sécurité : on ne répond qu'à SON propre litige (RaisedBy == acheteur).
+        var dispute = await sender.Send(new GetDisputeQuery(id), ct);
+        if (dispute.IsFailure || dispute.Value.RaisedBy != userId)
+        {
+            return Results.NotFound(new { error = "dispute_not_found" });
+        }
+
+        return (await sender.Send(new AddDisputeMessageCommand(id, userId, request.Message, null), ct))
+            .Match(() => Results.NoContent());
+    }
+
     public sealed record SubmitReviewRequest(Guid ProductId, Guid OrderId, int Rating, string? Title, string Body);
     public sealed record RedeemRequest(int Amount);
     public sealed record OpenDisputeRequest(Guid OrderId, string Type, string Message, string? PhotoUrl);
+    public sealed record DisputeReplyRequest(string Message);
 }
