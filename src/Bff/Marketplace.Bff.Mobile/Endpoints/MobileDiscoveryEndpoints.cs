@@ -7,6 +7,7 @@ using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Recommendations.Contracts;
 using Marketplace.Modules.Search.Application.Search;
 using Marketplace.Modules.Search.Contracts;
+using Microsoft.Extensions.Configuration;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
 
@@ -27,8 +28,29 @@ public static class MobileDiscoveryEndpoints
         mobile.MapGet("/categories", CategoriesAsync).AllowAnonymous();
         mobile.MapGet("/categories/{slug}", CategoryBySlugAsync).AllowAnonymous();
 
+        // Bannières promotionnelles du carrousel d'accueil (pilotées par config).
+        mobile.MapGet("/home/banners", BannersAsync).AllowAnonymous();
+
         return app;
     }
+
+    /// <summary>
+    /// Bannières du carrousel d'accueil, pilotées par la configuration (section
+    /// « HomeBanners »). Modifier une campagne ne demande qu'un changement
+    /// d'appsettings + redéploiement — ni base de données, ni migration.
+    /// Chaque bannière : image (obligatoire), lien de destination et titre
+    /// (optionnels). Le lien peut être une URL http(s) ou une route interne
+    /// (ex. « /product/{id} », « /category/{id} »).
+    /// </summary>
+    private static IResult BannersAsync(IConfiguration config)
+    {
+        var banners = config.GetSection("HomeBanners").Get<HomeBanner[]>() ?? Array.Empty<HomeBanner>();
+        // On ne renvoie que les entrées exploitables (image présente).
+        var usable = banners.Where(b => !string.IsNullOrWhiteSpace(b.ImageUrl));
+        return Results.Ok(usable);
+    }
+
+    public sealed record HomeBanner(string ImageUrl, string? LinkUrl, string? Title);
 
     /// <summary>Liste plate des catégories actives (id, nom, slug) pour les filtres mobiles.</summary>
     private static async Task<IResult> CategoriesAsync(ISender sender, CancellationToken ct)
