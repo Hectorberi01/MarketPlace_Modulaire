@@ -1,8 +1,10 @@
 using MediatR;
 using System.Security.Claims;
+using System.Text.Json;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Marketing.Application.Content;
 using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Recommendations.Contracts;
@@ -36,19 +38,54 @@ public static class MobileDiscoveryEndpoints
     }
 
     /// <summary>
-    /// Bannières du carrousel d'accueil, pilotées par la configuration (section
-    /// « HomeBanners »). Modifier une campagne ne demande qu'un changement
-    /// d'appsettings + redéploiement — ni base de données, ni migration.
-    /// Chaque bannière : image (obligatoire), lien de destination et titre
-    /// (optionnels). Le lien peut être une URL http(s) ou une route interne
-    /// (ex. « /product/{id} », « /category/{id} »).
+    /// Bannières du carrousel d'accueil. Source PRINCIPALE : les blocs de contenu
+    /// du slot « home_banner » (gérés depuis le dashboard admin, publiés et dans
+    /// leur fenêtre d'affichage). Chaque bloc porte un JSON
+    /// { imageUrl, linkUrl, title }. REPLI : la section de config « HomeBanners »
+    /// (compat), pour ne jamais casser un déploiement déjà configuré ainsi.
+    /// Le lien peut être une route interne (« /product/{id} ») ou une URL http(s).
     /// </summary>
-    private static IResult BannersAsync(IConfiguration config)
+    private static async Task<IResult> BannersAsync(ISender sender, IConfiguration config, CancellationToken ct)
     {
+        var blocks = await sender.Send(new ListContentBySlotQuery("home_banner"), ct);
+        if (blocks.IsSuccess && blocks.Value.Count > 0)
+        {
+            var fromCms = blocks.Value
+                .OrderBy(b => b.Position)
+                .Select(b => ParseBanner(b.Content))
+                .Where(b => b is not null)
+                .ToList();
+            if (fromCms.Count > 0)
+            {
+                return Results.Ok(fromCms);
+            }
+        }
+
+        // Repli configuration (aucun bloc publié).
         var banners = config.GetSection("HomeBanners").Get<HomeBanner[]>() ?? Array.Empty<HomeBanner>();
-        // On ne renvoie que les entrées exploitables (image présente).
-        var usable = banners.Where(b => !string.IsNullOrWhiteSpace(b.ImageUrl));
-        return Results.Ok(usable);
+        return Results.Ok(banners.Where(b => !string.IsNullOrWhiteSpace(b.ImageUrl)));
+    }
+
+    /// <summary>Parse le JSON d'un bloc bannière. Renvoie null si image absente/illisible.</summary>
+    private static object? ParseBanner(string content)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            var imageUrl = root.TryGetProperty("imageUrl", out var i) ? i.GetString() : null;
+            if (string.IsNullOrWhiteSpace(imageUrl))
+            {
+                return null;
+            }
+            var linkUrl = root.TryGetProperty("linkUrl", out var l) ? l.GetString() : null;
+            var title = root.TryGetProperty("title", out var t) ? t.GetString() : null;
+            return new { imageUrl, linkUrl, title };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public sealed record HomeBanner(string ImageUrl, string? LinkUrl, string? Title);
