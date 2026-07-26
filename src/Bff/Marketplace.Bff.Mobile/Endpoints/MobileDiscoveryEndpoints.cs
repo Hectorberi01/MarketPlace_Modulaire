@@ -53,7 +53,7 @@ public static class MobileDiscoveryEndpoints
 
     public sealed record HomeBanner(string ImageUrl, string? LinkUrl, string? Title);
 
-    /// <summary>Liste plate des catégories actives (id, nom, slug) pour les filtres mobiles.</summary>
+    /// <summary>Liste plate des catégories visibles (id, nom, slug) pour l'accueil & les filtres.</summary>
     private static async Task<IResult> CategoriesAsync(ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new ListCategoriesQuery(), ct);
@@ -62,11 +62,16 @@ public static class MobileDiscoveryEndpoints
             return Results.Ok(Array.Empty<object>());
         }
 
-        var active = result.Value
-            .Where(c => string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        // BUG CORRIGÉ : le cycle de vie d'une catégorie est Draft → PUBLISHED →
+        // Archived (pas « Active », qui est le statut des PRODUITS). Filtrer sur
+        // « Active » excluait donc TOUTES les catégories, même publiées — d'où une
+        // liste vide côté app. On accepte « Published » (et « Active » par sécurité).
+        var visible = result.Value
+            .Where(c => string.Equals(c.Status, "Published", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase))
             .Select(c => new { id = c.Id, name = c.Name, slug = c.Slug, parentId = c.ParentId, imageUrl = c.ImageUrl });
 
-        return Results.Ok(active);
+        return Results.Ok(visible);
     }
 
     /// <summary>Catégorie par slug (résolue depuis la liste).</summary>
