@@ -91,4 +91,23 @@ internal sealed class CatalogModuleApi : ICatalogModuleApi
             CatalogCacheKeys.ReferenceDataTtl,
             CatalogCacheKeys.MissTtl,
             cancellationToken);
+
+    public async Task<IReadOnlyList<ProductSummary>> ListFeaturedAsync(int max, CancellationToken cancellationToken = default)
+    {
+        var limit = max is < 1 or > 50 ? 12 : max;
+
+        // `Tags` est un text[] natif : le filtre se traduit en `'featured' = ANY(tags)`
+        // côté PostgreSQL (index GIN possible). Aucun scan applicatif, aucune colonne
+        // dédiée — le tag EST le drapeau.
+        var products = await _dbContext.Products
+            .AsNoTracking()
+            .Include(p => p.Variants)
+            .Include(p => p.Media)
+            .Where(p => p.Status == ProductStatus.Active && p.Tags.Contains("featured"))
+            .OrderByDescending(p => p.CreatedOnUtc)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return products.Select(ProductMapping.ToSummary).ToList();
+    }
 }

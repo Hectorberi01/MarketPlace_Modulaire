@@ -10,6 +10,13 @@ public interface ICatalogModuleApi
 {
     Task<ProductSummary?> GetProductAsync(Guid productId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Produits « mis en avant » : actifs et porteurs du tag <c>featured</c>.
+    /// Sert la section éditoriale de l'accueil. Le tag est le drapeau (aucune
+    /// colonne dédiée) ; on n'en garde qu'un nombre limité, les plus récents.
+    /// </summary>
+    Task<IReadOnlyList<ProductSummary>> ListFeaturedAsync(int max, CancellationToken cancellationToken = default);
+
     Task<BrandSummary?> GetBrandAsync(Guid brandId, CancellationToken cancellationToken = default);
 
     Task<CategorySummary?> GetCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Recommendations.Contracts;
 using Marketplace.Modules.Search.Application.Search;
@@ -83,8 +84,8 @@ public static class MobileDiscoveryEndpoints
             : Results.Ok(new { id = match.Id, name = match.Name, slug = match.Slug, parentId = match.ParentId, imageUrl = match.ImageUrl });
     }
 
-    /// <summary>Écran d'accueil agrégé : mises en avant + recommandations personnalisées (1 appel).</summary>
-    private static async Task<IResult> HomeAsync(ClaimsPrincipal user, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+    /// <summary>Écran d'accueil agrégé : sélection + mis en avant + reco perso (1 appel).</summary>
+    private static async Task<IResult> HomeAsync(ClaimsPrincipal user, ISender sender, ICatalogModuleApi catalog, IOfferModuleApi offers, CancellationToken ct)
     {
         var featured = await sender.Send(new SearchProductsQuery(null, null, null, 1, 10), ct);
 
@@ -92,6 +93,25 @@ public static class MobileDiscoveryEndpoints
         var featuredPage = featured.IsSuccess
             ? await MobileBff.WithProductImagesAsync(featured.Value, catalog, ct)
             : null;
+
+        // Section ÉDITORIALE « Mis en avant » : produits porteurs du tag `featured`.
+        // Le tag est le drapeau (pas de colonne) ; le prix vient des offres.
+        var promotedProducts = await catalog.ListFeaturedAsync(12, ct);
+        var promoted = new List<object>();
+        foreach (var prod in promotedProducts)
+        {
+            var offs = await offers.GetOffersByProductAsync(prod.Id, ct);
+            decimal? minPrice = offs.Count > 0 ? offs.Min(o => o.BasePriceAmount) : null;
+            var image = prod.Media.FirstOrDefault(m => m.IsPrimary)?.Url ?? prod.Media.FirstOrDefault()?.Url;
+            promoted.Add(new
+            {
+                id = prod.Id,
+                name = prod.Name,
+                imageUrl = image,
+                minPrice,
+                currency = offs.Count > 0 ? offs[0].Currency : "XOF",
+            });
+        }
 
         RecommendationSummary? personalized = null;
         if (MobileBff.CurrentUserId(user) is { } userId)
@@ -106,7 +126,8 @@ public static class MobileDiscoveryEndpoints
 
         return Results.Ok(new MobileHome(
             Featured: featuredPage,
-            Recommendations: personalized));
+            Recommendations: personalized,
+            Promoted: promoted));
     }
 
     /// <summary>Recommandations personnalisées de l'utilisateur connecté.</summary>
@@ -120,5 +141,5 @@ public static class MobileDiscoveryEndpoints
         return (await sender.Send(new GetUserRecommendationsQuery(userId), ct)).Match(r => Results.Ok(r));
     }
 
-    public sealed record MobileHome(SearchResultPage? Featured, RecommendationSummary? Recommendations);
+    public sealed record MobileHome(SearchResultPage? Featured, RecommendationSummary? Recommendations, IReadOnlyList<object>? Promoted);
 }
