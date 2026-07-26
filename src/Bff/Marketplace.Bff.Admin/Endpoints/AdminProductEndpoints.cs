@@ -2,6 +2,7 @@ using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Application.Products.Commands.ChangeProductStatus;
+using Marketplace.Modules.Catalog.Application.Products.Commands.SetProductTags;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListAllProducts;
 using Marketplace.Modules.Offers.Contracts;
 
@@ -23,6 +24,7 @@ public static class AdminProductEndpoints
         products.MapPost("/{id:guid}/approve", ApproveAsync);
         products.MapPost("/{id:guid}/reject", RejectAsync);
         products.MapPatch("/{id:guid}/status", ChangeStatusAsync);
+        products.MapPut("/{id:guid}/tags", SetTagsAsync);
 
         return app;
     }
@@ -56,5 +58,10 @@ public static class AdminProductEndpoints
     private static async Task<IResult> ChangeStatusAsync(Guid id, StatusRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new ChangeProductStatusCommand(id, request.Status), ct)).Match(() => Results.NoContent());
 
+    /// <summary>Remplace la liste des tags du produit (curation : « featured »…).</summary>
+    private static async Task<IResult> SetTagsAsync(Guid id, TagsRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new SetProductTagsCommand(id, request.Tags ?? Array.Empty<string>()), ct)).Match(() => Results.NoContent());
+
     public sealed record StatusRequest(string Status);
+    public sealed record TagsRequest(IReadOnlyList<string>? Tags);
 }

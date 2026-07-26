@@ -367,6 +367,14 @@ public sealed class Product : AggregateRoot<ProductId>
 
     public void AssignBrand(Guid? brandId) => BrandId = brandId == Guid.Empty ? null : brandId;
 
+    /// <summary>
+    /// Remplace la liste des tags (nettoyés, sans doublons ni vides). Sert la
+    /// curation éditoriale : marquer un produit « featured » ne demande qu'un tag,
+    /// sans colonne dédiée. Idempotent.
+    /// </summary>
+    public void SetTags(IReadOnlyList<string>? tags)
+        => Tags = tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct().ToList() ?? new List<string>();
+
     /// <summary>Publie le produit (Draft -> Active).</summary>
     public Result Activate()
     {
