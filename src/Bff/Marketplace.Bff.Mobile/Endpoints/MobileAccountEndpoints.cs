@@ -64,6 +64,7 @@ public static class MobileAccountEndpoints
 
         mobile.MapGet("/notifications", NotificationsAsync);
         mobile.MapPatch("/notifications/{id:guid}/read", MarkReadAsync);
+        mobile.MapDelete("/notifications/{id:guid}", DeleteNotificationAsync);
 
         // Moyens de paiement enregistrés (Mobile Money + cartes masquées).
         mobile.MapGet("/account/payment-methods", ListPaymentMethodsAsync);
@@ -288,6 +289,12 @@ public static class MobileAccountEndpoints
         => MobileBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new MarkNotificationReadCommand(id, userId), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Supprime une notification de l'utilisateur (balayage vers la gauche).</summary>
+    private static async Task<IResult> DeleteNotificationAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+        => MobileBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new DeleteOwnNotificationCommand(id, userId), ct)).Match(() => Results.NoContent());
 
     /// <summary>Liste les moyens de paiement de l'utilisateur (défaut en tête).</summary>
     private static async Task<IResult> ListPaymentMethodsAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)

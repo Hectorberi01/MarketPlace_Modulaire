@@ -14,8 +14,11 @@ public sealed record MarkAllNotificationsReadCommand(Guid RecipientUserId) : ICo
 /// <summary>Envoie une notification à un utilisateur (back-office admin).</summary>
 public sealed record SendNotificationCommand(Guid RecipientUserId, string? Channel, string Subject, string Body) : ICommand<Guid>;
 
-/// <summary>Supprime une notification (back-office admin).</summary>
+/// <summary>Supprime une notification (back-office admin, sans contrôle de propriété).</summary>
 public sealed record DeleteNotificationCommand(Guid NotificationId) : ICommand;
+
+/// <summary>Supprime SA propre notification (balayage côté app). Vérifie le destinataire.</summary>
+public sealed record DeleteOwnNotificationCommand(Guid NotificationId, Guid RecipientUserId) : ICommand;
 
 internal sealed class SendNotificationCommandHandler : ICommandHandler<SendNotificationCommand, Guid>
 {
@@ -73,6 +76,41 @@ internal sealed class DeleteNotificationCommandHandler : ICommandHandler<DeleteN
     {
         var notification = await _repository.GetByIdAsync(new NotificationId(command.NotificationId), cancellationToken);
         if (notification is null)
+        {
+            return Result.Failure(Error.NotFound("notifications.not_found", "Notification introuvable."));
+        }
+
+        _repository.Remove(notification);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+}
+
+internal sealed class DeleteOwnNotificationCommandHandler : ICommandHandler<DeleteOwnNotificationCommand>
+{
+    private readonly INotificationRepository _repository;
+    private readonly INotificationsUnitOfWork _unitOfWork;
+
+    public DeleteOwnNotificationCommandHandler(INotificationRepository repository, INotificationsUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(DeleteOwnNotificationCommand command, CancellationToken cancellationToken)
+    {
+        var notification = await _repository.GetByIdAsync(new NotificationId(command.NotificationId), cancellationToken);
+
+        // Idempotent : déjà supprimée = succès (un balayage ne doit jamais échouer
+        // pour une notif déjà partie).
+        if (notification is null)
+        {
+            return Result.Success();
+        }
+
+        // SÉCURITÉ : on ne supprime QUE ses propres notifications. On renvoie
+        // « introuvable » (et non « interdit ») pour ne pas révéler son existence.
+        if (notification.RecipientUserId != command.RecipientUserId)
         {
             return Result.Failure(Error.NotFound("notifications.not_found", "Notification introuvable."));
         }
