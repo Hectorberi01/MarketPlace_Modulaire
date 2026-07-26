@@ -83,9 +83,12 @@ public static class MobileCatalogEndpoints
 
     /// <summary>Recherche compacte (vignettes) — ?q=&category=&sort=&page=&size=.</summary>
     private static async Task<IResult> SearchAsync(
-        string? q, Guid? category, string? sort, int? page, int? size, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+        string? q, Guid? category, string? categoryIds, string? sort, int? page, int? size, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
     {
-        var result = await sender.Send(new SearchProductsQuery(q, category, sort, page ?? 1, size ?? 20), ct);
+        // categoryIds = liste CSV d'identifiants (un rayon + son sous-arbre), résolue
+        // côté app depuis l'arbre des catégories. Prioritaire sur `category`.
+        var ids = ParseGuidCsv(categoryIds);
+        var result = await sender.Send(new SearchProductsQuery(q, category, sort, page ?? 1, size ?? 20, CategoryIds: ids), ct);
         if (result.IsFailure)
         {
             return result.Match(r => Results.Ok(r));
@@ -94,6 +97,26 @@ public static class MobileCatalogEndpoints
         // Enrichit chaque vignette avec l'image principale du produit.
         var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, ct);
         return Results.Ok(enriched);
+    }
+
+    /// <summary>Parse une liste CSV de GUID (ex. « id1,id2 »). Null/vide → null.</summary>
+    private static IReadOnlyList<Guid>? ParseGuidCsv(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv))
+        {
+            return null;
+        }
+
+        var ids = new List<Guid>();
+        foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Guid.TryParse(part, out var id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count > 0 ? ids : null;
     }
 
     /// <summary>Autocomplétion : top résultats compacts pour ?q=.</summary>

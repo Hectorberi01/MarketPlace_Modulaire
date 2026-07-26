@@ -1,7 +1,7 @@
 namespace Marketplace.Modules.Search.Domain.Documents;
 
 /// <summary>Critères et résultat paginé d'une recherche produit.</summary>
-public sealed record SearchCriteria(string? Text, Guid? CategoryId, string? SortBy, int Page, int PageSize, Guid? SellerId = null);
+public sealed record SearchCriteria(string? Text, Guid? CategoryId, string? SortBy, int Page, int PageSize, Guid? SellerId = null, IReadOnlyList<Guid>? CategoryIds = null);
 
 public sealed record SearchPage(IReadOnlyList<SearchDocument> Items, int Total, int Page, int PageSize);
 

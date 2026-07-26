@@ -29,7 +29,13 @@ internal sealed class SearchDocumentRepository : ISearchDocumentRepository
             query = query.Where(d => EF.Functions.ILike(d.Name, pattern) || EF.Functions.ILike(d.Slug, pattern));
         }
 
-        if (criteria.CategoryId is { } categoryId)
+        // Filtre catégorie : un ENSEMBLE (rayon + sous-arbre) est prioritaire sur
+        // l'identifiant unique. `Contains` se traduit en `category_id IN (…)`.
+        if (criteria.CategoryIds is { Count: > 0 } categoryIds)
+        {
+            query = query.Where(d => categoryIds.Contains(d.CategoryId));
+        }
+        else if (criteria.CategoryId is { } categoryId)
         {
             query = query.Where(d => d.CategoryId == categoryId);
         }
