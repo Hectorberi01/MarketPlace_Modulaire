@@ -115,12 +115,12 @@ public static class MobileEngagementEndpoints
             return Results.NotFound(new { error = "dispute_not_found" });
         }
 
-        return (await sender.Send(new AddDisputeMessageCommand(id, userId, request.Message, null), ct))
+        return (await sender.Send(new AddDisputeMessageCommand(id, userId, request.Message, request.PhotoUrl), ct))
             .Match(() => Results.NoContent());
     }
 
     public sealed record SubmitReviewRequest(Guid ProductId, Guid OrderId, int Rating, string? Title, string Body);
     public sealed record RedeemRequest(int Amount);
     public sealed record OpenDisputeRequest(Guid OrderId, string Type, string Message, string? PhotoUrl);
-    public sealed record DisputeReplyRequest(string Message);
+    public sealed record DisputeReplyRequest(string Message, string? PhotoUrl);
 }
