@@ -16,6 +16,7 @@ using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSellerByUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.ListSellers;
+using Marketplace.Modules.Catalog.Application.Products.Queries.ListProductsBySeller;
 using Marketplace.Modules.Notifications.Application.Notifications;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -34,6 +35,8 @@ public static class AdminSellerEndpoints
         // Boutique rattachée à un COMPTE (fiche utilisateur → sa boutique). Placé avant
         // aucune ambiguïté : « by-user » ne satisfait pas la contrainte :guid ci-dessus.
         sellers.MapGet("/by-user/{userId:guid}", GetByUserAsync);
+        // Catalogue du vendeur (fiche vendeur → ses produits).
+        sellers.MapGet("/{id:guid}/products", ListProductsAsync);
         sellers.MapPost("/{id:guid}/kyb/approve", ApproveKybAsync);
         sellers.MapPost("/{id:guid}/kyb/reject", RejectKybAsync);
         // Lien de consultation temporaire (présigné) d'une pièce KYB stockée en privé sur R2.
@@ -183,6 +186,10 @@ public static class AdminSellerEndpoints
         var result = await sender.Send(new GetSellerByUserQuery(userId), ct);
         return result.IsSuccess ? Results.Ok(result.Value) : Results.NoContent();
     }
+
+    /// <summary>Catalogue complet d'un vendeur (fiches produit, toutes en un appel).</summary>
+    private static async Task<IResult> ListProductsAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListProductsBySellerQuery(id), ct)).Match(p => Results.Ok(p));
 
     /// <summary>Valide le KYB.</summary>
     private static async Task<IResult> ApproveKybAsync(Guid id, ISender sender, CancellationToken ct)
