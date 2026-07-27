@@ -16,4 +16,10 @@ internal sealed class ReviewsModuleApi : IReviewsModuleApi
         var result = await _sender.Send(new GetProductRatingQuery(productId), cancellationToken);
         return result.IsSuccess ? result.Value : new ProductRatingSummary(productId, 0d, 0);
     }
+
+    public async Task<SellerRatingSummary> GetSellerRatingAsync(Guid sellerId, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new GetSellerRatingQuery(sellerId), cancellationToken);
+        return result.IsSuccess ? result.Value : new SellerRatingSummary(sellerId, 0d, 0);
+    }
 }

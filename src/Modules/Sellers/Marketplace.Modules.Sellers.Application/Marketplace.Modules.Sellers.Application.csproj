@@ -8,6 +8,11 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
     <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
+    <!-- Lecture in-process (CONTRACTS uniquement) pour alimenter les stats vitrine :
+         ventes (Ordering), note agrégée (Reviews), produit → vendeur (Catalog). -->
+    <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <ProjectReference Include="..\..\Reviews\Marketplace.Modules.Reviews.Contracts\Marketplace.Modules.Reviews.Contracts.csproj" />
+    <ProjectReference Include="..\..\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

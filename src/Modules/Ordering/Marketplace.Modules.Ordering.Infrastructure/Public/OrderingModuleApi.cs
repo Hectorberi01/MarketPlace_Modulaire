@@ -33,4 +33,19 @@ internal sealed class OrderingModuleApi : IOrderingModuleApi
         var result = await _sender.Send(new GetOrderQuery(orderId), cancellationToken);
         return result.IsSuccess ? result.Value : null;
     }
+
+    /// <summary>
+    /// Somme des quantités vendues par ce vendeur sur les commandes encaissées
+    /// (Confirmed / Delivered). Lecture directe au repository : c'est une agrégation
+    /// simple, recalculée à chaque nouvelle vente — pas besoin du pipeline MediatR.
+    /// </summary>
+    public async Task<int> GetSellerSalesCountAsync(Guid sellerId, CancellationToken cancellationToken = default)
+    {
+        var orders = await _orders.ListBySellerAsync(sellerId, cancellationToken);
+        return orders
+            .Where(o => o.Status is OrderStatus.Confirmed or OrderStatus.Delivered)
+            .SelectMany(o => o.Lines)
+            .Where(l => l.SellerId == sellerId)
+            .Sum(l => l.Quantity);
+    }
 }

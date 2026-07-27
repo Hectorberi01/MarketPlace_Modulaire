@@ -16,4 +16,12 @@ public interface IOrderingModuleApi
     /// était silencieusement inapplicable.
     /// </summary>
     Task<bool> HasPlacedOrderAsync(Guid buyerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nombre d'articles VENDUS par un vendeur : somme des quantités de ses lignes
+    /// dans les commandes réellement encaissées (Confirmed / Delivered). Sert à
+    /// alimenter le compteur « ventes » de sa vitrine. Recalculé depuis la source,
+    /// donc idempotent (aucun risque de double comptage si l'événement est rejoué).
+    /// </summary>
+    Task<int> GetSellerSalesCountAsync(Guid sellerId, CancellationToken cancellationToken = default);
 }

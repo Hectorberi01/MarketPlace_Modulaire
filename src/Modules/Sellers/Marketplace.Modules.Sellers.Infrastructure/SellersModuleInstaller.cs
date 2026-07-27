@@ -7,6 +7,9 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
+using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
+using Marketplace.Modules.Reviews.Contracts.IntegrationEvents;
 using Marketplace.Modules.Sellers.Application.Abstractions;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.EventHandlers;
@@ -61,6 +64,14 @@ public sealed class SellersModuleInstaller : IModuleInstaller
         services.AddScoped<IDomainEventHandler<SellerClosedDomainEvent>, SellerClosedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerReactivatedDomainEvent>, SellerReactivatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerDeletedDomainEvent>, SellerDeletedDomainEventHandler>();
+
+        // Stats de vitrine, alimentées par d'autres modules (recalcul idempotent) :
+        //   • ventes  ← commande confirmée (Ordering)
+        //   • note    ← avis publié / rejeté (Reviews), produit → vendeur via Catalog
+        services.AddScoped<SellerRatingRefresher>();
+        services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, RefreshSellerSalesOnOrderConfirmedHandler>();
+        services.AddScoped<IIntegrationEventHandler<ReviewPublishedIntegrationEvent>, RefreshSellerRatingOnReviewPublishedHandler>();
+        services.AddScoped<IIntegrationEventHandler<ReviewRejectedIntegrationEvent>, RefreshSellerRatingOnReviewRejectedHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 

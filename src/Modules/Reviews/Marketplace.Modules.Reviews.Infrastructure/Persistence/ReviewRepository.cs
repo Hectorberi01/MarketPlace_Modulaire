@@ -49,4 +49,22 @@ internal sealed class ReviewRepository : IReviewRepository
 
         return new ProductRating(productId, Math.Round(ratings.Average(r => r.Value), 2), ratings.Count);
     }
+
+    public async Task<SellerRating> GetSellerRatingAsync(Guid sellerId, CancellationToken cancellationToken = default)
+    {
+        // Même stratégie que la note produit : agrégation en mémoire du VO Rating,
+        // sur TOUS les produits du vendeur. Volumétrie modérée par vendeur.
+        var ratings = await _dbContext.Reviews
+            .Where(r => r.SellerId == sellerId && r.Status == ReviewStatus.Published)
+            .AsNoTracking()
+            .Select(r => r.Rating)
+            .ToListAsync(cancellationToken);
+
+        if (ratings.Count == 0)
+        {
+            return new SellerRating(sellerId, 0d, 0);
+        }
+
+        return new SellerRating(sellerId, Math.Round(ratings.Average(r => r.Value), 2), ratings.Count);
+    }
 }

@@ -315,4 +315,12 @@ public sealed class Seller : AggregateRoot<SellerId>
 
     /// <summary>Incrémente le compteur de ventes, alimenté par Ordering.</summary>
     public void RecordSale() => SalesCount++;
+
+    /// <summary>
+    /// Fixe le compteur de ventes à une valeur recalculée depuis la source (Ordering).
+    /// Préféré à <see cref="RecordSale"/> pour l'alimentation événementielle : poser le
+    /// total exact est idempotent, alors qu'incrémenter double-compterait si l'événement
+    /// « commande confirmée » est rejoué.
+    /// </summary>
+    public void SetSalesCount(int count) => SalesCount = count < 0 ? 0 : count;
 }

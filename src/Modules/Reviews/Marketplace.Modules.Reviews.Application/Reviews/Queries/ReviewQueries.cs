@@ -15,6 +15,9 @@ public sealed record ListReviewsByProductQuery(Guid ProductId) : IQuery<IReadOnl
 /// <summary>Note agrégée d'un produit (moyenne + nombre d'avis publiés).</summary>
 public sealed record GetProductRatingQuery(Guid ProductId) : IQuery<ProductRatingSummary>;
 
+/// <summary>Note agrégée d'un vendeur (moyenne + nombre d'avis publiés sur ses produits).</summary>
+public sealed record GetSellerRatingQuery(Guid SellerId) : IQuery<SellerRatingSummary>;
+
 /// <summary>Liste tous les avis ciblant les produits d'un vendeur (back-office vendeur).</summary>
 public sealed record ListReviewsBySellerQuery(Guid SellerId) : IQuery<IReadOnlyList<ReviewSummary>>;
 
@@ -106,5 +109,21 @@ internal sealed class GetProductRatingQueryHandler : IQueryHandler<GetProductRat
 
         // Un produit sans aucun avis est normal : note nulle, zéro avis.
         return summary ?? new ProductRatingSummary(query.ProductId, 0d, 0);
+    }
+}
+
+internal sealed class GetSellerRatingQueryHandler : IQueryHandler<GetSellerRatingQuery, SellerRatingSummary>
+{
+    private readonly IReviewRepository _repository;
+
+    public GetSellerRatingQueryHandler(IReviewRepository repository) => _repository = repository;
+
+    public async Task<Result<SellerRatingSummary>> Handle(GetSellerRatingQuery query, CancellationToken cancellationToken)
+    {
+        // Pas de cache ici : recalculé uniquement à la publication/au rejet d'un avis
+        // (par le module Sellers), pas à chaque affichage — la note vendeur est ensuite
+        // persistée sur l'entité vendeur et lue directement depuis la vitrine.
+        var rating = await _repository.GetSellerRatingAsync(query.SellerId, cancellationToken);
+        return new SellerRatingSummary(rating.SellerId, rating.Average, rating.Count);
     }
 }
