@@ -11,7 +11,12 @@ public sealed record SearchResultItem(
     string? Currency,
     double AverageRating,
     int ReviewCount,
-    string? ImageUrl);
+    string? ImageUrl,
+    // Promotion : prix acheteur d'origine (barré) et fin de remise. Laissés nuls par
+    // l'index de recherche ; renseignés à la lecture par le BFF mobile depuis l'offre
+    // la moins chère du produit. Null = pas de promotion.
+    decimal? CompareAtPrice = null,
+    DateTime? DiscountEndsOnUtc = null);
 
 /// <summary>Page de résultats de recherche.</summary>
 public sealed record SearchResultPage(

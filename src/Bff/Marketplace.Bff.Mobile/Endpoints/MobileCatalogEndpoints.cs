@@ -64,6 +64,9 @@ public static class MobileCatalogEndpoints
             currency = o.Currency,
             condition = o.Condition,
             status = o.Status,
+            // Promotion vendeur : prix d'origine barré + fin de remise (null si aucune).
+            compareAtAmount = o.CompareAtAmount,
+            discountEndsOnUtc = o.DiscountEndsOnUtc,
         });
 
         return Results.Ok(new
@@ -84,7 +87,7 @@ public static class MobileCatalogEndpoints
 
     /// <summary>Recherche compacte (vignettes) — ?q=&category=&sort=&page=&size=.</summary>
     private static async Task<IResult> SearchAsync(
-        string? q, Guid? category, string? categoryIds, string? sort, int? page, int? size, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+        string? q, Guid? category, string? categoryIds, string? sort, int? page, int? size, ISender sender, ICatalogModuleApi catalog, IOfferModuleApi offers, CancellationToken ct)
     {
         // categoryIds = liste CSV d'identifiants (un rayon + son sous-arbre), résolue
         // côté app depuis l'arbre des catégories. Prioritaire sur `category`.
@@ -95,8 +98,8 @@ public static class MobileCatalogEndpoints
             return result.Match(r => Results.Ok(r));
         }
 
-        // Enrichit chaque vignette avec l'image principale du produit.
-        var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, ct);
+        // Enrichit chaque vignette avec l'image principale + l'éventuelle promotion.
+        var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, offers, ct);
         return Results.Ok(enriched);
     }
 
@@ -132,7 +135,7 @@ public static class MobileCatalogEndpoints
     /// <summary>Vitrine vendeur : profil + note + produits du vendeur (vignettes avec image).</summary>
     private static async Task<IResult> ShopAsync(
         Guid sellerId, ISellerModuleApi sellers, ISender sender, ICatalogModuleApi catalog,
-        IReviewsModuleApi reviews, IOrderingModuleApi ordering, CancellationToken ct)
+        IOfferModuleApi offers, IReviewsModuleApi reviews, IOrderingModuleApi ordering, CancellationToken ct)
     {
         var seller = await sellers.GetSellerAsync(sellerId, ct);
         if (seller is null)
@@ -144,7 +147,7 @@ public static class MobileCatalogEndpoints
         var result = await sender.Send(new SearchProductsQuery(null, null, null, 1, 50, sellerId), ct);
         if (result.IsSuccess)
         {
-            var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, ct);
+            var enriched = await MobileBff.WithProductImagesAsync(result.Value, catalog, offers, ct);
             products = enriched.Items;
         }
 

@@ -131,9 +131,9 @@ public static class MobileDiscoveryEndpoints
     {
         var featured = await sender.Send(new SearchProductsQuery(null, null, null, 1, 10), ct);
 
-        // Enrichit les mises en avant avec l'image principale de chaque produit.
+        // Enrichit les mises en avant avec l'image principale + l'éventuelle promotion.
         var featuredPage = featured.IsSuccess
-            ? await MobileBff.WithProductImagesAsync(featured.Value, catalog, ct)
+            ? await MobileBff.WithProductImagesAsync(featured.Value, catalog, offers, ct)
             : null;
 
         // Section ÉDITORIALE « Mis en avant » : produits porteurs du tag `featured`.
@@ -143,15 +143,23 @@ public static class MobileDiscoveryEndpoints
         foreach (var prod in promotedProducts)
         {
             var offs = await offers.GetOffersByProductAsync(prod.Id, ct);
-            decimal? minPrice = offs.Count > 0 ? offs.Min(o => o.BasePriceAmount) : null;
+            // Offre active la moins chère : elle fixe le prix affiché ET l'éventuelle promo.
+            var cheapest = offs
+                .Where(o => string.Equals(o.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(o => o.BasePriceAmount)
+                .FirstOrDefault() ?? (offs.Count > 0 ? offs[0] : null);
+            decimal? minPrice = cheapest?.BasePriceAmount;
             var image = prod.Media.FirstOrDefault(m => m.IsPrimary)?.Url ?? prod.Media.FirstOrDefault()?.Url;
+            var onSale = cheapest?.CompareAtAmount is { } c && c > cheapest.BasePriceAmount;
             promoted.Add(new
             {
                 id = prod.Id,
                 name = prod.Name,
                 imageUrl = image,
                 minPrice,
-                currency = offs.Count > 0 ? offs[0].Currency : "XOF",
+                currency = cheapest?.Currency ?? "XOF",
+                compareAtPrice = onSale ? cheapest!.CompareAtAmount : null,
+                discountEndsOnUtc = onSale ? cheapest!.DiscountEndsOnUtc : null,
             });
         }
 
