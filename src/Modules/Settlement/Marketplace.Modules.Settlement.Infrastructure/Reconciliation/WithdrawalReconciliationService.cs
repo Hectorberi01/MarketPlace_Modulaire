@@ -52,6 +52,16 @@ public sealed class WithdrawalReconciliationService : BackgroundService
                 {
                     _logger.LogInformation("Réconciliation des retraits : {Count} clôturé(s).", result.Value);
                 }
+
+                // Même filet de sécurité pour les remboursements CLIENT « en cours » :
+                // un payout FedaPay accepté n'est que « started » ; ce balayage clôture
+                // en Completed (statut « sent ») ou contre-passe le débit plateforme
+                // (statut « failed »). Idempotent, comme pour les retraits.
+                var refunds = await sender.Send(new ReconcileCustomerRefundsCommand(BatchSize), stoppingToken);
+                if (refunds.IsSuccess && refunds.Value > 0)
+                {
+                    _logger.LogInformation("Réconciliation des remboursements client : {Count} clôturé(s).", refunds.Value);
+                }
             }
             catch (OperationCanceledException)
             {

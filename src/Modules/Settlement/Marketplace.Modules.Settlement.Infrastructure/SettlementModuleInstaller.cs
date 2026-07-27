@@ -70,6 +70,7 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<ISellerWalletRepository, SellerWalletRepository>();
         services.AddScoped<IPlatformWalletRepository, PlatformWalletRepository>();
         services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
+        services.AddScoped<ICustomerRefundRepository, CustomerRefundRepository>();
         services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();
         services.AddScoped<WalletMutations>();
 

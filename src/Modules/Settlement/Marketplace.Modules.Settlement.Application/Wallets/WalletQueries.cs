@@ -37,7 +37,11 @@ internal static class WalletMapper
         => new(w.SellerId, w.PendingBalance, w.AvailableBalance, pendingWithdrawal, w.Currency);
 
     public static PlatformWalletView ToView(PlatformWallet w)
-        => new(w.CommissionBalance, w.ProviderFeeBalance, w.ShippingBalance, w.Currency);
+        => new(w.CommissionBalance, w.ProviderFeeBalance, w.ShippingBalance, w.RefundsBalance, w.Currency);
+
+    public static CustomerRefundView ToView(CustomerRefund r)
+        => new(r.Id.Value, r.OrderId, r.BuyerId, r.Amount, r.Currency, r.Reason, r.Msisdn, r.Provider,
+               r.Status.ToString(), r.ProviderRef, PresentableFailure(r.FailureReason), r.CreatedAtUtc, r.CompletedAtUtc);
 
     public static WalletTransactionView ToView(WalletTransaction t)
         => new(t.Id, t.Account.ToString(), t.Direction.ToString(), t.Amount, t.Currency, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAtUtc);
@@ -211,7 +215,7 @@ internal sealed class GetPlatformWalletQueryHandler : IQueryHandler<GetPlatformW
     {
         var wallet = await _wallets.GetAsync(cancellationToken);
         return wallet is null
-            ? new PlatformWalletView(0m, 0m, 0m, "XOF")
+            ? new PlatformWalletView(0m, 0m, 0m, 0m, "XOF")
             : WalletMapper.ToView(wallet);
     }
 }

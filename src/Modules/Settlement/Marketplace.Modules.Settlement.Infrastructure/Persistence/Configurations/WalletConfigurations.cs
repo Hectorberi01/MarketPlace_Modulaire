@@ -101,9 +101,43 @@ internal sealed class PlatformWalletConfiguration : IEntityTypeConfiguration<Pla
         builder.Property(w => w.CommissionBalance).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.ProviderFeeBalance).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.ShippingBalance).HasColumnType("numeric(18,2)").IsRequired();
+        // Total reversé aux clients en remboursements directs. `HasDefaultValue(0)` : les
+        // lignes existantes (une seule, le singleton) prennent 0 à l'application de la migration.
+        builder.Property(w => w.RefundsBalance).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(w => w.UpdatedAtUtc).IsRequired();
 
         builder.Ignore(w => w.DomainEvents);
+    }
+}
+
+internal sealed class CustomerRefundConfiguration : IEntityTypeConfiguration<CustomerRefund>
+{
+    public void Configure(EntityTypeBuilder<CustomerRefund> builder)
+    {
+        builder.ToTable("customer_refunds");
+        builder.HasKey(r => r.Id);
+        builder.Property(r => r.Id)
+            .HasConversion(id => id.Value, value => new CustomerRefundId(value))
+            .ValueGeneratedNever();
+
+        builder.Property(r => r.OrderId).IsRequired();
+        builder.Property(r => r.BuyerId).IsRequired();
+        builder.Property(r => r.Amount).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(r => r.Currency).HasMaxLength(3).IsRequired();
+        builder.Property(r => r.Reason).HasMaxLength(500).IsRequired();
+        builder.Property(r => r.Msisdn).HasMaxLength(30).IsRequired();
+        builder.Property(r => r.Provider).HasMaxLength(30).IsRequired();
+        builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(r => r.ProviderRef).HasMaxLength(200);
+        builder.Property(r => r.FailureReason).HasMaxLength(500);
+        builder.Property(r => r.CreatedAtUtc).IsRequired();
+        builder.Property(r => r.SentToPspAtUtc);
+        builder.Property(r => r.CompletedAtUtc);
+
+        builder.HasIndex(r => r.OrderId);
+        builder.HasIndex(r => r.Status);
+
+        builder.Ignore(r => r.DomainEvents);
     }
 }
 

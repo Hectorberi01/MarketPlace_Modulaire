@@ -14,6 +14,28 @@ public readonly record struct WithdrawalId(Guid Value)
     public override string ToString() => Value.ToString();
 }
 
+/// <summary>Identité forte d'un remboursement client (versement MoMo initié par l'admin).</summary>
+public readonly record struct CustomerRefundId(Guid Value)
+{
+    public static CustomerRefundId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
+
+/// <summary>
+/// Cycle de vie d'un remboursement client :
+///  • Processing : payout FedaPay DEMANDÉ (start accepté ou issue indéterminée) ;
+///    le portefeuille plateforme reste débité — on ne rembourse jamais tant qu'on
+///    ne sait pas, sous peine de double versement.
+///  • Completed  : versement confirmé par le PSP (statut « sent »).
+///  • Failed     : rejet DÉFINITIF du PSP → le débit plateforme est contre-passé.
+/// </summary>
+public enum CustomerRefundStatus
+{
+    Processing = 0,
+    Completed = 1,
+    Failed = 2
+}
+
 /// <summary>Type de propriétaire d'une écriture au grand livre du wallet.</summary>
 public enum WalletOwnerType
 {
@@ -32,7 +54,10 @@ public enum WalletAccount
     Available = 1,
     Commission = 2,
     Shipping = 3,
-    Provider = 4
+    Provider = 4,
+
+    /// <summary>Plateforme : total reversé aux clients en remboursements directs (coût).</summary>
+    Refunds = 5
 }
 
 /// <summary>Sens d'une écriture (crédit augmente le solde, débit le diminue).</summary>

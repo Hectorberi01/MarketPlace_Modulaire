@@ -1,6 +1,7 @@
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Settlement.Application.Batches;
+using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Billing.Application.Commissions;
 using Marketplace.Modules.Billing.Application.Invoices;
 
@@ -19,6 +20,7 @@ public static class AdminFinanceEndpoints
         settlement.MapGet("/batches/{id:guid}", GetBatchAsync);
         settlement.MapPost("/run", RunAsync);
         settlement.MapPost("/batches/{batchId:guid}/payouts/{payoutId:guid}/paid", MarkPaidAsync);
+        settlement.MapPost("/customer-refund", CustomerRefundAsync);
 
         var commissions = app.MapAdminGroup("/admin/commission-rules", "Admin · Commissions");
         commissions.MapGet("/", ListCommissionRulesAsync);
@@ -52,6 +54,15 @@ public static class AdminFinanceEndpoints
     /// <summary>Marque un reversement comme versé (réf. transfert MoMo/banque).</summary>
     private static async Task<IResult> MarkPaidAsync(Guid batchId, Guid payoutId, MarkPaidRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new MarkPayoutPaidCommand(batchId, payoutId, request.ProviderRef), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Rembourse un CLIENT sur une commande (hors flux retour) : payout FedaPay MoMo vers
+    /// son numéro, coût débité du portefeuille plateforme. Montant plafonné au total payé.
+    /// </summary>
+    private static async Task<IResult> CustomerRefundAsync(CustomerRefundRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(
+                new InitiateCustomerRefundCommand(request.OrderId, request.Amount, request.Msisdn, request.Provider, request.Reason), ct))
+            .Match(r => Results.Ok(r));
 
     private static async Task<IResult> ListCommissionRulesAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListCommissionRulesQuery(), ct)).Match(r => Results.Ok(r));
@@ -99,6 +110,7 @@ public static class AdminFinanceEndpoints
 
     public sealed record RunSettlementRequest(DateTime PeriodStartUtc, DateTime PeriodEndUtc);
     public sealed record MarkPaidRequest(string ProviderRef);
+    public sealed record CustomerRefundRequest(Guid OrderId, decimal Amount, string Msisdn, string Provider, string Reason);
     public sealed record CommissionRuleRequest(
         string Scope, Guid? TargetId, decimal Rate, decimal FixedFee, string Currency,
         decimal? MinFee, decimal? MaxFee, DateTime? EffectiveFromUtc);

@@ -27,6 +27,7 @@ public sealed class SettlementDbContext : ModuleDbContext, ISettlementUnitOfWork
     public DbSet<SellerWallet> SellerWallets => Set<SellerWallet>();
     public DbSet<PlatformWallet> PlatformWallets => Set<PlatformWallet>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+    public DbSet<CustomerRefund> CustomerRefunds => Set<CustomerRefund>();
     public DbSet<WalletTransaction> WalletTransactions => Set<WalletTransaction>();
 
     protected override string Schema => SchemaName;

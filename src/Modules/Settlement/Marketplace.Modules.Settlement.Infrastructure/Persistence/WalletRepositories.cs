@@ -70,6 +70,32 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
             .FirstOrDefaultAsync(w => w.ProviderRef == providerRef, cancellationToken);
 }
 
+internal sealed class CustomerRefundRepository : ICustomerRefundRepository
+{
+    private readonly SettlementDbContext _dbContext;
+
+    public CustomerRefundRepository(SettlementDbContext dbContext) => _dbContext = dbContext;
+
+    public async Task AddAsync(CustomerRefund refund, CancellationToken cancellationToken = default)
+        => await _dbContext.CustomerRefunds.AddAsync(refund, cancellationToken);
+
+    // Suivi activé : l'entité est mutée puis persistée (réconciliation).
+    public async Task<CustomerRefund?> GetByIdAsync(CustomerRefundId id, CancellationToken cancellationToken = default)
+        => await _dbContext.CustomerRefunds.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+    public async Task<decimal> SumActiveForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => await _dbContext.CustomerRefunds
+            .Where(r => r.OrderId == orderId && r.Status != CustomerRefundStatus.Failed)
+            .SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
+
+    // SUIVI activé (pas de AsNoTracking) : la réconciliation mute ces entités.
+    public async Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.CustomerRefunds
+            .Where(r => r.Status == CustomerRefundStatus.Processing)
+            .OrderBy(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+}
+
 internal sealed class WalletTransactionRepository : IWalletTransactionRepository
 {
     private readonly SettlementDbContext _dbContext;

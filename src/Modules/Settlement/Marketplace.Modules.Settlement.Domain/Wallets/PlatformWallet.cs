@@ -25,6 +25,7 @@ public sealed class PlatformWallet : AggregateRoot<Guid>
         CommissionBalance = 0m;
         ProviderFeeBalance = 0m;
         ShippingBalance = 0m;
+        RefundsBalance = 0m;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -32,6 +33,13 @@ public sealed class PlatformWallet : AggregateRoot<Guid>
     public decimal CommissionBalance { get; private set; }
     public decimal ProviderFeeBalance { get; private set; }
     public decimal ShippingBalance { get; private set; }
+
+    /// <summary>
+    /// Total reversé aux clients en remboursements directs (initiés par l'admin,
+    /// hors flux retour). C'est un COÛT cumulé pour la plateforme : il croît à chaque
+    /// remboursement confirmé et se contre-passe si un payout échoue.
+    /// </summary>
+    public decimal RefundsBalance { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
     public static PlatformWallet Create(string currency)
@@ -107,6 +115,34 @@ public sealed class PlatformWallet : AggregateRoot<Guid>
         }
 
         ProviderFeeBalance -= amount;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Comptabilise un remboursement direct versé à un client (coût plateforme).
+    /// Appelé à l'initiation du payout ; contre-passé par <see cref="ReverseRefund"/>
+    /// si le versement échoue définitivement.
+    /// </summary>
+    public void AccrueRefund(decimal amount)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        RefundsBalance += amount;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>Annule un remboursement client comptabilisé dont le payout a échoué.</summary>
+    public void ReverseRefund(decimal amount)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        RefundsBalance -= amount;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 }

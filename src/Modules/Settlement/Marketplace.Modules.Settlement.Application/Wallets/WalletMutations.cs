@@ -186,6 +186,38 @@ public sealed class WalletMutations
             WalletTransaction.ForPlatform(WalletAccount.Provider, WalletDirection.Debit, amount, currency, "refund_reversal", RefundReferenceType, returnRequestId), ct);
     }
 
+    /// <summary>
+    /// Comptabilise un remboursement DIRECT versé à un client (coût plateforme) : crédite
+    /// le solde « refunds » du portefeuille plateforme et trace l'écriture. Référencé par
+    /// l'identifiant du remboursement (idempotence + traçabilité au grand livre).
+    /// </summary>
+    public async Task AccrueCustomerRefundAsync(decimal amount, string currency, Guid refundId, CancellationToken ct)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreatePlatformAsync(currency, ct);
+        wallet.AccrueRefund(amount);
+        await _ledger.AddAsync(
+            WalletTransaction.ForPlatform(WalletAccount.Refunds, WalletDirection.Credit, amount, currency, "customer_refund", "customer_refund", refundId), ct);
+    }
+
+    /// <summary>Contre-passe un remboursement client comptabilisé dont le payout a échoué.</summary>
+    public async Task ReverseCustomerRefundAsync(decimal amount, string currency, Guid refundId, CancellationToken ct)
+    {
+        if (amount <= 0m)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreatePlatformAsync(currency, ct);
+        wallet.ReverseRefund(amount);
+        await _ledger.AddAsync(
+            WalletTransaction.ForPlatform(WalletAccount.Refunds, WalletDirection.Debit, amount, currency, "customer_refund_reversal", "customer_refund", refundId), ct);
+    }
+
     private async Task<SellerWallet> GetOrCreateSellerAsync(Guid sellerId, string currency, CancellationToken ct)
     {
         if (_sellerCache.TryGetValue(sellerId, out var cached))

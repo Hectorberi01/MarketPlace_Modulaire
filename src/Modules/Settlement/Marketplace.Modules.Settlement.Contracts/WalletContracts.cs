@@ -48,7 +48,24 @@ public sealed record PlatformWalletView(
     decimal CommissionBalance,
     decimal ProviderFeeBalance,
     decimal ShippingBalance,
+    decimal RefundsBalance,
     string Currency);
+
+/// <summary>Un remboursement client direct (versement MoMo initié par l'admin).</summary>
+public sealed record CustomerRefundView(
+    Guid Id,
+    Guid OrderId,
+    Guid BuyerId,
+    decimal Amount,
+    string Currency,
+    string Reason,
+    string Msisdn,
+    string Provider,
+    string Status,
+    string? ProviderRef,
+    string? FailureReason,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
 
 /// <summary>Une ligne du grand livre wallet (relevé vendeur / plateforme).</summary>
 public sealed record WalletTransactionView(
