@@ -2,6 +2,7 @@ using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Offers.Contracts;
+using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Reviews.Application.Reviews.Queries;
 using Marketplace.Modules.Reviews.Contracts;
@@ -130,7 +131,8 @@ public static class MobileCatalogEndpoints
 
     /// <summary>Vitrine vendeur : profil + note + produits du vendeur (vignettes avec image).</summary>
     private static async Task<IResult> ShopAsync(
-        Guid sellerId, ISellerModuleApi sellers, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+        Guid sellerId, ISellerModuleApi sellers, ISender sender, ICatalogModuleApi catalog,
+        IReviewsModuleApi reviews, IOrderingModuleApi ordering, CancellationToken ct)
     {
         var seller = await sellers.GetSellerAsync(sellerId, ct);
         if (seller is null)
@@ -146,12 +148,23 @@ public static class MobileCatalogEndpoints
             products = enriched.Items;
         }
 
+        // NOTE & VENTES calculées EN DIRECT depuis la source (avis publiés / commandes
+        // encaissées), et non lues sur l'entité vendeur. Deux raisons :
+        //   • pas de dépendance à un événement : les avis et ventes DÉJÀ existants
+        //     s'affichent immédiatement, sans backfill ;
+        //   • toujours exact : la vitrine reflète l'état réel à l'instant T.
+        // Le compteur persistant du vendeur reste alimenté par les handlers (pour son
+        // tableau de bord), mais la vitrine ne s'y fie pas.
+        var rating = await reviews.GetSellerRatingAsync(sellerId, ct);
+        var salesCount = await ordering.GetSellerSalesCountAsync(sellerId, ct);
+
         // ⚠️ `.ToPublic()` — SANS LUI, CET ENDPOINT ANONYME FUIT LE RIB ET LES PIÈCES KYB.
         //
         // `seller` est un SellerSummary COMPLET : numéro Mobile Money, taux de commission,
         // URLs des documents d'identité. Le sérialiser tel quel sur une route anonyme
         // permettait de moissonner ces données pour tous les vendeurs. On projette la
         // vitrine publique, qui ne contient que ce qu'un visiteur a le droit de voir.
-        return Results.Ok(new { seller = seller.ToPublic(), products });
+        var vitrine = seller.ToPublic() with { Rating = (decimal)rating.Average, SalesCount = salesCount };
+        return Results.Ok(new { seller = vitrine, products });
     }
 }
