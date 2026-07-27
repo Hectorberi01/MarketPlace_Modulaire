@@ -22,8 +22,15 @@ internal sealed class SellerEarningRepository : ISellerEarningRepository
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<SellerEarning>> ListReleasedInPeriodAsync(DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default)
+        // On filtre sur la date de LIBÉRATION (ReleasedAtUtc = quand le gain est devenu
+        // payable), et NON sur la date de création/confirmation : c'est la période de
+        // règlement qui compte. Un gain confirmé avant la période mais livré pendant
+        // doit être réglé ; un gain confirmé pendant mais pas encore livré ne doit pas.
         => await _dbContext.Earnings
-            .Where(e => e.Status == EarningStatus.Released && e.CreatedAtUtc >= startUtc && e.CreatedAtUtc <= endUtc)
+            .Where(e => e.Status == EarningStatus.Released
+                        && e.ReleasedAtUtc != null
+                        && e.ReleasedAtUtc >= startUtc
+                        && e.ReleasedAtUtc <= endUtc)
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<SellerEarning>> ListByOrderAsync(Guid orderId, CancellationToken cancellationToken = default)

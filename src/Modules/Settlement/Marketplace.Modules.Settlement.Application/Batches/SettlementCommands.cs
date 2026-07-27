@@ -47,6 +47,13 @@ internal sealed class RunSettlementCommandHandler : ICommandHandler<RunSettlemen
 
         var currency = earnings[0].Currency;
 
+        // Un lot est STRICTEMENT mono-devise : le batch porte une seule devise et
+        // additionne des montants — mélanger XOF et une autre devise dans une même
+        // somme donnerait un total dénué de sens. On ne règle donc que les gains de
+        // CETTE devise ; ceux d'une autre devise restent « Released » pour un prochain
+        // lot (aucun effet en XOF pur aujourd'hui, mais le bug latent est fermé).
+        var settleable = earnings.Where(e => e.Currency == currency).ToList();
+
         var batchResult = SettlementBatch.Create(command.PeriodStartUtc, command.PeriodEndUtc, currency);
         if (batchResult.IsFailure)
         {
@@ -55,7 +62,7 @@ internal sealed class RunSettlementCommandHandler : ICommandHandler<RunSettlemen
 
         var batch = batchResult.Value;
 
-        foreach (var group in earnings.GroupBy(e => e.SellerId))
+        foreach (var group in settleable.GroupBy(e => e.SellerId))
         {
             batch.AddPayout(
                 group.Key,
@@ -64,7 +71,7 @@ internal sealed class RunSettlementCommandHandler : ICommandHandler<RunSettlemen
                 group.Sum(e => e.NetAmount));
         }
 
-        foreach (var earning in earnings)
+        foreach (var earning in settleable)
         {
             earning.MarkSettled(batch.Id.Value);
         }
