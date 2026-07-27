@@ -17,6 +17,7 @@ using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Identity.Application.Users.Queries.ListUsers;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetSignupsSeries;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
 
 namespace Marketplace.Bff.Admin.Endpoints;
 
@@ -31,6 +32,8 @@ public static class AdminUserEndpoints
         users.MapPost("/register", RegisterUserAsync);
         users.MapGet("/{id:guid}", GetUserAsync);
         users.MapGet("/{id:guid}/cart", GetUserCartAsync);
+        // Commandes du client (sert au remboursement direct : choisir la commande).
+        users.MapGet("/{id:guid}/orders", GetUserOrdersAsync);
         // Validation d'un compte en attente. « Refuser » n'a pas d'endpoint dédié :
         // c'est /suspend. Un refus doit rester réversible et laisser une trace —
         // supprimer un compte douteux effacerait précisément ce qu'on veut garder.
@@ -102,6 +105,10 @@ public static class AdminUserEndpoints
     /// <summary>Panier actif d'un acheteur (valorisé). Renvoie null si aucun panier ouvert.</summary>
     private static async Task<IResult> GetUserCartAsync(Guid id, ICartModuleApi cart, CancellationToken ct)
         => Results.Ok(await cart.GetActiveCartAsync(id, ct));
+
+    /// <summary>Commandes passées par ce client (les plus récentes d'abord).</summary>
+    private static async Task<IResult> GetUserOrdersAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListMyOrdersQuery(id), ct)).Match(o => Results.Ok(o));
 
     /// <summary>Suspend un compte.</summary>
     /// <summary>Valide un compte en attente : il devient actif et peut se connecter.</summary>

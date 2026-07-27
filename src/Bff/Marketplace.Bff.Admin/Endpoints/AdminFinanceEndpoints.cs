@@ -49,7 +49,8 @@ public static class AdminFinanceEndpoints
 
     /// <summary>Génère un lot de reversements sur une période (un payout net par vendeur).</summary>
     private static async Task<IResult> RunAsync(RunSettlementRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new RunSettlementCommand(request.PeriodStartUtc, request.PeriodEndUtc), ct)).Match(id => Results.Ok(new { batchId = id }));
+        => (await sender.Send(new RunSettlementCommand(request.PeriodStartUtc, request.PeriodEndUtc, request.SellerId), ct))
+            .Match(id => Results.Ok(new { batchId = id }));
 
     /// <summary>Marque un reversement comme versé (réf. transfert MoMo/banque).</summary>
     private static async Task<IResult> MarkPaidAsync(Guid batchId, Guid payoutId, MarkPaidRequest request, ISender sender, CancellationToken ct)
@@ -108,7 +109,8 @@ public static class AdminFinanceEndpoints
     private static async Task<IResult> MarkInvoicePaidAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new MarkInvoicePaidCommand(id), ct)).Match(() => Results.NoContent());
 
-    public sealed record RunSettlementRequest(DateTime PeriodStartUtc, DateTime PeriodEndUtc);
+    /// <summary><c>SellerId</c> null = tous les vendeurs de la période.</summary>
+    public sealed record RunSettlementRequest(DateTime PeriodStartUtc, DateTime PeriodEndUtc, Guid? SellerId = null);
     public sealed record MarkPaidRequest(string ProviderRef);
     public sealed record CustomerRefundRequest(Guid OrderId, decimal Amount, string Msisdn, string Provider, string Reason);
     public sealed record CommissionRuleRequest(

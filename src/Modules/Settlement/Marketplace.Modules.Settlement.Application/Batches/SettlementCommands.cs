@@ -7,8 +7,11 @@ using Marketplace.Modules.Settlement.Domain.Earnings;
 
 namespace Marketplace.Modules.Settlement.Application.Batches;
 
-/// <summary>Génère un lot de reversements pour la période : un payout net par vendeur.</summary>
-public sealed record RunSettlementCommand(DateTime PeriodStartUtc, DateTime PeriodEndUtc) : ICommand<Guid>;
+/// <summary>
+/// Génère un lot de reversements pour la période : un payout net par vendeur.
+/// <paramref name="SellerId"/> restreint le lot à UN vendeur ; null = tous.
+/// </summary>
+public sealed record RunSettlementCommand(DateTime PeriodStartUtc, DateTime PeriodEndUtc, Guid? SellerId = null) : ICommand<Guid>;
 
 /// <summary>Marque un reversement comme versé (simule le transfert MoMo/banque).</summary>
 public sealed record MarkPayoutPaidCommand(Guid BatchId, Guid PayoutId, string ProviderRef) : ICommand;
@@ -39,7 +42,14 @@ internal sealed class RunSettlementCommandHandler : ICommandHandler<RunSettlemen
     {
         // On ne reverse que les gains LIBÉRÉS (escrow levé à la livraison), pas les
         // gains encore en escrow (simplement confirmés).
-        var earnings = await _earningRepository.ListReleasedInPeriodAsync(command.PeriodStartUtc, command.PeriodEndUtc, cancellationToken);
+        var released = await _earningRepository.ListReleasedInPeriodAsync(command.PeriodStartUtc, command.PeriodEndUtc, cancellationToken);
+
+        // Ciblage d'UN vendeur : on filtre après lecture plutôt que d'ajouter une
+        // surcharge au repository — la période borne déjà fortement le volume.
+        var earnings = command.SellerId is { } sellerId
+            ? released.Where(e => e.SellerId == sellerId).ToList()
+            : released;
+
         if (earnings.Count == 0)
         {
             return Result.Failure<Guid>(Error.Conflict("settlement.nothing_to_settle", "Aucun gain payable (livré) à reverser sur cette période."));
