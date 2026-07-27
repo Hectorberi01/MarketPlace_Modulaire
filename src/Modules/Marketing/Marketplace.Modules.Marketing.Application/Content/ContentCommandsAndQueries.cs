@@ -46,7 +46,13 @@ public sealed class CreateContentBlockCommandValidator : AbstractValidator<Creat
 {
     public CreateContentBlockCommandValidator()
     {
-        RuleFor(c => c.Type).Must(v => v is "Banner" or "Page" or "FeaturedList" or "Faq").WithMessage("Type de bloc invalide.");
+        // Insensible à la CASSE, comme le handler qui suit (Enum.TryParse ignoreCase).
+        // Avant, « banner » était refusé par ce validateur alors que le handler l'aurait
+        // accepté : la console renvoyait un 400 incompréhensible sur une valeur pourtant
+        // valide. Deux règles pour la même chose finissent toujours par diverger.
+        RuleFor(c => c.Type)
+            .Must(v => Enum.TryParse<ContentBlockType>(v, ignoreCase: true, out _))
+            .WithMessage("Type de bloc invalide (Banner, Page, FeaturedList, Faq).");
         RuleFor(c => c.Slot).NotEmpty().MaximumLength(100);
         RuleFor(c => c.Content).NotEmpty();
     }
