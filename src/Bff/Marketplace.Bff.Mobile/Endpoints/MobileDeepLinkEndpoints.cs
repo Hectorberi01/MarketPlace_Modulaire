@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Sellers.Contracts;
 using Microsoft.Extensions.Configuration;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
@@ -36,6 +37,9 @@ public static class MobileDeepLinkEndpoints
         app.MapGet("/p/{id:guid}", ProductLandingAsync)
             .WithTags("Mobile · DeepLink").AllowAnonymous();
 
+        app.MapGet("/s/{id:guid}", ShopLandingAsync)
+            .WithTags("Mobile · DeepLink").AllowAnonymous();
+
         return app;
     }
 
@@ -48,7 +52,7 @@ public static class MobileDeepLinkEndpoints
                      ?? new[] { "QSVS3QW2NQ.fr.hbamarket.app", "QSVS3QW2NQ.fr.hbamarket.app.staging" };
 
         // Le format « components » est celui recommandé depuis iOS 13. On ouvre
-        // dans l'app tout ce qui commence par /p/ (les fiches produit).
+        // dans l'app les fiches produit (/p/*) ET les vitrines boutique (/s/*).
         var payload = new
         {
             applinks = new
@@ -65,6 +69,11 @@ public static class MobileDeepLinkEndpoints
                             {
                                 ["/"] = "/p/*",
                                 ["comment"] = "Fiches produit",
+                            },
+                            new Dictionary<string, object>
+                            {
+                                ["/"] = "/s/*",
+                                ["comment"] = "Vitrines boutique",
                             },
                         },
                     },
@@ -127,6 +136,36 @@ public static class MobileDeepLinkEndpoints
         var image = product?.Media?.FirstOrDefault(m => m.IsPrimary)?.Url
                     ?? product?.Media?.FirstOrDefault()?.Url
                     ?? string.Empty;
+
+        var html = BuildHtml(name, description, image, appStore, playStore);
+        return Results.Content(html, "text/html; charset=utf-8");
+    }
+
+    /// <summary>
+    /// Page de repli pour un lien BOUTIQUE partagé (`/s/{id}`). Même logique que la
+    /// fiche produit : si l'app est installée, le système ouvre la vitrine
+    /// directement ; sinon le navigateur affiche cet aperçu + boutons de store.
+    /// </summary>
+    private static async Task<IResult> ShopLandingAsync(
+        Guid id, ISellerModuleApi sellers, IConfiguration config, CancellationToken ct)
+    {
+        var seller = (await sellers.GetSellerAsync(id, ct))?.ToPublic();
+
+        var appStore = config.GetValue<string>("DeepLink:AppStoreUrl")
+                       ?? config.GetValue<string>("MobileApp:UpdateUrlIos")
+                       ?? "https://apps.apple.com/app/id0000000000";
+        var playStore = config.GetValue<string>("DeepLink:PlayStoreUrl")
+                        ?? config.GetValue<string>("MobileApp:UpdateUrlAndroid")
+                        ?? "https://play.google.com/store/apps/details?id=com.hbaexpress.client";
+
+        // Boutique introuvable / suspendue : aperçu générique (200) plutôt qu'une erreur.
+        var name = seller?.ShopName ?? "HBA Express";
+        var description = Trim(
+            !string.IsNullOrWhiteSpace(seller?.Description)
+                ? seller!.Description!
+                : "Découvrez cette boutique et ses produits sur HBA Express.",
+            160);
+        var image = seller?.LogoUrl ?? string.Empty;
 
         var html = BuildHtml(name, description, image, appStore, playStore);
         return Results.Content(html, "text/html; charset=utf-8");
