@@ -14,6 +14,7 @@ using Marketplace.Modules.Identity.Application.Roles.Queries.ListRoles;
 using Marketplace.Modules.Identity.Application.Users.Commands.AssignRole;
 using Marketplace.Modules.Identity.Application.Users.Commands.RegisterUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSeller;
+using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSellerByUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.ListSellers;
 using Marketplace.Modules.Notifications.Application.Notifications;
 
@@ -30,6 +31,9 @@ public static class AdminSellerEndpoints
         // Création d'un compte vendeur par l'admin : crée le compte utilisateur puis la boutique.
         sellers.MapPost("/register", RegisterSellerAccountAsync);
         sellers.MapGet("/{id:guid}", GetAsync);
+        // Boutique rattachée à un COMPTE (fiche utilisateur → sa boutique). Placé avant
+        // aucune ambiguïté : « by-user » ne satisfait pas la contrainte :guid ci-dessus.
+        sellers.MapGet("/by-user/{userId:guid}", GetByUserAsync);
         sellers.MapPost("/{id:guid}/kyb/approve", ApproveKybAsync);
         sellers.MapPost("/{id:guid}/kyb/reject", RejectKybAsync);
         // Lien de consultation temporaire (présigné) d'une pièce KYB stockée en privé sur R2.
@@ -166,6 +170,19 @@ public static class AdminSellerEndpoints
     /// <summary>Détail d'un vendeur.</summary>
     private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new GetSellerQuery(id), ct)).Match(s => Results.Ok(s));
+
+    /// <summary>
+    /// Boutique rattachée à un compte utilisateur, ou 204 s'il n'en a pas.
+    ///
+    /// On renvoie « No Content » plutôt qu'un 404 : pour l'appelant (la fiche
+    /// utilisateur), un acheteur sans boutique est un cas NORMAL, pas une erreur —
+    /// et cela évite de faire remonter une erreur dans la console pour rien.
+    /// </summary>
+    private static async Task<IResult> GetByUserAsync(Guid userId, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetSellerByUserQuery(userId), ct);
+        return result.IsSuccess ? Results.Ok(result.Value) : Results.NoContent();
+    }
 
     /// <summary>Valide le KYB.</summary>
     private static async Task<IResult> ApproveKybAsync(Guid id, ISender sender, CancellationToken ct)
