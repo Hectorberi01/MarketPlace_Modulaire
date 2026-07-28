@@ -1,7 +1,9 @@
 using MediatR;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Settlement.Application.Batches;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Settlement.Contracts;
 using Marketplace.Modules.Billing.Application.Commissions;
 using Marketplace.Modules.Billing.Application.Invoices;
 
@@ -21,6 +23,7 @@ public static class AdminFinanceEndpoints
         settlement.MapPost("/run", RunAsync);
         settlement.MapPost("/batches/{batchId:guid}/payouts/{payoutId:guid}/paid", MarkPaidAsync);
         settlement.MapPost("/customer-refund", CustomerRefundAsync);
+        settlement.MapPost("/batches/{id:guid}/cancel", CancelBatchAsync);
 
         var commissions = app.MapAdminGroup("/admin/commission-rules", "Admin · Commissions");
         commissions.MapGet("/", ListCommissionRulesAsync);
@@ -41,11 +44,81 @@ public static class AdminFinanceEndpoints
         return app;
     }
 
-    private static async Task<IResult> ListBatchesAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListSettlementBatchesQuery(), ct)).Match(b => Results.Ok(b));
+    private static async Task<IResult> ListBatchesAsync(ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListSettlementBatchesQuery(), ct);
+        if (result.IsFailure)
+        {
+            return result.Match(b => Results.Ok(b));
+        }
 
-    private static async Task<IResult> GetBatchAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetSettlementBatchQuery(id), ct)).Match(b => Results.Ok(b));
+        // Résolution des noms de boutique : un lot n'expose que des SellerId, or la
+        // console doit montrer À QUI le lot verse. Cache local pour ne pas relire deux
+        // fois le même vendeur sur plusieurs lots.
+        var names = new Dictionary<Guid, string>();
+        var batches = new List<object>(result.Value.Count);
+        foreach (var b in result.Value)
+        {
+            batches.Add(await EnrichBatchAsync(b, sellers, names, ct));
+        }
+
+        return Results.Ok(batches);
+    }
+
+    private static async Task<IResult> GetBatchAsync(Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetSettlementBatchQuery(id), ct);
+        return result.IsSuccess
+            ? Results.Ok(await EnrichBatchAsync(result.Value, sellers, new Dictionary<Guid, string>(), ct))
+            : result.Match(b => Results.Ok(b));
+    }
+
+    /// <summary>Ajoute le nom de boutique à chaque reversement du lot.</summary>
+    private static async Task<object> EnrichBatchAsync(
+        SettlementBatchSummary batch, ISellerModuleApi sellers, Dictionary<Guid, string> names, CancellationToken ct)
+    {
+        var payouts = new List<object>(batch.Payouts.Count);
+        foreach (var p in batch.Payouts)
+        {
+            if (!names.TryGetValue(p.SellerId, out var name))
+            {
+                name = (await sellers.GetSellerAsync(p.SellerId, ct))?.ShopName ?? "Vendeur";
+                names[p.SellerId] = name;
+            }
+
+            payouts.Add(new
+            {
+                id = p.Id,
+                payoutId = p.Id,
+                sellerId = p.SellerId,
+                sellerName = name,
+                grossAmount = p.GrossAmount,
+                commissionAmount = p.CommissionAmount,
+                netAmount = p.NetAmount,
+                amount = p.NetAmount,
+                currency = p.Currency,
+                status = p.Status,
+                providerRef = p.ProviderRef,
+                paidAtUtc = p.PaidAtUtc,
+            });
+        }
+
+        return new
+        {
+            id = batch.Id,
+            periodStartUtc = batch.PeriodStartUtc,
+            periodEndUtc = batch.PeriodEndUtc,
+            currency = batch.Currency,
+            totalNet = batch.TotalNet,
+            status = batch.Status,
+            createdAtUtc = batch.CreatedAtUtc,
+            payouts,
+        };
+    }
+
+    /// <summary>Annule un lot encore en attente (ses gains redeviennent payables).</summary>
+    private static async Task<IResult> CancelBatchAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new CancelSettlementBatchCommand(id), ct)).Match(() => Results.NoContent());
 
     /// <summary>Génère un lot de reversements sur une période (un payout net par vendeur).</summary>
     private static async Task<IResult> RunAsync(RunSettlementRequest request, ISender sender, CancellationToken ct)

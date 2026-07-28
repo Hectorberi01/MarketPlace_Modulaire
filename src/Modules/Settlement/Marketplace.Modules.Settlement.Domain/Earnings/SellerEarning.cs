@@ -109,4 +109,19 @@ public sealed class SellerEarning : AggregateRoot<SellerEarningId>
         Status = EarningStatus.Settled;
         SettlementBatchId = settlementBatchId;
     }
+
+    /// <summary>
+    /// Détache le gain de son lot et le rend à nouveau payable (annulation d'un lot
+    /// avant tout versement). Idempotent : sans effet si le gain n'est pas soldé.
+    /// </summary>
+    public void Unsettle()
+    {
+        if (Status != EarningStatus.Settled)
+        {
+            return;
+        }
+
+        Status = EarningStatus.Released;
+        SettlementBatchId = null;
+    }
 }

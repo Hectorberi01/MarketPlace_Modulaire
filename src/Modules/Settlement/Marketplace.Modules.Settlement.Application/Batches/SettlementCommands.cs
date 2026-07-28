@@ -16,6 +16,12 @@ public sealed record RunSettlementCommand(DateTime PeriodStartUtc, DateTime Peri
 /// <summary>Marque un reversement comme versé (simule le transfert MoMo/banque).</summary>
 public sealed record MarkPayoutPaidCommand(Guid BatchId, Guid PayoutId, string ProviderRef) : ICommand;
 
+/// <summary>
+/// Annule un lot encore en attente : le lot passe « Cancelled » et ses gains
+/// redeviennent payables (ils pourront entrer dans un prochain lot).
+/// </summary>
+public sealed record CancelSettlementBatchCommand(Guid BatchId) : ICommand;
+
 public sealed class RunSettlementCommandValidator : AbstractValidator<RunSettlementCommand>
 {
     public RunSettlementCommandValidator()
@@ -90,6 +96,50 @@ internal sealed class RunSettlementCommandHandler : ICommandHandler<RunSettlemen
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return batch.Id.Value;
+    }
+}
+
+internal sealed class CancelSettlementBatchCommandHandler : ICommandHandler<CancelSettlementBatchCommand>
+{
+    private readonly ISettlementBatchRepository _batchRepository;
+    private readonly ISellerEarningRepository _earningRepository;
+    private readonly ISettlementUnitOfWork _unitOfWork;
+
+    public CancelSettlementBatchCommandHandler(
+        ISettlementBatchRepository batchRepository,
+        ISellerEarningRepository earningRepository,
+        ISettlementUnitOfWork unitOfWork)
+    {
+        _batchRepository = batchRepository;
+        _earningRepository = earningRepository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(CancelSettlementBatchCommand command, CancellationToken cancellationToken)
+    {
+        var batch = await _batchRepository.GetByIdAsync(new SettlementBatchId(command.BatchId), cancellationToken);
+        if (batch is null)
+        {
+            return Result.Failure(Error.NotFound("settlement.batch.not_found", "Lot de reversement introuvable."));
+        }
+
+        // Le domaine refuse l'annulation si un versement est déjà parti.
+        var result = batch.Cancel();
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        // Les gains du lot redeviennent payables : sans ça, ils resteraient « soldés »
+        // pour un lot annulé — donc jamais reversés, et invisibles des lots suivants.
+        var earnings = await _earningRepository.ListByBatchAsync(command.BatchId, cancellationToken);
+        foreach (var earning in earnings)
+        {
+            earning.Unsettle();
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 }
 

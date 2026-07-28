@@ -20,6 +20,9 @@ public interface ISellerEarningRepository
     /// <summary>Gains rattachés à une commande (pour libération à la livraison).</summary>
     Task<IReadOnlyList<SellerEarning>> ListByOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gains rattachés à un lot de reversement (pour annuler le lot).</summary>
+    Task<IReadOnlyList<SellerEarning>> ListByBatchAsync(Guid settlementBatchId, CancellationToken cancellationToken = default);
+
     Task<SellerStatement> GetSellerStatementAsync(Guid sellerId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default);
 
     /// <summary>

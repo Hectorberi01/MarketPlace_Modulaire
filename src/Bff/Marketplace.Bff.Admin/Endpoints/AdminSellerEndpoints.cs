@@ -17,6 +17,8 @@ using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.GetSellerByUser;
 using Marketplace.Modules.Sellers.Application.Sellers.Queries.ListSellers;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListProductsBySeller;
+using Marketplace.Modules.Settlement.Application.Batches;
+using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Notifications.Application.Notifications;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -37,6 +39,8 @@ public static class AdminSellerEndpoints
         sellers.MapGet("/by-user/{userId:guid}", GetByUserAsync);
         // Catalogue du vendeur (fiche vendeur → ses produits).
         sellers.MapGet("/{id:guid}/products", ListProductsAsync);
+        // Statistiques financières du vendeur (relevé de période + soldes).
+        sellers.MapGet("/{id:guid}/stats", GetStatsAsync);
         sellers.MapPost("/{id:guid}/kyb/approve", ApproveKybAsync);
         sellers.MapPost("/{id:guid}/kyb/reject", RejectKybAsync);
         // Lien de consultation temporaire (présigné) d'une pièce KYB stockée en privé sur R2.
@@ -190,6 +194,30 @@ public static class AdminSellerEndpoints
     /// <summary>Catalogue complet d'un vendeur (fiches produit, toutes en un appel).</summary>
     private static async Task<IResult> ListProductsAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new ListProductsBySellerQuery(id), ct)).Match(p => Results.Ok(p));
+
+    /// <summary>
+    /// Statistiques financières d'un vendeur : relevé sur la période (ventes brutes,
+    /// commissions, net à reverser) + soldes de son portefeuille. Période par défaut :
+    /// les 30 derniers jours.
+    /// </summary>
+    private static async Task<IResult> GetStatsAsync(
+        Guid id, ISender sender, CancellationToken ct, DateTime? from = null, DateTime? to = null)
+    {
+        var end = to ?? DateTime.UtcNow;
+        var start = from ?? end.AddDays(-30);
+
+        var statement = await sender.Send(new GetSellerStatementQuery(id, start, end), ct);
+        var wallet = await sender.Send(new GetSellerWalletQuery(id), ct);
+
+        return Results.Ok(new
+        {
+            periodStartUtc = start,
+            periodEndUtc = end,
+            statement = statement.IsSuccess ? statement.Value : null,
+            // Portefeuille absent = vendeur sans aucun gain à ce jour : ce n'est pas une erreur.
+            wallet = wallet.IsSuccess ? wallet.Value : null,
+        });
+    }
 
     /// <summary>Valide le KYB.</summary>
     private static async Task<IResult> ApproveKybAsync(Guid id, ISender sender, CancellationToken ct)

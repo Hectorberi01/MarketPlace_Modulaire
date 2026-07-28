@@ -17,7 +17,14 @@ public enum SettlementStatus
     Pending = 0,
     Processing = 1,
     Completed = 2,
-    PartiallyFailed = 3
+    PartiallyFailed = 3,
+
+    /// <summary>
+    /// Lot annulé avant tout versement : ses gains repassent « payables » et
+    /// pourront être inclus dans un prochain lot. (Statut persisté en TEXTE :
+    /// cet ajout ne nécessite aucune migration.)
+    /// </summary>
+    Cancelled = 4
 }
 
 /// <summary>Statut d'un reversement individuel.</summary>
@@ -144,6 +151,36 @@ public sealed class SettlementBatch : AggregateRoot<SettlementBatchId>
 
         payout.MarkFailed();
         RefreshStatus();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Annule un lot AVANT tout versement. Le lot n'est plus qu'une trace ; c'est
+    /// l'appelant qui remet ses gains à l'état « payable » (voir le handler).
+    ///
+    /// Refusé dès qu'un versement est parti : on ne réécrit pas l'histoire d'un
+    /// paiement réel. Idempotent sur un lot déjà annulé.
+    /// </summary>
+    public Result Cancel()
+    {
+        if (Status == SettlementStatus.Cancelled)
+        {
+            return Result.Success();
+        }
+
+        if (Status != SettlementStatus.Pending)
+        {
+            return Result.Failure(Error.Conflict(
+                "settlement.batch.not_cancellable", "Seul un lot en attente peut être annulé."));
+        }
+
+        if (_payouts.Any(p => p.Status == PayoutStatus.Paid))
+        {
+            return Result.Failure(Error.Conflict(
+                "settlement.batch.has_paid_payouts", "Ce lot contient déjà un versement effectué : il ne peut plus être annulé."));
+        }
+
+        Status = SettlementStatus.Cancelled;
         return Result.Success();
     }
 

@@ -33,6 +33,12 @@ internal sealed class SellerEarningRepository : ISellerEarningRepository
                         && e.ReleasedAtUtc <= endUtc)
             .ToListAsync(cancellationToken);
 
+    // SUIVI activé : l'annulation d'un lot mute ces entités (retour à « Released »).
+    public async Task<IReadOnlyList<SellerEarning>> ListByBatchAsync(Guid settlementBatchId, CancellationToken cancellationToken = default)
+        => await _dbContext.Earnings
+            .Where(e => e.SettlementBatchId == settlementBatchId)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<SellerEarning>> ListByOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
         => await _dbContext.Earnings
             .Where(e => e.OrderId == orderId)
