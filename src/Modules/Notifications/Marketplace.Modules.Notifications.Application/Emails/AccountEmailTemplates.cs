@@ -184,4 +184,40 @@ public static class AccountEmailTemplates
 
         return new EmailMessage(to, "Votre boutique est validée — HBA Express", html, text);
     }
+
+    /// <summary>
+    /// Gabarit GÉNÉRIQUE, utilisé pour doubler par e-mail une notification déjà envoyée
+    /// en push/in-app (commande confirmée, colis expédié, litige tranché…).
+    ///
+    /// Pourquoi un gabarit unique plutôt qu'un par événement : le push et l'e-mail
+    /// portent exactement le même message. En dupliquer la rédaction garantirait qu'ils
+    /// divergent au premier changement de formulation.
+    /// </summary>
+    public static EmailMessage Transactional(string to, string firstName, string subject, string message)
+    {
+        var name = WebUtility.HtmlEncode(firstName);
+        var title = WebUtility.HtmlEncode(subject);
+        var body = WebUtility.HtmlEncode(message);
+
+        var html = $"""
+            <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;color:#111;line-height:1.6">
+              <p>Bonjour {name},</p>
+              <p><strong>{title}</strong></p>
+              <p>{body}</p>
+              <p style="color:#555;font-size:14px">Retrouvez le détail dans l'application HBA Express.</p>
+            </div>
+            """;
+
+        var text = $"""
+            Bonjour {firstName},
+
+            {subject}
+
+            {message}
+
+            Retrouvez le détail dans l'application HBA Express.
+            """;
+
+        return new EmailMessage(to, $"{subject} — HBA Express", html, text);
+    }
 }

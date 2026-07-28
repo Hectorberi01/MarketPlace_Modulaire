@@ -12,6 +12,15 @@
     <ProjectReference Include="..\..\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
     <ProjectReference Include="..\..\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />
     <ProjectReference Include="..\..\Returns\Marketplace.Modules.Returns.Contracts\Marketplace.Modules.Returns.Contracts.csproj" />
+    <!-- Reversements (paiement vendeur), messagerie (nouveau message) et litiges. -->
+    <ProjectReference Include="..\..\Settlement\Marketplace.Modules.Settlement.Contracts\Marketplace.Modules.Settlement.Contracts.csproj" />
+    <ProjectReference Include="..\..\Messaging\Marketplace.Modules.Messaging.Contracts\Marketplace.Modules.Messaging.Contracts.csproj" />
+    <ProjectReference Include="..\..\Disputes\Marketplace.Modules.Disputes.Contracts\Marketplace.Modules.Disputes.Contracts.csproj" />
+    <!-- Avis (produit → vendeur), rupture de stock (SKU → offre → vendeur). -->
+    <ProjectReference Include="..\..\Catalog\Marketplace.Modules.Catalog.Contracts\Marketplace.Modules.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Offers\Marketplace.Modules.Offers.Contracts\Marketplace.Modules.Offers.Contracts.csproj" />
+    <ProjectReference Include="..\..\Reviews\Marketplace.Modules.Reviews.Contracts\Marketplace.Modules.Reviews.Contracts.csproj" />
+    <ProjectReference Include="..\..\Inventory\Marketplace.Modules.Inventory.Contracts\Marketplace.Modules.Inventory.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

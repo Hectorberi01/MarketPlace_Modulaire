@@ -16,4 +16,11 @@ public interface IMessagingModuleApi
     /// ouverture d'un fil de discussion, il doit rester à quelques microsecondes.
     /// </summary>
     Task<bool> IsParticipantAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Participants d'une conversation. Sert à notifier le DESTINATAIRE d'un message :
+    /// l'événement « message envoyé » ne porte que l'expéditeur, il faut donc retrouver
+    /// l'autre partie pour lui envoyer le push.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListParticipantsAsync(Guid conversationId, CancellationToken cancellationToken = default);
 }

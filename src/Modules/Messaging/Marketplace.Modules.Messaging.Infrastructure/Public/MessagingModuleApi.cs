@@ -13,4 +13,10 @@ internal sealed class MessagingModuleApi : IMessagingModuleApi
 
     public Task<bool> IsParticipantAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
         => _conversations.IsParticipantAsync(new ConversationId(conversationId), userId, cancellationToken);
+
+    public async Task<IReadOnlyList<Guid>> ListParticipantsAsync(Guid conversationId, CancellationToken cancellationToken = default)
+    {
+        var conversation = await _conversations.GetByIdAsync(new ConversationId(conversationId), cancellationToken);
+        return conversation is null ? Array.Empty<Guid>() : conversation.ParticipantIds.ToList();
+    }
 }

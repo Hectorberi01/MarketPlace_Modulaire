@@ -59,6 +59,30 @@ internal sealed class OfferModuleApi : IOfferModuleApi
         return offers ?? [];
     }
 
+    public async Task<IReadOnlyList<OfferSummary>> GetOffersBySkuAsync(string sku, CancellationToken cancellationToken = default)
+    {
+        // Le SKU est un VALUE OBJECT converti en colonne scalaire : on compare l'objet
+        // entier, jamais `.Value` — cette propriété n'existe pas côté SQL et la requête
+        // ne se traduirait pas. Même motif que OfferRepository.ExistsAsync.
+        var skuResult = Sku.Create(sku);
+        if (skuResult.IsFailure)
+        {
+            return [];
+        }
+
+        var value = skuResult.Value;
+
+        // Pas de cache : appelé sur un événement de rupture de stock (rare), pas sur un
+        // chemin d'affichage. Y ajouter une clé de cache coûterait plus qu'elle ne
+        // rapporterait — et un cache sur les prix se paie cher (voir OffersCacheKeys).
+        var rows = await _dbContext.Offers
+            .AsNoTracking()
+            .Where(o => o.VariantSku == value)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(Map).ToList();
+    }
+
     private static OfferSummary Map(Offer offer) => new(
         offer.Id.Value,
         offer.ProductId,

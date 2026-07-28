@@ -34,7 +34,8 @@ public sealed class ReturnRefundApprovedNotificationHandler : IIntegrationEventH
             "Le versement est en cours ; vous serez prévenu dès qu'il sera effectué.",
             "Return",
             e.ReturnRequestId,
-            cancellationToken);
+            cancellationToken,
+            alsoEmail: true);
 }
 
 /// <summary>
@@ -66,7 +67,8 @@ public sealed class ReturnRefundedNotificationHandler : IIntegrationEventHandler
             "Selon votre opérateur, il peut apparaître sous 24 à 72 heures.",
             "Return",
             e.ReturnRequestId,
-            cancellationToken);
+            cancellationToken,
+            alsoEmail: true);
 
         // LE VENDEUR ensuite : son solde vient d'être débité. L'apprendre par une
         // notification vaut mieux que de le découvrir en consultant son portefeuille

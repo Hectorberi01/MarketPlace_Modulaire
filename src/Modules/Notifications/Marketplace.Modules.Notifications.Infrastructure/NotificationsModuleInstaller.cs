@@ -25,6 +25,12 @@ using Marketplace.Modules.Sellers.Contracts.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
 using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
+using Marketplace.Modules.Settlement.Contracts.IntegrationEvents;
+using Marketplace.Modules.Messaging.Contracts.IntegrationEvents;
+using Marketplace.Modules.Disputes.Contracts.IntegrationEvents;
+using Marketplace.Modules.Reviews.Contracts.IntegrationEvents;
+using Marketplace.Modules.Inventory.Contracts.IntegrationEvents;
+using Marketplace.Modules.Payments.Contracts.IntegrationEvents;
 // Lève l'ambiguïté avec FirebaseAdmin.Messaging.FcmOptions.
 using FcmOptions = Marketplace.Modules.Notifications.Infrastructure.Push.FcmOptions;
 
@@ -178,6 +184,33 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         // BOUTIQUE VALIDÉE. L'admin active le vendeur → e-mail de bienvenue + push/in-app :
         // le vendeur passe de « en attente » à « peut publier », il doit le savoir tout de suite.
         services.AddScoped<IIntegrationEventHandler<SellerActivatedIntegrationEvent>, SellerActivatedNotificationHandler>();
+
+        // REVERSEMENT VERSÉ. L'événement existait sans consommateur : le vendeur était
+        // payé sans en être informé — le message qu'il attend le plus.
+        services.AddScoped<IIntegrationEventHandler<PayoutPaidIntegrationEvent>, PayoutPaidNotificationHandler>();
+
+        // MESSAGERIE. Sans ça, un fil de discussion n'alerte personne : chaque partie
+        // devait rouvrir l'application pour découvrir une réponse.
+        services.AddScoped<IIntegrationEventHandler<MessageSentIntegrationEvent>, MessageSentNotificationHandler>();
+
+        // LITIGES. À l'ouverture, l'ADMIN est alerté (sinon rien ne remonte hors console) ;
+        // à la résolution, l'ACHETEUR apprend la décision.
+        services.AddScoped<AdminNotificationTarget>();
+        services.AddScoped<IIntegrationEventHandler<DisputeOpenedIntegrationEvent>, DisputeOpenedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<DisputeResolvedIntegrationEvent>, DisputeResolvedNotificationHandler>();
+
+        // CYCLE DE VIE BOUTIQUE : dossier KYB à valider (admin), suspension et
+        // réactivation (vendeur, doublées par e-mail : il n'ouvrira pas forcément l'app).
+        services.AddScoped<IIntegrationEventHandler<SellerRegisteredIntegrationEvent>, SellerRegisteredAdminNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerClosedIntegrationEvent>, SellerClosedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerReactivatedIntegrationEvent>, SellerReactivatedNotificationHandler>();
+
+        // ACTIVITÉ VENDEUR : nouvel avis, rupture de stock (une vente perdue par heure).
+        services.AddScoped<IIntegrationEventHandler<ReviewPublishedIntegrationEvent>, ReviewPublishedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<StockDepletedIntegrationEvent>, StockDepletedNotificationHandler>();
+
+        // PAIEMENT ÉCHOUÉ : sans ce message, l'acheteur attend un colis qui ne partira pas.
+        services.AddScoped<IIntegrationEventHandler<PaymentFailedIntegrationEvent>, PaymentFailedNotificationHandler>();
 
         services.AddOutboxProcessor<NotificationsDbContext>();
     }

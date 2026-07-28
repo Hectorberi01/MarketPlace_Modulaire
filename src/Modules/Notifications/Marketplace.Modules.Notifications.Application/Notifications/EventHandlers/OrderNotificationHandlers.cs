@@ -14,7 +14,7 @@ public sealed class OrderPlacedNotificationHandler : IIntegrationEventHandler<Or
         => _dispatcher.NotifyAsync(
             e.BuyerId, "Commande enregistrée",
             $"Votre commande est enregistrée pour {e.GrandTotal:0.00} {e.Currency}. En attente de paiement.",
-            "Order", e.OrderId, cancellationToken);
+            "Order", e.OrderId, cancellationToken, alsoEmail: true);
 }
 
 /// <summary>Notifie l'acheteur que sa commande est confirmée.</summary>
@@ -28,7 +28,7 @@ public sealed class OrderConfirmedNotificationHandler : IIntegrationEventHandler
         => _dispatcher.NotifyAsync(
             e.BuyerId, "Commande confirmée",
             "Votre paiement a été reçu et votre commande est confirmée. Préparation en cours.",
-            "Order", e.OrderId, cancellationToken);
+            "Order", e.OrderId, cancellationToken, alsoEmail: true);
 }
 
 /// <summary>Notifie l'acheteur que sa commande est annulée.</summary>
@@ -42,5 +42,5 @@ public sealed class OrderCancelledNotificationHandler : IIntegrationEventHandler
         => _dispatcher.NotifyAsync(
             e.BuyerId, "Commande annulée",
             $"Votre commande a été annulée. Motif : {e.Reason}",
-            "Order", e.OrderId, cancellationToken);
+            "Order", e.OrderId, cancellationToken, alsoEmail: true);
 }

@@ -30,7 +30,7 @@ public sealed class ShipmentShippedNotificationHandler : IIntegrationEventHandle
         await _dispatcher.NotifyAsync(
             order.BuyerId, "Colis expédié",
             $"Un colis de votre commande a été expédié via {e.Carrier}. Suivi : {e.TrackingNumber}.",
-            "Shipment", e.ShipmentId, cancellationToken);
+            "Shipment", e.ShipmentId, cancellationToken, alsoEmail: true);
     }
 }
 
@@ -57,6 +57,6 @@ public sealed class ShipmentDeliveredNotificationHandler : IIntegrationEventHand
         await _dispatcher.NotifyAsync(
             order.BuyerId, "Colis livré",
             "Un colis de votre commande a été livré. Vous pouvez maintenant laisser un avis.",
-            "Shipment", e.ShipmentId, cancellationToken);
+            "Shipment", e.ShipmentId, cancellationToken, alsoEmail: true);
     }
 }

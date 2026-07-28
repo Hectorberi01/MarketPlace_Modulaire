@@ -1,4 +1,6 @@
+using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Notifications.Application.Abstractions;
+using Marketplace.Modules.Notifications.Application.Emails;
 using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Notifications.Domain.Notifications;
 using Marketplace.Modules.Notifications.Domain.Preferences;
@@ -18,6 +20,8 @@ public sealed class NotificationDispatcher
     private readonly IDeviceTokenRepository _deviceTokens;
     private readonly INotificationPreferenceRepository _preferences;
     private readonly IPushSender _pushSender;
+    private readonly IEmailSender _emailSender;
+    private readonly IIdentityModuleApi _identity;
     private readonly ILogger<NotificationDispatcher> _logger;
 
     public NotificationDispatcher(
@@ -26,6 +30,8 @@ public sealed class NotificationDispatcher
         IDeviceTokenRepository deviceTokens,
         INotificationPreferenceRepository preferences,
         IPushSender pushSender,
+        IEmailSender emailSender,
+        IIdentityModuleApi identity,
         ILogger<NotificationDispatcher> logger)
     {
         _repository = repository;
@@ -33,11 +39,20 @@ public sealed class NotificationDispatcher
         _deviceTokens = deviceTokens;
         _preferences = preferences;
         _pushSender = pushSender;
+        _emailSender = emailSender;
+        _identity = identity;
         _logger = logger;
     }
 
+    /// <param name="alsoEmail">
+    /// Double la notification par un e-mail. À réserver aux étapes que l'utilisateur doit
+    /// connaître même sans l'application : commande confirmée, colis expédié/livré,
+    /// remboursement, litige tranché. Le push seul ne suffit pas — application
+    /// désinstallée, notifications refusées, téléphone changé.
+    /// </param>
     public async Task NotifyAsync(
-        Guid recipientUserId, string subject, string body, string relatedType, Guid? relatedId, CancellationToken ct)
+        Guid recipientUserId, string subject, string body, string relatedType, Guid? relatedId, CancellationToken ct,
+        bool alsoEmail = false)
     {
         var result = Notification.Create(recipientUserId, NotificationChannel.InApp, subject, body, relatedType, relatedId);
         if (result.IsFailure)
@@ -52,6 +67,42 @@ public sealed class NotificationDispatcher
 
         // Envoi push vers les appareils du destinataire (best-effort).
         await SendPushAsync(recipientUserId, subject, body, relatedType, relatedId, ct);
+
+        if (alsoEmail)
+        {
+            await SendEmailAsync(recipientUserId, subject, body, ct);
+        }
+    }
+
+    /// <summary>
+    /// Double la notification par e-mail (adresse résolue via Identity).
+    ///
+    /// ⚠️ BEST-EFFORT DÉLIBÉRÉ — contrairement aux e-mails de compte, qui doivent lever.
+    ///
+    /// À ce stade, la notification in-app est DÉJÀ persistée et le push DÉJÀ parti. Si on
+    /// laissait l'échec d'envoi remonter, l'outbox rejouerait le message entier : le
+    /// destinataire recevrait une seconde notification in-app et un second push pour le
+    /// même événement. On préfère un e-mail manquant — tracé en erreur — à un doublon de
+    /// notifications à chaque hoquet du fournisseur.
+    /// </summary>
+    private async Task SendEmailAsync(Guid userId, string subject, string body, CancellationToken ct)
+    {
+        try
+        {
+            var user = await _identity.GetUserAsync(userId, ct);
+            if (user is null || string.IsNullOrWhiteSpace(user.Email))
+            {
+                _logger.LogWarning("E-mail: user={UserId} introuvable ou sans adresse — e-mail non envoyé.", userId);
+                return;
+            }
+
+            await _emailSender.SendAsync(
+                AccountEmailTemplates.Transactional(user.Email, user.FirstName, subject, body), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "E-mail: échec d'envoi pour user={UserId} (sujet « {Subject} »).", userId, subject);
+        }
     }
 
     /// <summary>
