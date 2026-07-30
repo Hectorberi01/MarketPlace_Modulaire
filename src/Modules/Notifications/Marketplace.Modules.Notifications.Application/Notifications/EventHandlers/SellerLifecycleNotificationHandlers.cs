@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Inventory.Contracts.IntegrationEvents;
+using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Payments.Contracts.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Reviews.Contracts.IntegrationEvents;
