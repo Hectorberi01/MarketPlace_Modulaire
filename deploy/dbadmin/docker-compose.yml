@@ -11,7 +11,7 @@
 services:
   dbadmin:
     image: sosedoff/pgweb:0.16.2
-    # ⚠️ L'ENTRYPOINT de l'image est déjà [/usr/bin/pgweb --bind=0.0.0.0
+    # L'ENTRYPOINT de l'image est déjà [/usr/bin/pgweb --bind=0.0.0.0
     # --listen=8081]. Le « command » ci-dessous est APPENDÉ à l'entrypoint : il ne
     # doit donc contenir QUE les arguments supplémentaires (ni le binaire, ni --bind,
     # ni --listen — sinon pgweb reçoit un argument positionnel invalide et plante).
