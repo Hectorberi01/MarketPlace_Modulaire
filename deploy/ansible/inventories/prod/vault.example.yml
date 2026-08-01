@@ -4,27 +4,32 @@
 #   ansible-vault encrypt group_vars/marketplace/vault.yml
 
 # ── BASE DE DONNÉES ──────────────────────────────────────────────────────────
-# La production utilise une base MANAGÉE EXTERNE (OVH Cloud Databases). Le service
-# `postgres` a été retiré de docker-compose.prod.yml.
+# Postgres CO-HÉBERGÉ sur le VPS (service `postgres` du compose). Définir SEULEMENT
+# le mot de passe ci-dessous : `env.j2` construit MARKETPLACE_CONNECTION tout seul
+# (host = service `postgres`). Ne pas définir `marketplace_connection` dans ce cas.
 #
-# ⚠️ NE DÉFINIS PAS `postgres_password` ICI.
+# ⚠️ CETTE VARIABLE COMMANDE PLUS QUE LE MOT DE PASSE.
 #
-# Cette seule variable commande trois comportements conditionnels des rôles :
-#   • env.j2 n'émettra pas les POSTGRES_* devenues inutiles ;
-#   • le bloc « Activer pg_stat_statements » — qui fait `docker compose exec
-#     postgres` — sera sauté, alors qu'il échouerait faute de conteneur ;
-#   • le DSN de postgres-exporter ne sera pas généré vers un hôte inexistant.
+# Sa seule présence conditionne trois comportements des rôles Ansible :
+#   • `env.j2` émet les POSTGRES_* et construit la chaîne de connexion locale ;
+#   • le bloc « Activer pg_stat_statements » s'exécute (il fait `docker compose
+#     exec postgres`, donc il exige le conteneur) ;
+#   • le DSN de postgres-exporter est généré vers l'hôte `postgres`.
 #
-# La définir « au cas où » réactiverait ces trois chemins et ferait échouer le
-# déploiement sur une tâche sans rapport apparent avec la base.
+# Autrement dit : la retirer bascule silencieusement l'ensemble vers le mode « base
+# externe ». C'est voulu, mais il faut le savoir avant de la commenter.
+postgres_password: "CHANGE_ME_STRONG_DB_PASSWORD"
 #
-# Format Npgsql. Hôte, port et identifiants : console OVH → « Informations
-# générales » et « Utilisateurs et droits ».
+# BASE EXTERNE MANAGÉE — variante, PRIORITAIRE sur la base locale si définie.
 #
-# ⚠️ « Maximum Pool Size » n'est pas facultatif : cinq processus (api + 4 BFF)
-# ouvrent chacun leur pool, plafonné à 100 par défaut. Ajuster au `max_connections`
-# du plan souscrit.
-marketplace_connection: "Host=rsXXXXXXX-001.eu.clouddb.ovh.net;Port=35292;Database=marketplace;Username=CHANGE_ME;Password=CHANGE_ME;SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=10"
+# ⚠️ Vérifier d'abord que le fournisseur accorde « CREATE ON DATABASE » à
+# l'utilisateur applicatif. Cette application crée 25 SCHÉMAS au premier démarrage
+# (un par module). Les offres mutualisées ne le permettent pas : la panne se
+# manifeste par « 42501: permission denied for database », alors même que la
+# connexion et l'authentification réussissent — un diagnostic coûteux.
+#   SELECT has_database_privilege(current_user, current_database(), 'CREATE');
+#
+#   marketplace_connection: "Host=…;Port=…;Database=…;Username=…;Password=…;SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=10"
 
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
