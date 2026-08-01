@@ -30,7 +30,6 @@ x-app-env: &app-env
   # Export OpenTelemetry (traces + métriques) vers le collector → Prometheus/Tempo.
   # Vide = export désactivé (pas de data dans Grafana). Renseigné via OTEL_ENDPOINT.
   Otel__Endpoint: "${OTEL_ENDPOINT:-}"
-  # BASE DE DONNÉES EXTERNE (Neon) — OBLIGATOIRE en prod (pas de fallback local).
   # Utiliser l'endpoint DIRECT (sans « -pooler ») pour les migrations EF.
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon)}"
   # Redis protégé par mot de passe (backplane SignalR + cache).
@@ -123,7 +122,7 @@ services:
     networks: [marketplace-net]
 
   # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
-  # ⚠️ AUCUN port publié : la base n'est JAMAIS joignable depuis Internet, seulement
+  # AUCUN port publié : la base n'est JAMAIS joignable depuis Internet, seulement
   # sur le réseau Docker interne par l'API et les BFF. Pour une base EXTERNE
   # (Neon/Supabase), retire ce service + le depends_on postgres de l'API, et mets
   # MARKETPLACE_CONNECTION sur l'endpoint externe.

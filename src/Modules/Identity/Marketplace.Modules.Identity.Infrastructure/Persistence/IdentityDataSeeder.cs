@@ -41,11 +41,47 @@ public static class IdentityDataSeeder
     }
 
     /// <summary>
-    /// Crée un compte administrateur (rôle Admin, e-mail vérifié, actif) s'il
-    /// n'existe pas déjà. Idempotent. Réservé au bootstrap/dev : le mot de passe
-    /// est haché par le service d'infrastructure (BCrypt).
+    /// Issue de l'amorçage du compte administrateur.
+    ///
+    /// ⚠️ Ce type existe parce que la méthode renvoyait auparavant `void` et sortait
+    /// silencieusement dans QUATRE cas d'échec. L'appelant journalisait « compte
+    /// vérifié/créé » sans condition — un message rassurant et faux. Sur une base
+    /// neuve, l'échec ne se manifestait qu'au moment où personne ne parvenait à se
+    /// connecter, sans la moindre trace pour l'expliquer.
     /// </summary>
-    public static async Task SeedAdminUserAsync(
+    public enum AdminSeedOutcome
+    {
+        /// <summary>Compte créé, actif, doté du rôle Admin.</summary>
+        Created,
+
+        /// <summary>Déjà présent : rien n'a été modifié (le mot de passe n'est jamais réinitialisé).</summary>
+        AlreadyPresent,
+
+        /// <summary>Adresse e-mail rejetée par le domaine.</summary>
+        InvalidEmail,
+
+        /// <summary>Numéro de téléphone rejeté par le domaine (8 à 15 chiffres attendus).</summary>
+        InvalidPhone,
+
+        /// <summary>Mot de passe absent ou vide.</summary>
+        EmptyPassword,
+
+        /// <summary>Rôle « Admin » introuvable — l'amorçage des rôles n'a pas eu lieu.</summary>
+        AdminRoleMissing,
+
+        /// <summary>Le domaine a refusé l'inscription (prénom, nom ou hachage manquant).</summary>
+        RegistrationRejected,
+    }
+
+    /// <summary>
+    /// Crée un compte administrateur ACTIF doté du rôle Admin s'il n'existe pas
+    /// déjà. Idempotent : un redéploiement ne réinitialise jamais le mot de passe.
+    ///
+    /// Renvoie l'issue de l'opération — voir <see cref="AdminSeedOutcome"/> — afin
+    /// que l'appelant puisse en rendre compte fidèlement. C'est le seul compte par
+    /// lequel la plateforme peut être ouverte : son échec doit être bruyant.
+    /// </summary>
+    public static async Task<AdminSeedOutcome> SeedAdminUserAsync(
         IdentityDbContext dbContext,
         IPasswordHasher passwordHasher,
         string email,
@@ -55,24 +91,34 @@ public static class IdentityDataSeeder
         string phoneNumber,
         CancellationToken cancellationToken = default)
     {
-        var emailResult = Email.Create(email);
-        var phoneResult = PhoneNumber.Create(phoneNumber);
-        if (emailResult.IsFailure || phoneResult.IsFailure || string.IsNullOrWhiteSpace(password))
+        if (string.IsNullOrWhiteSpace(password))
         {
-            return;
+            return AdminSeedOutcome.EmptyPassword;
+        }
+
+        var emailResult = Email.Create(email);
+        if (emailResult.IsFailure)
+        {
+            return AdminSeedOutcome.InvalidEmail;
+        }
+
+        var phoneResult = PhoneNumber.Create(phoneNumber);
+        if (phoneResult.IsFailure)
+        {
+            return AdminSeedOutcome.InvalidPhone;
         }
 
         // Idempotence : on ne recrée pas l'admin s'il existe déjà.
         var alreadyExists = await dbContext.Users.AnyAsync(u => u.Email == emailResult.Value, cancellationToken);
         if (alreadyExists)
         {
-            return;
+            return AdminSeedOutcome.AlreadyPresent;
         }
 
         var adminRole = await dbContext.Roles.FirstOrDefaultAsync(r => r.Name == "Admin", cancellationToken);
         if (adminRole is null)
         {
-            return;
+            return AdminSeedOutcome.AdminRoleMissing;
         }
 
         var passwordHash = passwordHasher.Hash(password);
@@ -84,7 +130,7 @@ public static class IdentityDataSeeder
             passwordHash, verificationTokenHash, DateTime.UtcNow.AddYears(1));
         if (userResult.IsFailure)
         {
-            return;
+            return AdminSeedOutcome.RegistrationRejected;
         }
 
         var user = userResult.Value;
@@ -95,11 +141,83 @@ public static class IdentityDataSeeder
         // Mais il ne doit pas prétendre que son e-mail a été vérifié : aucun message
         // n'a été envoyé, personne n'a cliqué sur rien. `Approve()` active le compte
         // sans inventer ce fait.
+        //
+        // C'est bien `Status` — et non `EmailVerified` — que contrôle la connexion
+        // (voir LoginCommandHandler) : ce compte peut donc se connecter immédiatement.
         user.Approve();
         user.AssignRole(adminRole.Id.Value);
 
         await dbContext.Users.AddAsync(user, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        return AdminSeedOutcome.Created;
+    }
+
+    /// <summary>
+    /// Vérifie qu'un compte administrateur est réellement en état de se connecter :
+    /// présent, ACTIF, et porteur du rôle Admin.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Pourquoi relire la base plutôt que se fier à l'issue de l'amorçage.
+    ///
+    /// Trois conditions distinctes commandent la première connexion, et aucune n'est
+    /// garantie par la seule création du compte :
+    ///
+    ///   • le STATUT doit être `Active` — c'est lui, et non `EmailVerified`, que
+    ///     contrôle `LoginCommandHandler` ;
+    ///   • le rôle `Admin` doit être assigné — sans lui, la console d'administration
+    ///     répond « ce compte n'a pas accès à cette application » ;
+    ///   • le compte doit exister, y compris lorsqu'il vient d'une base restaurée ou
+    ///     d'un déploiement antérieur, cas où l'amorçage ne fait rien du tout.
+    ///
+    /// Un compte suspendu par un administrateur, ou dont le rôle a été retiré, passe
+    /// l'amorçage sans erreur (`AlreadyPresent`) tout en étant incapable d'entrer.
+    /// Seule une relecture le détecte.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    /// <returns>
+    /// `null` si tout est en ordre ; sinon la raison, prête à être journalisée.
+    /// </returns>
+    public static async Task<string?> VerifyAdminCanSignInAsync(
+        IdentityDbContext dbContext,
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        var emailResult = Email.Create(email);
+        if (emailResult.IsFailure)
+        {
+            return "l'adresse configurée n'est pas une adresse e-mail valide";
+        }
+
+        var user = await dbContext.Users
+            .AsNoTracking()
+            .Include(u => u.RoleAssignments)
+            .FirstOrDefaultAsync(u => u.Email == emailResult.Value, cancellationToken);
+
+        if (user is null)
+        {
+            return "aucun compte ne porte cette adresse";
+        }
+
+        if (user.Status != UserStatus.Active)
+        {
+            return $"le compte existe mais son statut est « {user.Status} » (attendu : Active)";
+        }
+
+        var adminRole = await dbContext.Roles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Name == "Admin", cancellationToken);
+
+        if (adminRole is null)
+        {
+            return "le rôle « Admin » n'existe pas en base";
+        }
+
+        if (!user.RoleAssignments.Any(a => a.RoleId == adminRole.Id.Value))
+        {
+            return "le compte existe et est actif, mais ne porte pas le rôle « Admin »";
+        }
+
+        return null;
     }
 
     /// <summary>

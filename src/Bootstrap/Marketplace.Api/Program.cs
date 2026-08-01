@@ -239,7 +239,7 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
         var passwordHasher = scope.ServiceProvider
             .GetRequiredService<Marketplace.Modules.Identity.Application.Abstractions.IPasswordHasher>();
 
-        await IdentityDataSeeder.SeedAdminUserAsync(
+        var outcome = await IdentityDataSeeder.SeedAdminUserAsync(
             identityDb,
             passwordHasher,
             bootstrapAdminEmail,
@@ -248,9 +248,59 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
             app.Configuration["Identity:Bootstrap:AdminLastName"] is { Length: > 0 } ln ? ln : "Plateforme",
             app.Configuration["Identity:Bootstrap:AdminPhone"] is { Length: > 0 } ph ? ph : "+22900000000");
 
-        app.Logger.LogInformation(
-            "Amorçage administrateur : compte « {Email} » vérifié/créé (idempotent).",
-            bootstrapAdminEmail);
+        switch (outcome)
+        {
+            case IdentityDataSeeder.AdminSeedOutcome.Created:
+                app.Logger.LogInformation(
+                    "Amorçage administrateur : compte « {Email} » CRÉÉ (actif, rôle Admin).",
+                    bootstrapAdminEmail);
+                break;
+
+            case IdentityDataSeeder.AdminSeedOutcome.AlreadyPresent:
+                app.Logger.LogInformation(
+                    "Amorçage administrateur : « {Email} » existe déjà — inchangé (le mot de passe n'est jamais réinitialisé).",
+                    bootstrapAdminEmail);
+                break;
+
+            default:
+                // On ne lève PAS : refuser de démarrer priverait aussi les comptes
+                // déjà existants d'un service par ailleurs sain. Mais le message doit
+                // être impossible à manquer — c'est le seul compte par lequel une
+                // plateforme neuve peut être ouverte.
+                app.Logger.LogError(
+                    "AMORÇAGE ADMINISTRATEUR ÉCHOUÉ ({Raison}) : aucun compte « {Email} » n'a été créé. "
+                    + "Sur une base neuve, PERSONNE ne pourra se connecter à la console d'administration.",
+                    outcome, bootstrapAdminEmail);
+                break;
+        }
+
+        // ── VÉRIFICATION EFFECTIVE ─────────────────────────────────────────────
+        // On relit la base plutôt que de se fier à l'issue ci-dessus. `AlreadyPresent`
+        // ne dit rien de l'ÉTAT du compte : un administrateur suspendu, ou dont le
+        // rôle a été retiré, franchit l'amorçage sans erreur tout en étant incapable
+        // d'entrer. C'est précisément le cas qu'on ne découvrait qu'à l'écran de
+        // connexion, sans explication.
+        var signInBlocker = await IdentityDataSeeder.VerifyAdminCanSignInAsync(identityDb, bootstrapAdminEmail);
+        if (signInBlocker is null)
+        {
+            app.Logger.LogInformation(
+                "Première connexion possible : « {Email} » est actif et porte le rôle Admin.",
+                bootstrapAdminEmail);
+        }
+        else
+        {
+            app.Logger.LogError(
+                "CONNEXION ADMINISTRATEUR IMPOSSIBLE pour « {Email} » : {Raison}.",
+                bootstrapAdminEmail, signInBlocker);
+        }
+    }
+    else
+    {
+        // Ni e-mail ni mot de passe : aucun compte n'est semé. C'est légitime sur une
+        // base déjà peuplée, et bloquant sur une base neuve — d'où l'avertissement.
+        app.Logger.LogWarning(
+            "Aucun administrateur d'amorçage configuré (Identity:Bootstrap:AdminEmail / AdminPassword). "
+            + "Sur une base neuve, la console d'administration restera inaccessible.");
     }
 
     var sellersDb = scope.ServiceProvider.GetRequiredService<SellersDbContext>();

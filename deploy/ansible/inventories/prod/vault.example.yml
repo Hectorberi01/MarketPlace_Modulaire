@@ -4,14 +4,27 @@
 #   ansible-vault encrypt group_vars/marketplace/vault.yml
 
 # ── BASE DE DONNÉES ──────────────────────────────────────────────────────────
-# OPTION A (par défaut) : Postgres CO-HÉBERGÉ sur le VPS. Définis SEULEMENT le mot
-# de passe ci-dessous — env.j2 construit MARKETPLACE_CONNECTION tout seul (host =
-# service `postgres`). Ne définis PAS marketplace_connection dans ce cas.
-postgres_password: "CHANGE_ME_STRONG_DB_PASSWORD"
+# La production utilise une base MANAGÉE EXTERNE (OVH Cloud Databases). Le service
+# `postgres` a été retiré de docker-compose.prod.yml.
 #
-# OPTION B : base EXTERNE managée (Neon/Supabase). Décommente et renseigne ;
-# elle est PRIORITAIRE sur la base locale. Endpoint DIRECT, format Npgsql.
-#   marketplace_connection: "Host=db.xxxx.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=CHANGE_ME;SSL Mode=Require;Trust Server Certificate=true"
+# ⚠️ NE DÉFINIS PAS `postgres_password` ICI.
+#
+# Cette seule variable commande trois comportements conditionnels des rôles :
+#   • env.j2 n'émettra pas les POSTGRES_* devenues inutiles ;
+#   • le bloc « Activer pg_stat_statements » — qui fait `docker compose exec
+#     postgres` — sera sauté, alors qu'il échouerait faute de conteneur ;
+#   • le DSN de postgres-exporter ne sera pas généré vers un hôte inexistant.
+#
+# La définir « au cas où » réactiverait ces trois chemins et ferait échouer le
+# déploiement sur une tâche sans rapport apparent avec la base.
+#
+# Format Npgsql. Hôte, port et identifiants : console OVH → « Informations
+# générales » et « Utilisateurs et droits ».
+#
+# ⚠️ « Maximum Pool Size » n'est pas facultatif : cinq processus (api + 4 BFF)
+# ouvrent chacun leur pool, plafonné à 100 par défaut. Ajuster au `max_connections`
+# du plan souscrit.
+marketplace_connection: "Host=rsXXXXXXX-001.eu.clouddb.ovh.net;Port=35292;Database=marketplace;Username=CHANGE_ME;Password=CHANGE_ME;SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=10"
 
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
