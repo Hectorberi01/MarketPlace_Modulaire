@@ -98,6 +98,30 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > "$RUNNER_TEMP/vault.pass"
           chmod 600 "$RUNNER_TEMP/vault.pass"
+
+          # ─────────────────────────────────────────────────────────────────────
+          # CONTRÔLE DE LA CLÉ — l'échec doit se produire ICI, pas 30 secondes plus
+          # tard sous la forme d'un « Permission denied (publickey) » d'Ansible.
+          #
+          # Ce message est le même que la clé soit ILLISIBLE (secret tronqué, collé
+          # avec des retours chariot Windows, en-tête manquant) ou simplement ABSENTE
+          # du `authorized_keys` du serveur. Deux causes très différentes, un seul
+          # symptôme : on perd un temps considérable à chercher du mauvais côté.
+          #
+          # `ssh-keygen -y` échoue si la clé privée n'est pas exploitable, ce qui
+          # tranche immédiatement entre les deux. L'EMPREINTE affichée n'est pas un
+          # secret : elle se compare directement à la sortie de
+          #     ssh-keygen -lf /root/.ssh/authorized_keys
+          # exécutée sur le serveur.
+          # ─────────────────────────────────────────────────────────────────────
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub 2>/dev/null; then
+            echo "::error::DEPLOY_SSH_KEY illisible — clé privée tronquée, mal collée ou protégée par passphrase."
+            echo "Le secret doit contenir la clé ENTIÈRE, lignes BEGIN/END comprises, sans passphrase."
+            exit 1
+          fi
+          echo "Empreinte de la clé de déploiement :"
+          ssh-keygen -lf ~/.ssh/id_ed25519.pub
+          echo "Elle doit figurer dans ~/.ssh/authorized_keys du serveur cible."
       - name: ansible-playbook (tags deploy)
         working-directory: deploy/ansible
         env:
