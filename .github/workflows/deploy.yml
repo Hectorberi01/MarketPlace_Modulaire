@@ -112,23 +112,71 @@ jobs:
           # d'exécution au premier `set -x`.
           SSH_KEY_STAGING: ${{ secrets.DEPLOY_SSH_KEY_STAGING }}
           SSH_KEY_PROD: ${{ secrets.DEPLOY_SSH_KEY_PROD }}
+          # Clé COMMUNE, utilisée en repli quand aucune clé propre à l'environnement
+          # n'est définie. Voir le commentaire du script.
+          SSH_KEY_COMMON: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
 
-          # La branche a déjà déterminé ENV_NAME (staging | prod) ; on choisit la clé
-          # correspondante. Aucun repli sur l'autre environnement : livrer en
+          # ─────────────────────────────────────────────────────────────────────
+          # DEUX CONVENTIONS ACCEPTÉES, DANS CET ORDRE.
+          #
+          #   1. DEPLOY_SSH_KEY_STAGING / DEPLOY_SSH_KEY_PROD — une clé par cible.
+          #      Préférable : révoquer l'accès à la recette ne touche pas à la
+          #      production, et une clé compromise n'ouvre qu'un seul serveur.
+          #
+          #   2. DEPLOY_SSH_KEY — une clé commune aux deux.
+          #
+          # Le repli existe parce que le second cas est celui qui est en place, et
+          # qu'imposer un renommage de secrets pour faire passer un déploiement est
+          # une friction inutile. Poser un jour les clés spécifiques suffira à les
+          # faire prendre : aucune modification de ce fichier ne sera nécessaire.
+          #
+          # Aucun repli d'un environnement SUR L'AUTRE, en revanche : livrer en
           # production avec la clé de recette n'aurait aucun sens.
+          # ─────────────────────────────────────────────────────────────────────
           if [ "$ENV_NAME" = "prod" ]; then
-            DEPLOY_KEY="$SSH_KEY_PROD"
-            SECRET_NAME="DEPLOY_SSH_KEY_PROD"
+            DEPLOY_KEY="${SSH_KEY_PROD:-$SSH_KEY_COMMON}"
+            SECRET_NAME="DEPLOY_SSH_KEY_PROD (ou DEPLOY_SSH_KEY)"
           else
-            DEPLOY_KEY="$SSH_KEY_STAGING"
-            SECRET_NAME="DEPLOY_SSH_KEY_STAGING"
+            DEPLOY_KEY="${SSH_KEY_STAGING:-$SSH_KEY_COMMON}"
+            SECRET_NAME="DEPLOY_SSH_KEY_STAGING (ou DEPLOY_SSH_KEY)"
+          fi
+
+          if [ -n "$DEPLOY_KEY" ]; then
+            case "$ENV_NAME:${SSH_KEY_PROD:+p}${SSH_KEY_STAGING:+s}" in
+              prod:*p*|staging:*s*) echo "Clé propre à l'environnement « $ENV_NAME »." ;;
+              *) echo "Clé COMMUNE (DEPLOY_SSH_KEY) — aucune clé propre à « $ENV_NAME » n'est définie." ;;
+            esac
           fi
 
           if [ -z "$DEPLOY_KEY" ]; then
+            # ─────────────────────────────────────────────────────────────────
+            # On rapporte l'état des DEUX secrets, jamais leur contenu.
+            #
+            # « Absent » seul ne distingue pas les trois causes réelles : secret
+            # jamais créé, créé sous un autre nom, ou créé dans un autre
+            # environnement que « deploy » — ce dernier cas étant le plus fréquent,
+            # GitHub proposant l'onglet « Environments » à côté des secrets du dépôt.
+            #
+            # Si l'AUTRE secret est visible, l'environnement est bien appliqué et le
+            # problème se réduit à un nom. S'ils sont tous deux absents, ils ont été
+            # déposés ailleurs.
+            # ─────────────────────────────────────────────────────────────────
             echo "::error::Secret $SECRET_NAME absent ou vide pour l'environnement « $ENV_NAME »."
-            echo "Settings → Secrets and variables → Actions → environnement « deploy »."
+            echo "État des secrets vus par ce job (environnement « deploy ») :"
+            echo "  DEPLOY_SSH_KEY_STAGING : $([ -n "$SSH_KEY_STAGING" ] && echo 'présent' || echo 'ABSENT')"
+            echo "  DEPLOY_SSH_KEY_PROD    : $([ -n "$SSH_KEY_PROD" ] && echo 'présent' || echo 'ABSENT')"
+            echo "  DEPLOY_SSH_KEY         : $([ -n "$SSH_KEY_COMMON" ] && echo 'présent' || echo 'ABSENT')"
+            echo ""
+            echo "Si les deux sont ABSENTS, ils ne sont pas dans le bon périmètre."
+            echo "Les secrets d'un ENVIRONNEMENT ne sont lisibles que par les jobs qui le déclarent :"
+            echo "ce job déclare « deploy ». Un secret rangé sous « staging » ou « prod » ne sera pas vu."
+            echo ""
+            echo "Le plus simple : les créer comme secrets DU DÉPÔT —"
+            echo "  Settings → Secrets and variables → Actions → onglet « Secrets » → New repository secret"
+            echo "Ils sont alors visibles quel que soit l'environnement du job."
+            echo "Vérifier aussi qu'il s'agit d'un « secret » et non d'une « variable »."
             exit 1
           fi
 
