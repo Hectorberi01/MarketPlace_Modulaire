@@ -7,9 +7,22 @@ name: Backend · build & deploy
 # Enchaînement : garde-fou .NET (build + tests) → build & push des 5 images sur
 # GHCR → déploiement Ansible sur le VPS (le serveur ne fait que PULL, use_registry).
 #
-# Secrets requis (Settings → Secrets and variables → Actions) :
-#   DEPLOY_SSH_KEY          clé privée SSH autorisée sur le VPS (matche hosts.ini)
-#   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible
+# Secrets requis (Settings → Secrets and variables → Actions, environnement « deploy ») :
+#   DEPLOY_SSH_KEY_STAGING  clé privée SSH autorisée sur le VPS de recette
+#   DEPLOY_SSH_KEY_PROD     clé privée SSH autorisée sur le VPS de production
+#   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible (commun aux deux)
+#
+# ⚠️ UNE CLÉ PAR ENVIRONNEMENT, ET C'EST DÉLIBÉRÉ.
+#
+# Un secret unique `DEPLOY_SSH_KEY` servait auparavant aux deux cibles. Deux
+# serveurs, deux hébergeurs (Hetzner pour la recette, OVH pour la production),
+# deux utilisateurs (`root:22` et `ubuntu:8022`) : rien ne garantissait qu'une même
+# clé soit installée sur les deux. Réparer l'accès à l'un cassait silencieusement
+# l'autre, et la panne n'apparaissait qu'à la livraison suivante — sur la mauvaise
+# branche, au mauvais moment.
+#
+# Séparer les clés supprime ce couplage : toucher à la recette ne peut plus
+# atteindre la production.
 
 on:
   push:
@@ -80,7 +93,8 @@ jobs:
     name: Déploiement Ansible (${{ github.ref_name == 'develop' && 'prod' || 'staging' }})
     needs: images
     runs-on: ubuntu-latest
-    # Secrets stockés dans l'environnement « deploy » (DEPLOY_SSH_KEY, ANSIBLE_VAULT_PASSWORD).
+    # Secrets stockés dans l'environnement « deploy » : DEPLOY_SSH_KEY_STAGING,
+    # DEPLOY_SSH_KEY_PROD et ANSIBLE_VAULT_PASSWORD.
     environment: deploy
     steps:
       - uses: actions/checkout@v4
@@ -92,9 +106,33 @@ jobs:
           pip install --upgrade ansible
           ansible-galaxy collection install -r deploy/ansible/requirements.yml
       - name: Clé SSH + fichier vault
+        env:
+          # Passées par l'environnement, jamais interpolées dans le script : une
+          # clé privée injectée directement dans le shell finirait dans les traces
+          # d'exécution au premier `set -x`.
+          SSH_KEY_STAGING: ${{ secrets.DEPLOY_SSH_KEY_STAGING }}
+          SSH_KEY_PROD: ${{ secrets.DEPLOY_SSH_KEY_PROD }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+
+          # La branche a déjà déterminé ENV_NAME (staging | prod) ; on choisit la clé
+          # correspondante. Aucun repli sur l'autre environnement : livrer en
+          # production avec la clé de recette n'aurait aucun sens.
+          if [ "$ENV_NAME" = "prod" ]; then
+            DEPLOY_KEY="$SSH_KEY_PROD"
+            SECRET_NAME="DEPLOY_SSH_KEY_PROD"
+          else
+            DEPLOY_KEY="$SSH_KEY_STAGING"
+            SECRET_NAME="DEPLOY_SSH_KEY_STAGING"
+          fi
+
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::Secret $SECRET_NAME absent ou vide pour l'environnement « $ENV_NAME »."
+            echo "Settings → Secrets and variables → Actions → environnement « deploy »."
+            exit 1
+          fi
+
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > "$RUNNER_TEMP/vault.pass"
           chmod 600 "$RUNNER_TEMP/vault.pass"
@@ -115,10 +153,11 @@ jobs:
           # exécutée sur le serveur.
           # ─────────────────────────────────────────────────────────────────────
           if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub 2>/dev/null; then
-            echo "::error::DEPLOY_SSH_KEY illisible — clé privée tronquée, mal collée ou protégée par passphrase."
+            echo "::error::$SECRET_NAME illisible — clé privée tronquée, mal collée ou protégée par passphrase."
             echo "Le secret doit contenir la clé ENTIÈRE, lignes BEGIN/END comprises, sans passphrase."
             exit 1
           fi
+          echo "Environnement : $ENV_NAME  (secret : $SECRET_NAME)"
           echo "Empreinte de la clé de déploiement :"
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
           echo "Elle doit figurer dans ~/.ssh/authorized_keys du serveur cible."

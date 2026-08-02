@@ -63,7 +63,6 @@ public sealed class Category : AggregateRoot<CategoryId>
     /// Construit le chemin matérialisé d'une catégorie à partir du chemin de son
     /// parent et de son slug.
     ///
-    /// ─────────────────────────────────────────────────────────────────────────────
     /// C'EST LE CHEMIN, ET NON LE SLUG, QUI IDENTIFIE UNE CATÉGORIE.
     ///
     /// Le slug ne porte que le nom : « alimentation » vaut pour les chiens comme pour
@@ -78,7 +77,6 @@ public sealed class Category : AggregateRoot<CategoryId>
     ///
     /// Exposé publiquement pour que l'Application vérifie la disponibilité d'un
     /// chemin AVANT de construire l'agrégat, sans réécrire cette règle de son côté.
-    /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>
     public static string BuildPath(string? parentPath, string slug)
     {
