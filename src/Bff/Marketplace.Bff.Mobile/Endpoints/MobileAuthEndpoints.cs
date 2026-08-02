@@ -98,9 +98,28 @@ public static class MobileAuthEndpoints
             .Match(() => Results.Ok(new { confirmed = true }));
 
     /// <summary>
-    /// Renvoie un code de vérification à un compte EXISTANT non vérifié (résout
-    /// e-mail → UserId). Réponse neutre si le compte n'existe pas — l'app affiche le
-    /// même message. L'UserId est nécessaire à l'écran de saisie du code.
+    /// Renvoie un code de vérification à un compte EXISTANT non vérifié.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// ⚠️ CETTE RÉPONSE N'EST PAS NEUTRE, contrairement à ce qu'affirmait ce
+    /// commentaire. Elle rend `{ userId: <guid> }` si l'adresse est connue et
+    /// `{ userId: null }` sinon : c'est un ORACLE D'EXISTENCE de compte, exploitable
+    /// sans authentification, et chaque appel positif envoie un e-mail à la victime.
+    ///
+    /// Ce n'est pas corrigé ici, et c'est un choix : l'écran de saisie du code a
+    /// besoin de cet `userId` pour appeler `confirm-email`. Neutraliser la réponse
+    /// sans livrer en même temps la version correspondante de l'application casserait
+    /// la vérification d'e-mail pour tous les nouveaux comptes.
+    ///
+    /// CORRECTION À MENER CONJOINTEMENT (backend + app) :
+    ///   1. `ConfirmEmailCommand` accepte l'e-mail à la place de l'`userId` ;
+    ///   2. cette route renvoie toujours `{ sent: true }`, quoi qu'il arrive ;
+    ///   3. l'app garde l'e-mail saisi plutôt que l'identifiant.
+    ///
+    /// En attendant, le seul rempart est la limitation de débit (30/min par IP) — qui
+    /// borne le rythme, pas la faisabilité. Même remarque pour
+    /// `SellerRegistrationEndpoints.ResendAsync`.
+    /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>
     private static async Task<IResult> ResendEmailAsync(
         ResendRequest request, ISender sender, IIdentityModuleApi identity, CancellationToken ct)

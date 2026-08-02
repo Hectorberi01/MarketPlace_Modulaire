@@ -43,7 +43,12 @@ public static class IdentityEndpoints
 
     private static void MapAuth(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/identity/auth").WithTags("Identity · Auth");
+        // Politique « auth » (30 req/min/IP) comme sur les quatre BFF. C'était le seul
+        // groupe d'authentification à retomber sur la limite globale de 300/min —
+        // dix fois plus permissif sur les routes qui reçoivent des mots de passe.
+        // Cet hôte n'est plus routé à l'edge, ce qui atténue sans corriger.
+        var group = app.MapGroup("/api/identity/auth").WithTags("Identity · Auth")
+            .RequireRateLimiting(AuthRateLimiter.PolicyName);
 
         group.MapPost("/register", RegisterAsync).WithName("Register").AllowAnonymous();
         group.MapPost("/confirm-email", ConfirmEmailAsync).WithName("ConfirmEmail").AllowAnonymous();

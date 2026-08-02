@@ -118,6 +118,11 @@ namespace Marketplace.Modules.Returns.Infrastructure.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
+                    b.Property<decimal>("RefundableAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");

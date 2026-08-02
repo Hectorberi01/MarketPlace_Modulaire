@@ -53,9 +53,28 @@ public static class SellerFinanceEndpoints
         // Les remboursements ne vivent PAS dans le grand livre Earnings (montants
         // toujours positifs). La source de vérité est le module Returns/RMA : un
         // retour au statut Refunded porte un RefundAmount et une date de résolution.
+        // ─────────────────────────────────────────────────────────────────────────
+        // UN RELEVÉ INCOMPLET VAUT MIEUX PAS DU TOUT QU'UN RELEVÉ FAUX.
+        //
+        // L'échec retombait ici sur une liste vide : `refundsXof` valait 0, les lignes
+        // « refund » disparaissaient, et le vendeur lisait un net à percevoir
+        // SUREVALUÉ — sans le moindre signal. Il conteste ensuite son versement, et
+        // personne ne peut expliquer l'écart, puisque la panne n'a laissé aucune trace
+        // visible.
+        //
+        // On refuse donc de servir un relevé partiel : 503, le client réessaie.
+        // ─────────────────────────────────────────────────────────────────────────
         var refundsResult = await sender.Send(new ListSellerRefundsQuery(seller.Id, start, end), ct);
-        IReadOnlyList<Marketplace.Modules.Returns.Contracts.SellerRefundLine> refunds =
-            refundsResult.IsSuccess ? refundsResult.Value : Array.Empty<Marketplace.Modules.Returns.Contracts.SellerRefundLine>();
+        if (refundsResult.IsFailure)
+        {
+            return Results.Problem(
+                title: "sellers.finance.refunds_unavailable",
+                detail: "Les remboursements de la période n'ont pas pu être récupérés. "
+                      + "Le relevé n'est pas affiché pour ne pas présenter un solde inexact. Réessayez.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var refunds = refundsResult.Value;
 
         return (await sender.Send(new GetSellerStatementLinesQuery(seller.Id, start, end), ct)).Match(earnings =>
         {

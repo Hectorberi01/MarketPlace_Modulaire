@@ -69,7 +69,9 @@ internal sealed class RequestReturnCommandHandler : ICommandHandler<RequestRetur
             return Result.Failure<Guid>(Error.Conflict("returns.already_open", "Un retour est déjà ouvert pour cette ligne."));
         }
 
-        var result = ReturnRequest.Create(order.Id, command.OfferId, command.BuyerId, line.SellerId, reason, order.Currency);
+        // `LineTotal` devient le plafond du futur remboursement, figé au prix payé.
+        var result = ReturnRequest.Create(
+            order.Id, command.OfferId, command.BuyerId, line.SellerId, reason, order.Currency, line.LineTotal);
         if (result.IsFailure)
         {
             return Result.Failure<Guid>(result.Error);

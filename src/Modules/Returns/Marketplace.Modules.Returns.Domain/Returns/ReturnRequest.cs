@@ -17,7 +17,8 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     }
 
     private ReturnRequest(
-        ReturnRequestId id, Guid orderId, Guid offerId, Guid buyerId, Guid sellerId, ReturnReason reason, string currency)
+        ReturnRequestId id, Guid orderId, Guid offerId, Guid buyerId, Guid sellerId,
+        ReturnReason reason, string currency, decimal refundableAmount)
         : base(id)
     {
         OrderId = orderId;
@@ -26,6 +27,7 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
         SellerId = sellerId;
         Reason = reason;
         Currency = currency;
+        RefundableAmount = refundableAmount;
         Status = ReturnStatus.Requested;
         CreatedAtUtc = DateTime.UtcNow;
 
@@ -39,6 +41,29 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     public ReturnReason Reason { get; private set; }
     public ReturnStatus Status { get; private set; }
     public string Currency { get; private set; } = default!;
+
+    /// <summary>
+    /// PLAFOND remboursable : le total de la ligne de commande, figé à la création
+    /// du retour.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Pourquoi le figer ici plutôt que le relire au moment du remboursement.
+    ///
+    /// Le montant est connu à la création — `RequestReturnCommandHandler` charge déjà
+    /// la commande et sa ligne. Le relire plus tard obligerait à interroger Ordering
+    /// à chaque lecture de retour, soit un appel par ligne dans une liste.
+    ///
+    /// Le figer a un second mérite : c'est le prix payé AU MOMENT DE L'ACHAT qui fait
+    /// foi. Une remise appliquée depuis ne doit ni augmenter ni réduire ce à quoi
+    /// l'acheteur a droit.
+    ///
+    /// ⚠️ Vaut 0 pour les retours créés AVANT l'introduction de ce champ.
+    /// `ApproveRefund` traite donc 0 comme « plafond inconnu » et n'applique aucune
+    /// borne, plutôt que de bloquer tous les remboursements en cours.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    public decimal RefundableAmount { get; private set; }
+
     public decimal? RefundAmount { get; private set; }
     public Guid? RefundId { get; private set; }
     public string? Carrier { get; private set; }
@@ -62,15 +87,21 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     /// </summary>
     public string? RefundReference { get; private set; }
 
+    /// <param name="refundableAmount">
+    /// Total de la ligne de commande — plafond du futur remboursement.
+    /// </param>
     public static Result<ReturnRequest> Create(
-        Guid orderId, Guid offerId, Guid buyerId, Guid sellerId, ReturnReason reason, string currency)
+        Guid orderId, Guid offerId, Guid buyerId, Guid sellerId, ReturnReason reason,
+        string currency, decimal refundableAmount)
     {
         if (orderId == Guid.Empty || offerId == Guid.Empty || buyerId == Guid.Empty)
         {
             return Error.Validation("returns.refs_required", "Commande, ligne et acheteur sont obligatoires.");
         }
 
-        return new ReturnRequest(ReturnRequestId.New(), orderId, offerId, buyerId, sellerId, reason, currency.Trim().ToUpperInvariant());
+        return new ReturnRequest(
+            ReturnRequestId.New(), orderId, offerId, buyerId, sellerId, reason,
+            currency.Trim().ToUpperInvariant(), refundableAmount);
     }
 
     public Result Approve()
@@ -144,6 +175,28 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
         if (amount <= 0m)
         {
             return Result.Failure(Error.Validation("returns.amount_invalid", "Le montant remboursé doit être positif."));
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // ON NE REMBOURSE PAS PLUS QUE CE QUI A ÉTÉ PAYÉ.
+        //
+        // Aucune borne haute n'existait : ni ici, ni dans l'application vendeur, où
+        // le champ acceptait n'importe quel nombre. Un zéro de trop passait toutes
+        // les validations et engageait un versement supérieur à la commande — argent
+        // que la plateforme aurait avancé et qu'il aurait fallu récupérer.
+        //
+        // Le contrôle est posé DANS LE DOMAINE, et non dans le BFF : c'est une règle
+        // métier, pas une commodité d'interface. Elle vaut donc aussi pour l'admin,
+        // pour un futur script, pour tout appelant.
+        //
+        // `RefundableAmount == 0` signifie « inconnu » (retour antérieur à ce champ) :
+        // on n'applique alors aucune borne plutôt que de tout bloquer.
+        // ─────────────────────────────────────────────────────────────────────────
+        if (RefundableAmount > 0m && amount > RefundableAmount)
+        {
+            return Result.Failure(Error.Validation(
+                "returns.amount_exceeds_line",
+                $"Le remboursement ne peut pas dépasser le montant de la ligne ({RefundableAmount:0.##} {Currency})."));
         }
 
         Status = ReturnStatus.RefundPending;

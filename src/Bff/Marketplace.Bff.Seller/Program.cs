@@ -73,7 +73,13 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            // Repli FERMÉ, aligné sur le BFF Admin.
+            //
+            // Ce repli n'était neutralisé, en production, que par deux origines
+            // `localhost` laissées dans appsettings.json — et autorisées avec
+            // `AllowCredentials()`. Les supprimer aurait basculé l'hôte en
+            // `AllowAnyOrigin()` sans que rien ne le signale.
+            policy.SetIsOriginAllowed(_ => false);
         }
     });
 });

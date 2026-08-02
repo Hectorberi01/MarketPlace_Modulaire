@@ -123,11 +123,33 @@ public static class SellerAccountEndpoints
             return deleted.Match(() => Results.NoContent());
         }
 
-        // Identité anonymisée : on purge la boutique et ses produits. Un échec ici
-        // laisserait une boutique orpheline (PII déjà effacée) — l'admin peut nettoyer.
+        // ─────────────────────────────────────────────────────────────────────────
+        // L'ÉCHEC DE LA PURGE DE BOUTIQUE DOIT REMONTER.
+        //
+        // Le résultat de `DeleteSellerCommand` était ignoré, et `204` renvoyé quoi
+        // qu'il arrive. En cas d'échec, la boutique et ses produits restaient EN VENTE
+        // derrière un compte déjà anonymisé, donc injoignable — pendant que
+        // l'utilisateur recevait la confirmation que tout était supprimé.
+        //
+        // C'est aussi une exigence App Store (5.1.1(v)) : la suppression annoncée doit
+        // être la suppression effectuée.
+        //
+        // On renvoie 500 plutôt que 204 : l'identité EST anonymisée, l'opération n'est
+        // donc pas annulable, mais l'utilisateur doit savoir qu'elle est incomplète et
+        // l'exploitant doit voir l'incident. Le message ne promet rien qu'on ne tienne.
+        // ─────────────────────────────────────────────────────────────────────────
         if (seller is not null)
         {
-            await sender.Send(new DeleteSellerCommand(seller.Id), ct);
+            var shopDeleted = await sender.Send(new DeleteSellerCommand(seller.Id), ct);
+            if (shopDeleted.IsFailure)
+            {
+                return Results.Problem(
+                    title: "sellers.account.shop_deletion_failed",
+                    detail: "Votre compte a été anonymisé, mais votre boutique n'a pas pu être supprimée. "
+                          + "Elle a été signalée à notre équipe, qui la retirera. Contactez le support si "
+                          + "elle reste visible.",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
         }
 
         return Results.NoContent();

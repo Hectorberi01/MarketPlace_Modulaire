@@ -87,11 +87,32 @@ public static class AdminUserEndpoints
             return userResult.Match(_ => Results.Ok()); // mappe l'échec (400/409) proprement
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // L'ÉCHEC D'UNE ATTRIBUTION DE RÔLE DOIT REMONTER.
+        //
+        // Le résultat était ignoré, et `Ok` renvoyé quoi qu'il arrive. On créait alors
+        // un compte SANS AUCUN RÔLE en annonçant un succès : son titulaire se
+        // connectait et se heurtait à des 403 partout, sans que personne ne sache
+        // pourquoi. Sur un compte d'administration, le diagnostic peut prendre des
+        // heures.
+        //
+        // Le compte existe déjà à ce stade — on ne peut pas revenir en arrière. On dit
+        // donc exactement ce qui s'est passé : créé, mais incomplet. C'est plus utile
+        // qu'une erreur générique, et l'admin peut compléter les rôles depuis la fiche.
+        // ─────────────────────────────────────────────────────────────────────────
         if (request.RoleIds is { Count: > 0 })
         {
             foreach (var roleId in request.RoleIds)
             {
-                await sender.Send(new AssignRoleCommand(userResult.Value, roleId), ct);
+                var assigned = await sender.Send(new AssignRoleCommand(userResult.Value, roleId), ct);
+                if (assigned.IsFailure)
+                {
+                    return Results.Problem(
+                        title: "identity.user.role_assignment_failed",
+                        detail: $"Le compte {userResult.Value} a bien été créé, mais l'attribution d'un rôle "
+                              + $"a échoué ({assigned.Error.Message}). Complétez ses rôles depuis sa fiche.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
             }
         }
 

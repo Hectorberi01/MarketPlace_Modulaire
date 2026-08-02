@@ -25,8 +25,13 @@ namespace Returns.UnitTests;
 /// </summary>
 public class ReturnRequestTests
 {
-    private static ReturnRequest NewRequest()
-        => ReturnRequest.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), ReturnReason.Defective, "XOF").Value;
+    /// <summary>Ligne à 10 000 XOF : c'est le plafond remboursable de ces tests.</summary>
+    private const decimal LineTotal = 10_000m;
+
+    private static ReturnRequest NewRequest(decimal refundable = LineTotal)
+        => ReturnRequest.Create(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            ReturnReason.Defective, "XOF", refundable).Value;
 
     /// <summary>Amène un retour jusqu'à l'état « réceptionné », seul état d'où l'on peut rembourser.</summary>
     private static ReturnRequest Received()
@@ -150,5 +155,48 @@ public class ReturnRequestTests
 
         request.Approve().IsFailure.Should().BeTrue();
         request.Status.Should().Be(ReturnStatus.Rejected);
+    }
+
+    /// <summary>
+    /// Le plafond est une règle métier, pas un confort d'interface : rien ne doit
+    /// permettre de rembourser plus que ce que l'acheteur a payé pour cette ligne.
+    ///
+    /// Sans cette borne, un zéro de trop dans l'application vendeur engageait un
+    /// versement supérieur à la commande — argent avancé par la plateforme, à
+    /// récupérer ensuite auprès du vendeur.
+    /// </summary>
+    [Fact]
+    public void Rembourser_plus_que_la_ligne_est_refuse()
+    {
+        var request = Received();
+
+        request.ApproveRefund(LineTotal + 1m).IsFailure.Should().BeTrue();
+        request.Status.Should().Be(ReturnStatus.Received, "aucune décision ne doit avoir été enregistrée");
+        request.RefundAmount.Should().BeNull();
+    }
+
+    [Fact]
+    public void Rembourser_exactement_la_ligne_est_accepte()
+    {
+        var request = Received();
+
+        request.ApproveRefund(LineTotal).IsSuccess.Should().BeTrue("le remboursement intégral est le cas normal");
+        request.RefundAmount.Should().Be(LineTotal);
+    }
+
+    /// <summary>
+    /// Les retours créés AVANT l'introduction du plafond portent 0. Les borner à 0
+    /// rendrait tout remboursement impossible sur le stock existant — on traite donc
+    /// cette valeur comme « plafond inconnu ».
+    /// </summary>
+    [Fact]
+    public void Un_plafond_inconnu_n_empeche_pas_le_remboursement()
+    {
+        var request = NewRequest(refundable: 0m);
+        request.Approve();
+        request.AddReturnTracking("DHL", "RET-1");
+        request.MarkReceived();
+
+        request.ApproveRefund(999_999m).IsSuccess.Should().BeTrue();
     }
 }

@@ -77,8 +77,33 @@ public static class SellerDashboardEndpoints
 
         var now = DateTime.UtcNow;
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // UN ZÉRO PEUT VOULOIR DIRE « RIEN » OU « JE NE SAIS PAS ».
+        //
+        // Les trois blocs de ce tableau de bord retombaient silencieusement à zéro en
+        // cas de panne : zéro commande, zéro chiffre d'affaires, zéro avis. Pour un
+        // vendeur, un chiffre d'affaires nul un lundi matin est indiscernable d'une
+        // panne — et c'est le genre de zéro qui déclenche un appel au support, voire
+        // une inquiétude légitime sur son activité.
+        //
+        // Contrairement au relevé financier, on ne refuse pas de servir la page : un
+        // tableau de bord est composite, et perdre les commandes parce que les avis
+        // sont indisponibles serait disproportionné. On TRANSMET donc l'incertitude,
+        // via une liste des sections indisponibles.
+        //
+        // Champ AJOUTÉ, jamais retiré : les clients actuels l'ignorent, une version
+        // ultérieure de l'app vendeur pourra afficher « indisponible » à la place du
+        // zéro. Changer les champs en nullable aurait cassé le contrat existant.
+        // ─────────────────────────────────────────────────────────────────────────
+        var unavailable = new List<string>();
+
         // Commandes du vendeur (toutes + à traiter).
         var ordersResult = await sender.Send(new ListOrdersBySellerQuery(seller.Id), ct);
+        if (ordersResult.IsFailure)
+        {
+            unavailable.Add("orders");
+        }
+
         var orders = ordersResult.IsSuccess ? ordersResult.Value : Array.Empty<Marketplace.Modules.Ordering.Contracts.OrderSummary>();
         var ordersTotal = orders.Count;
         var ordersToProcess = orders.Count(o => o.Status is not ("Delivered" or "Cancelled"));
@@ -99,15 +124,25 @@ public static class SellerDashboardEndpoints
             netPayout = statement.Value.NetPayout;
             currency = statement.Value.Currency;
         }
+        else
+        {
+            unavailable.Add("statement");
+        }
 
         // Avis (nombre + note moyenne).
         var reviewsResult = await sender.Send(new ListReviewsBySellerQuery(seller.Id), ct);
+        if (reviewsResult.IsFailure)
+        {
+            unavailable.Add("reviews");
+        }
+
         var reviews = reviewsResult.IsSuccess ? reviewsResult.Value : Array.Empty<Marketplace.Modules.Reviews.Contracts.ReviewSummary>();
         var reviewsCount = reviews.Count;
         var averageRating = reviewsCount > 0 ? Math.Round(reviews.Average(r => r.Rating), 2) : 0d;
 
         return Results.Ok(new SellerDashboard(
-            ordersTotal, ordersToProcess, grossSales, netPayout, currency, reviewsCount, averageRating, ordersByStatus));
+            ordersTotal, ordersToProcess, grossSales, netPayout, currency, reviewsCount, averageRating,
+            ordersByStatus, unavailable));
     }
 
     public sealed record SellerDashboard(
@@ -118,5 +153,14 @@ public static class SellerDashboardEndpoints
         string Currency,
         int ReviewsCount,
         double AverageRating,
-        IReadOnlyDictionary<string, int> OrdersByStatus);
+        IReadOnlyDictionary<string, int> OrdersByStatus,
+        /// <summary>
+        /// Sections dont les données n'ont PAS pu être récupérées : « orders »,
+        /// « statement », « reviews ». Vide en fonctionnement normal.
+        ///
+        /// Les chiffres correspondants valent alors zéro par défaut — c'est
+        /// précisément ce que cette liste permet de ne plus confondre avec une
+        /// absence réelle d'activité.
+        /// </summary>
+        IReadOnlyList<string> Unavailable);
 }

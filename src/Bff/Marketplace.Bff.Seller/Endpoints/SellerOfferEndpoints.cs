@@ -118,12 +118,38 @@ public static class SellerOfferEndpoints
             o.CompareAtAmount, o.DiscountEndsOnUtc)).ToList();
     }
 
-    private static async Task<IResult> CreateAsync(ClaimsPrincipal user, CreateOfferRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    /// <summary>
+    /// Crée une offre — UNIQUEMENT sur un produit de sa propre boutique.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Le contrôle de propriété du produit manquait ici, alors que toutes les autres
+    /// mutations de ce fichier passent par `GuardAsync`. Côté module,
+    /// `CreateOfferCommandHandler` vérifie que le produit existe, que le vendeur
+    /// existe et est actif, qu'il n'a pas déjà une offre sur ce SKU — mais jamais que
+    /// le produit lui appartient. Et `Offer.Create` naît en statut `Active`.
+    ///
+    /// Un vendeur pouvait donc poser une offre à 1 XOF sur le produit d'un concurrent,
+    /// devenir l'offre la moins chère — donc le prix affiché sur les cartes — et
+    /// encaisser ses commandes. Détournement de fiche produit, sans effraction.
+    ///
+    /// Le contrôle est posé DANS le BFF, comme ses voisins : c'est la couche qui
+    /// connaît l'identité de l'appelant. Le module, lui, ne voit qu'un `SellerId`
+    /// qu'on lui passe.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> CreateAsync(
+        ClaimsPrincipal user, CreateOfferRequest request, ISender sender,
+        ISellerModuleApi sellers, ICatalogModuleApi catalog, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
         if (seller is null)
         {
             return SellerBff.NotASeller();
+        }
+
+        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, request.ProductId, ct))
+        {
+            return SellerBff.NotFoundOrForbidden("product");
         }
 
         var result = await sender.Send(new CreateOfferCommand(

@@ -1,5 +1,9 @@
 using MediatR;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Caching.Distributed;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Cart.Application.Carts.Queries;
 using Marketplace.Modules.Identity.Application.Addresses;
@@ -45,16 +49,90 @@ public static class MobileCheckoutEndpoints
         return app;
     }
 
-    /// <summary>Confirme un paiement au retour d'une page hébergée (interroge le PSP).</summary>
-    private static async Task<IResult> ConfirmRedirectAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ConfirmPaymentFromRedirectCommand(id), ct)).Match(() => Results.Ok(new { paymentId = id }));
-
-    /// <summary>Crée la commande depuis le panier actif puis initie le paiement (1 appel).</summary>
-    private static async Task<IResult> PayAsync(ClaimsPrincipal user, PayRequest request, ISender sender, CancellationToken ct)
+    /// <summary>
+    /// Confirme un paiement au retour d'une page hébergée (interroge le PSP).
+    /// Réservé au propriétaire du paiement.
+    ///
+    /// Le contrôle d'appartenance manquait ici alors que `PaymentStatusAsync`, juste
+    /// en dessous, le fait correctement — cette route n'avait même pas de
+    /// `ClaimsPrincipal`. On pouvait donc énumérer les identifiants de paiement et
+    /// déclencher des appels FedaPay pour le compte d'autrui. L'issue restait dictée
+    /// par le prestataire, ce qui bornait les dégâts, mais le trou était réel.
+    /// </summary>
+    private static async Task<IResult> ConfirmRedirectAsync(
+        ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
     {
         if (MobileBff.CurrentUserId(user) is not { } buyerId)
         {
             return Results.Unauthorized();
+        }
+
+        var payment = await sender.Send(new GetPaymentQuery(id), ct);
+        if (payment.IsFailure || payment.Value.BuyerId != buyerId)
+        {
+            // 404 comme le polling : ne pas confirmer l'existence du paiement.
+            return Results.NotFound();
+        }
+
+        return (await sender.Send(new ConfirmPaymentFromRedirectCommand(id), ct))
+            .Match(() => Results.Ok(new { paymentId = id }));
+    }
+
+    /// <summary>
+    /// Crée la commande depuis le panier actif puis initie le paiement (1 appel).
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// IDEMPOTENCE — l'en-tête `Idempotency-Key` évite le double paiement.
+    ///
+    /// Le client dispose de 20 secondes de délai de réception. Sur un réseau mobile
+    /// béninois, le serveur peut parfaitement créer la commande et initier le
+    /// paiement pendant que l'application abandonne : l'acheteur voit « Délai
+    /// dépassé », réappuie, et paie deux fois.
+    ///
+    /// Rejouer la requête ne suffirait pas à s'en protéger : `PlaceOrderCommand`
+    /// VIDE LE PANIER. La seconde tentative échouerait sur « panier vide » — l'
+    /// acheteur croirait son achat perdu alors qu'il est passé. On mémorise donc la
+    /// RÉPONSE et on la resert telle quelle.
+    ///
+    /// Stockage dans le cache distribué (Redis en production, mémoire en
+    /// développement) plutôt qu'en base : la fenêtre utile est de quelques minutes,
+    /// une table et sa migration seraient disproportionnées, et Redis est déjà une
+    /// dépendance obligatoire de la pile. Rétention de 24 h.
+    ///
+    /// ⚠️ Ce n'est PAS un verrou : deux requêtes rigoureusement simultanées peuvent
+    /// encore passer toutes les deux. Le cas visé est le réessai après échec, qui est
+    /// celui qu'on observe. Fermer la fenêtre demanderait un SETNX atomique, donc un
+    /// accès direct au multiplexeur Redis.
+    ///
+    /// L'en-tête est FACULTATIF : les versions de l'application déjà installées ne
+    /// l'envoient pas, et doivent continuer de fonctionner.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> PayAsync(
+        ClaimsPrincipal user, PayRequest request, HttpContext http,
+        ISender sender, IDistributedCache cache, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        string? idempotencyCacheKey = null;
+        if (http.Request.Headers.TryGetValue("Idempotency-Key", out var rawKey)
+            && !string.IsNullOrWhiteSpace(rawKey))
+        {
+            // La clé est HACHÉE, et l'acheteur entre dans le hachage : une clé
+            // arbitraire venant du client ne doit ni polluer l'espace de noms du
+            // cache, ni permettre de lire la réponse de quelqu'un d'autre.
+            idempotencyCacheKey = IdempotencyCacheKey(buyerId, rawKey.ToString());
+
+            var replay = await cache.GetStringAsync(idempotencyCacheKey, ct);
+            if (!string.IsNullOrEmpty(replay))
+            {
+                // Réponse identique au premier appel : le client ne voit aucune
+                // différence entre « ça a marché » et « ça avait déjà marché ».
+                return Results.Content(replay, "application/json");
+            }
         }
 
         // Adresse de livraison choisie : on la résout côté serveur (jamais depuis
@@ -92,7 +170,53 @@ public static class MobileCheckoutEndpoints
                 orderId, request.Method, request.Provider,
                 request.Flow ?? "HostedCheckout", request.ReturnUrl, request.CancelUrl, request.PayerPhone), ct);
 
-        return payment.Match(result => Results.Ok(new { orderId, payment = result }));
+        if (payment.IsFailure)
+        {
+            // Échec d'initiation : on ne mémorise RIEN. La commande existe mais
+            // aucun paiement n'a démarré ; l'acheteur doit pouvoir réessayer, et
+            // resservir cet échec le bloquerait pendant 24 heures.
+            return payment.Match(result => Results.Ok(new { orderId, payment = result }));
+        }
+
+        var body = JsonSerializer.Serialize(new { orderId, payment = payment.Value }, WebJson);
+
+        if (idempotencyCacheKey is not null)
+        {
+            await cache.SetStringAsync(
+                idempotencyCacheKey,
+                body,
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24) },
+                ct);
+        }
+
+        return Results.Content(body, "application/json");
+    }
+
+    /// <summary>
+    /// Options de sérialisation IDENTIQUES à celles de `Results.Ok`.
+    ///
+    /// ⚠️ Indispensable, et facile à manquer. `Results.Ok` sérialise avec les
+    /// conventions web d'ASP.NET — noms de propriétés en camelCase. Un
+    /// `JsonSerializer.Serialize` nu, lui, conserve le PascalCase des records du
+    /// domaine. La réponse rejouée depuis le cache aurait donc porté des noms de
+    /// champs différents de la réponse d'origine, et l'application mobile n'y aurait
+    /// plus rien reconnu — un bug qui ne se serait manifesté qu'au premier réessai
+    /// réel, c'est-à-dire chez un acheteur, sur un réseau dégradé.
+    /// </summary>
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Clé de cache d'idempotence : liée à l'ACHETEUR et hachée.
+    ///
+    /// Le hachage sert deux buts. Il neutralise une clé cliente exotique — longueur
+    /// démesurée, séparateurs, caractères de contrôle — qui pourrait sinon écraser
+    /// une autre entrée du cache. Et l'inclusion de l'identifiant acheteur empêche
+    /// de rejouer la réponse d'autrui en devinant sa clé.
+    /// </summary>
+    private static string IdempotencyCacheKey(Guid buyerId, string rawKey)
+    {
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes($"{buyerId:N}:{rawKey}"));
+        return $"checkout:idem:{Convert.ToHexString(digest)}";
     }
 
     /// <summary>Statut courant du paiement (polling). Réservé au propriétaire du paiement.</summary>

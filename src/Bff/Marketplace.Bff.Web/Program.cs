@@ -65,7 +65,20 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            // ─────────────────────────────────────────────────────────────────────
+            // REPLI FERMÉ, comme le BFF Admin — et non `AllowAnyOrigin()`.
+            //
+            // `Cors:Origins` est vide dans appsettings.json et n'est jamais injecté
+            // par le compose de production : ce repli était donc la configuration
+            // RÉELLE en production, sur une surface authentifiée (/web/cart,
+            // /web/checkout, /web/orders, /web/account). N'importe quel site tiers
+            // pouvait lire ces réponses.
+            //
+            // Fermer par défaut a un coût assumé : si `Cors__Origins` n'est pas
+            // renseigné, la vitrine sera bloquée par CORS — panne visible et
+            // immédiate, préférable à une fuite silencieuse.
+            // ─────────────────────────────────────────────────────────────────────
+            policy.SetIsOriginAllowed(_ => false);
         }
     });
 });

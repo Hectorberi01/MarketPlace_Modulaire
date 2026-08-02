@@ -55,7 +55,18 @@ public static class AdminOutboxEndpoints
 {
     public static IEndpointRouteBuilder MapAdminOutboxEndpoints(this IEndpointRouteBuilder app)
     {
-        var outbox = app.MapAdminGroup("/admin/outbox").WithTags("Admin · Outbox");
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES DEUX ARGUMENTS SONT NÉCESSAIRES, ET PAS SEULEMENT POUR L'ÉTIQUETTE.
+        //
+        // `MapAdminGroup("/admin/outbox")` — un seul argument — ne visait pas la
+        // surcharge de ce BFF (qui exige le rôle Admin) mais celle de
+        // `ApiAuthorization`, qui accorde Admin OU Moderator. C'était le seul appel
+        // de ce type sur vingt-cinq groupes.
+        //
+        // Un modérateur pouvait donc abandonner définitivement une lettre morte,
+        // c'est-à-dire décider qu'un vendeur ne serait jamais crédité.
+        // ─────────────────────────────────────────────────────────────────────────
+        var outbox = app.MapAdminGroup("/admin/outbox", "Admin · Outbox");
 
         outbox.MapGet("/dead-letters", ListDeadLettersAsync);
         outbox.MapPost("/dead-letters/{module}/{id:guid}/replay", ReplayAsync);

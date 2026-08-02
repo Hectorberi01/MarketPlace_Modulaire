@@ -42,20 +42,39 @@ x-app-env: &app-env
   # Bascule sans redéploiement via le .env (puis `--tags deploy`).
   Identity__Registration__RequireApprovalForBuyers: "${REQUIRE_APPROVAL_BUYERS:-true}"
   Identity__Registration__RequireApprovalForAdminCreated: "${REQUIRE_APPROVAL_ADMIN_CREATED:-false}"
-  # FedaPay (paiements ET versements).
+  # ─────────────────────────────────────────────────────────────────────────────
+  # FEDAPAY — encaissements ET versements. Les trois variables sont OBLIGATOIRES.
   #
-  # SANS cette ligne, la valeur d'appsettings.json s'appliquait — c'est-à-dire
-  # le BAC À SABLE. La production parlait au sandbox : aucun encaissement réel,
-  # aucun versement possible. C'était le bug.
-  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
-  Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
-  Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
+  # Elles étaient toutes en `:-` (défaut silencieux), avec deux conséquences que rien
+  # ne signalait au démarrage :
+  #
+  #   • BaseUrl retombait sur le BAC À SABLE. La production parlait au sandbox :
+  #     aucun encaissement réel, aucun versement possible. C'était déjà le bug une
+  #     première fois — le commentaire précédent le racontait, tout en laissant le
+  #     défaut fautif en place.
+  #
+  #   • WebhookSecret vide + `AllowUnsignedWhenSecretMissing = false` en production
+  #     (Program.cs) = tous les rappels FedaPay REJETÉS. Les acheteurs sont débités
+  #     et aucune commande n'est jamais confirmée. Panne totale, parfaitement muette.
+  #
+  # `:?` fait échouer le `docker compose up` si la variable manque. Bruyant au
+  # déploiement plutôt que silencieux en exploitation.
+  # ─────────────────────────────────────────────────────────────────────────────
+  Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:?FEDAPAY_BASE_URL requis (https://api.fedapay.com/v1 en production)}"
+  Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:?FEDAPAY_API_KEY requis}"
+  Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:?FEDAPAY_WEBHOOK_SECRET requis (sans lui les rappels de paiement sont rejetés)}"
   # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
   Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
   # Cloudflare R2 — pièces KYB (bucket privé).
-  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
-  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
-  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
+  #
+  # Les trois identifiants S3 sont OBLIGATOIRES : ils servent AUSSI au bucket
+  # d'images produit (voir plus bas). Vides, le dépôt des pièces KYB et l'envoi des
+  # photos échouent en silence — un vendeur ne peut plus être validé, ni publier un
+  # produit, sans que rien ne l'explique. Les noms de buckets et URL publiques
+  # restent optionnels : ils ont des valeurs sensées côté application.
+  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID requis (pieces KYB et images produit)}"
+  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID requis}"
+  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY requis}"
   Storage__CloudflareR2__BucketName: "${R2_BUCKET_NAME:-}"
   Storage__CloudflareR2__PublicBaseUrl: "${R2_PUBLIC_BASE_URL:-}"
   # Cloudflare R2 — images produit (bucket public).
@@ -362,7 +381,11 @@ services:
     environment:
       NODE_ENV: "production"
       ADMIN_BFF_URL: "http://bff-admin:8080"
-      SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"
+      # `:?` et non `:-` : ce secret CHIFFRE LA SESSION ADMINISTRATEUR. Vide, il la
+      # rend forgeable. Toutes les autres variables critiques (JWT_SIGNING_KEY,
+      # MARKETPLACE_CONNECTION, REDIS_PASSWORD) échouaient déjà au démarrage ;
+      # celle-ci était la seule à passer en silence.
+      SESSION_SECRET: "${ADMIN_SESSION_SECRET:?ADMIN_SESSION_SECRET requis (openssl rand -base64 32, minimum 32 caracteres)}"
       SESSION_COOKIE_SECURE: "true"
     depends_on:
       bff-admin:

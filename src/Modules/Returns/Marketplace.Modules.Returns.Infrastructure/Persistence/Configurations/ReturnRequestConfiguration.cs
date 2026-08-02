@@ -22,6 +22,14 @@ internal sealed class ReturnRequestConfiguration : IEntityTypeConfiguration<Retu
         builder.Property(r => r.Reason).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(r => r.Currency).HasMaxLength(3).IsRequired();
+        // Plafond remboursable, figé au prix payé. Non nullable avec défaut 0 : les
+        // lignes existantes valent 0, ce que le domaine interprète comme « plafond
+        // inconnu » — voir `ReturnRequest.RefundableAmount`.
+        builder.Property(r => r.RefundableAmount)
+            .HasColumnType("numeric(18,2)")
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.Property(r => r.RefundAmount).HasColumnType("numeric(18,2)");
         builder.Property(r => r.RefundId);
         builder.Property(r => r.Carrier).HasMaxLength(100);

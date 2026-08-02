@@ -38,7 +38,8 @@ internal static class ReturnMapper
 {
     public static ReturnRequestSummary ToSummary(ReturnRequest r) => new(
         r.Id.Value, r.OrderId, r.OfferId, r.BuyerId, r.SellerId, r.Reason.ToString(), r.Status.ToString(),
-        r.Currency, r.RefundAmount, r.Carrier, r.TrackingNumber, r.CreatedAtUtc, r.ResolvedAtUtc);
+        r.Currency, r.RefundableAmount, r.RefundAmount, r.Carrier, r.TrackingNumber,
+        r.CreatedAtUtc, r.ResolvedAtUtc);
 }
 
 internal sealed class GetReturnQueryHandler : IQueryHandler<GetReturnQuery, ReturnRequestSummary>

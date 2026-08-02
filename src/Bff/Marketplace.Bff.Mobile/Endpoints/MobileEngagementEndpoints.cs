@@ -57,11 +57,36 @@ public static class MobileEngagementEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new ListMyReturnsQuery(buyerId), ct)).Match(r => Results.Ok(r));
 
-    /// <summary>Détail d'une demande de retour.</summary>
+    /// <summary>
+    /// Détail d'une demande de retour — RÉSERVÉ À SON AUTEUR.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// `GetReturnQuery` n'est pas scopé : il rend n'importe quel retour à qui en
+    /// connaît l'identifiant. Ce contrôle n'était pas fait ici, alors qu'il l'est
+    /// partout ailleurs — `ListMyReturnsQuery` filtre par acheteur, et le BFF vendeur
+    /// passe par `OwnsReturnAsync`. Un acheteur connecté pouvait donc énumérer les
+    /// retours de tous les autres : motif, vendeur, commande, montant remboursé,
+    /// suivi transporteur.
+    ///
+    /// On renvoie 404 plutôt que 403 : répondre « interdit » confirmerait l'existence
+    /// du retour, et donc de la commande sous-jacente.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
     private static async Task<IResult> GetReturnAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
-        => MobileBff.CurrentUserId(user) is null
-            ? Results.Unauthorized()
-            : (await sender.Send(new GetReturnQuery(id), ct)).Match(r => Results.Ok(r));
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new GetReturnQuery(id), ct);
+        if (result.IsFailure || result.Value.BuyerId != userId)
+        {
+            return Results.NotFound(new { error = "return_not_found" });
+        }
+
+        return Results.Ok(result.Value);
+    }
 
     /// <summary>Compte fidélité : solde, palier, historique.</summary>
     private static async Task<IResult> LoyaltyAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
@@ -81,11 +106,32 @@ public static class MobileEngagementEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new ListMyDisputesQuery(userId), ct)).Match(d => Results.Ok(d));
 
-    /// <summary>Détail d'un litige (fil de messages).</summary>
+    /// <summary>
+    /// Détail d'un litige (fil de messages) — RÉSERVÉ À SON AUTEUR.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Même correction que `GetReturnAsync`, et l'oubli était ici plus frappant :
+    /// `ReplyDisputeAsync`, vingt-cinq lignes plus bas, faisait déjà exactement ce
+    /// contrôle, commentaire à l'appui. On pouvait donc RÉPONDRE seulement à son
+    /// litige, mais LIRE celui de n'importe qui — fil de messages, photos, montant
+    /// de remboursement, identifiants de commande et de plaignant.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
     private static async Task<IResult> GetDisputeAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
-        => MobileBff.CurrentUserId(user) is null
-            ? Results.Unauthorized()
-            : (await sender.Send(new GetDisputeQuery(id), ct)).Match(d => Results.Ok(d));
+    {
+        if (MobileBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await sender.Send(new GetDisputeQuery(id), ct);
+        if (result.IsFailure || result.Value.RaisedBy != userId)
+        {
+            return Results.NotFound(new { error = "dispute_not_found" });
+        }
+
+        return Results.Ok(result.Value);
+    }
 
     /// <summary>Ouvre un litige sur une commande.</summary>
     private static async Task<IResult> OpenDisputeAsync(ClaimsPrincipal user, OpenDisputeRequest request, ISender sender, CancellationToken ct)
