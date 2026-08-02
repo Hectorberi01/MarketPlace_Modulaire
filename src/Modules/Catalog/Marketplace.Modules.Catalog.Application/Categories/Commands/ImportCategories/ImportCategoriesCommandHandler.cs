@@ -108,7 +108,7 @@ internal sealed class ImportCategoriesCommandHandler
                 if (createResult.IsFailure)
                 {
                     AddOutcome(outcomes, reported, key: label, path: string.Empty, label: label,
-                        status: "error", message: createResult.Error.Description);
+                        status: "error", message: createResult.Error.Message);
                     abort = true;
                     break;
                 }
