@@ -40,9 +40,13 @@ internal sealed class CreateCategoryCommandHandler : ICommandHandler<CreateCateg
 
         var category = result.Value;
 
-        if (await _categoryRepository.SlugExistsAsync(category.Slug.Value, cancellationToken))
+        // Unicité par CHEMIN, pas par slug : « Alimentation » peut exister sous
+        // « Chiens » et sous « Chats », mais pas deux fois sous le même parent.
+        if (await _categoryRepository.PathExistsAsync(category.Path, excludeId: null, cancellationToken))
         {
-            return Error.Conflict("catalog.category.slug_taken", $"La catégorie « {category.Slug.Value} » existe déjà.");
+            return Error.Conflict(
+                "catalog.category.path_taken",
+                $"Une catégorie « {category.Name} » existe déjà à cet emplacement.");
         }
 
         await _categoryRepository.AddAsync(category, cancellationToken);

@@ -26,15 +26,30 @@ internal sealed class CategoryRepository : ICategoryRepository
             .OrderBy(c => c.Path)
             .ToListAsync(cancellationToken);
 
-    public async Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
+    public async Task<bool> PathExistsAsync(
+        string path, Guid? excludeId = null, CancellationToken cancellationToken = default)
     {
-        var slugResult = Slug.Create(slug);
-        if (slugResult.IsFailure)
+        var query = _dbContext.Categories.Where(c => c.Path == path);
+
+        if (excludeId is { } id)
         {
-            return false;
+            var categoryId = new CategoryId(id);
+            query = query.Where(c => c.Id != categoryId);
         }
 
-        var slugValue = slugResult.Value;
-        return await _dbContext.Categories.AnyAsync(c => c.Slug == slugValue, cancellationToken);
+        return await query.AnyAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Category>> ListDescendantsAsync(
+        string path, CancellationToken cancellationToken = default)
+    {
+        // Le séparateur final délimite la branche : sans lui, « /animaux/chiens »
+        // ramasserait « /animaux/chiens-de-chasse », qui n'en est pas un descendant.
+        var prefix = path.TrimEnd('/') + "/";
+
+        return await _dbContext.Categories
+            .Where(c => c.Path.StartsWith(prefix))
+            .OrderBy(c => c.Path)
+            .ToListAsync(cancellationToken);
     }
 }

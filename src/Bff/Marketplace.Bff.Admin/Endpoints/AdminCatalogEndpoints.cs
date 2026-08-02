@@ -55,11 +55,19 @@ public static class AdminCatalogEndpoints
     private static async Task<IResult> UpdateCategoryAsync(Guid id, CategoryRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new UpdateCategoryCommand(id, request.Name, request.ImageUrl, request.AttributeSchema), ct)).Match(() => Results.NoContent());
 
-    private static async Task<IResult> PublishCategoryAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new PublishCategoryCommand(id), ct)).Match(() => Results.NoContent());
+    // `includeDescendants` en paramètre de requête, défaut `false` : les appels
+    // existants gardent exactement leur comportement, la cascade est un choix explicite.
+    // Le compteur renvoyé permet à la console d'annoncer ce qui a réellement basculé —
+    // il diffère du nombre attendu si des sous-catégories sont archivées.
+    private static async Task<IResult> PublishCategoryAsync(
+        Guid id, bool includeDescendants, ISender sender, CancellationToken ct)
+        => (await sender.Send(new PublishCategoryCommand(id, includeDescendants), ct))
+            .Match(count => Results.Ok(new { published = count }));
 
-    private static async Task<IResult> UnpublishCategoryAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new UnpublishCategoryCommand(id), ct)).Match(() => Results.NoContent());
+    private static async Task<IResult> UnpublishCategoryAsync(
+        Guid id, bool includeDescendants, ISender sender, CancellationToken ct)
+        => (await sender.Send(new UnpublishCategoryCommand(id, includeDescendants), ct))
+            .Match(count => Results.Ok(new { unpublished = count }));
 
     private static async Task<IResult> DeleteCategoryAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new DeleteCategoryCommand(id), ct)).Match(() => Results.NoContent());

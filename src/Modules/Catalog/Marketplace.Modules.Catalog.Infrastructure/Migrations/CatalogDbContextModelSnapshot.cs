@@ -151,10 +151,10 @@ namespace Marketplace.Modules.Catalog.Infrastructure.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("Path");
-
-                    b.HasIndex("Slug")
+                    b.HasIndex("Path")
                         .IsUnique();
+
+                    b.HasIndex("Slug");
 
                     b.ToTable("categories", "catalog");
                 });

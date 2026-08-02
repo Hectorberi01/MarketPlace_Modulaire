@@ -60,6 +60,33 @@ public sealed class Category : AggregateRoot<CategoryId>
     public CategoryStatus Status { get; private set; }
 
     /// <summary>
+    /// Construit le chemin matérialisé d'une catégorie à partir du chemin de son
+    /// parent et de son slug.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// C'EST LE CHEMIN, ET NON LE SLUG, QUI IDENTIFIE UNE CATÉGORIE.
+    ///
+    /// Le slug ne porte que le nom : « alimentation » vaut pour les chiens comme pour
+    /// les chats. L'imposer unique interdisait une taxonomie pourtant banale —
+    /// impossible de créer « Animaux &gt; Chats &gt; Alimentation » dès lors que
+    /// « Animaux &gt; Chiens &gt; Alimentation » existait.
+    ///
+    /// Le chemin, lui, porte la branche entière : « /animaux/chiens/alimentation »
+    /// et « /animaux/chats/alimentation » diffèrent. Il reste unique là où il doit
+    /// l'être — deux sœurs de même nom sous un même parent produisent le même chemin
+    /// et sont donc toujours refusées.
+    ///
+    /// Exposé publiquement pour que l'Application vérifie la disponibilité d'un
+    /// chemin AVANT de construire l'agrégat, sans réécrire cette règle de son côté.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    public static string BuildPath(string? parentPath, string slug)
+    {
+        var basePath = string.IsNullOrWhiteSpace(parentPath) ? string.Empty : parentPath.TrimEnd('/');
+        return $"{basePath}/{slug}";
+    }
+
+    /// <summary>
     /// Crée une catégorie. <paramref name="parentPath"/> est le chemin du parent
     /// (résolu par l'Application en chargeant le parent), null si racine.
     /// </summary>
@@ -81,8 +108,7 @@ public sealed class Category : AggregateRoot<CategoryId>
             return Result.Failure<Category>(slugResult.Error);
         }
 
-        var basePath = string.IsNullOrWhiteSpace(parentPath) ? string.Empty : parentPath.TrimEnd('/');
-        var path = $"{basePath}/{slugResult.Value.Value}";
+        var path = BuildPath(parentPath, slugResult.Value.Value);
 
         return new Category(
             CategoryId.New(),
@@ -144,11 +170,9 @@ public sealed class Category : AggregateRoot<CategoryId>
             return Result.Failure(slugResult.Error);
         }
 
-        var basePath = string.IsNullOrWhiteSpace(parentPath) ? string.Empty : parentPath.TrimEnd('/');
-
         Name = name.Trim();
         Slug = slugResult.Value;
-        Path = $"{basePath}/{slugResult.Value.Value}";
+        Path = BuildPath(parentPath, slugResult.Value.Value);
         ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
         AttributeSchema = string.IsNullOrWhiteSpace(attributeSchema) ? "{}" : attributeSchema.Trim();
 

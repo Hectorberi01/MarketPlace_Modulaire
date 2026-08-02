@@ -36,17 +36,23 @@ internal sealed class UpdateCategoryCommandHandler : ICommandHandler<UpdateCateg
             return Result.Failure(slugResult.Error);
         }
 
-        var newSlug = slugResult.Value.Value;
-        if (newSlug != category.Slug.Value && await _categoryRepository.SlugExistsAsync(newSlug, cancellationToken))
-        {
-            return Result.Failure(Error.Conflict("catalog.category.slug_taken", $"La catégorie « {newSlug} » existe déjà."));
-        }
-
+        // Le chemin du parent doit être connu AVANT le contrôle d'unicité : c'est lui
+        // qui distingue « /animaux/chiens/alimentation » de « /animaux/chats/alimentation ».
         string? parentPath = null;
         if (category.ParentId is { } parentId)
         {
             var parent = await _categoryRepository.GetByIdAsync(new CategoryId(parentId), cancellationToken);
             parentPath = parent?.Path;
+        }
+
+        // `excludeId` : sans lui, enregistrer une catégorie sans changer son nom la
+        // ferait entrer en conflit avec elle-même.
+        var newPath = Category.BuildPath(parentPath, slugResult.Value.Value);
+        if (await _categoryRepository.PathExistsAsync(newPath, category.Id.Value, cancellationToken))
+        {
+            return Result.Failure(Error.Conflict(
+                "catalog.category.path_taken",
+                $"Une catégorie « {command.Name} » existe déjà à cet emplacement."));
         }
 
         var updateResult = category.Update(command.Name, parentPath, command.ImageUrl, command.AttributeSchema);

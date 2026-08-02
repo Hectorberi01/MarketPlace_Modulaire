@@ -202,11 +202,18 @@ public static class CatalogEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Publie une catégorie : Draft -> Published (visible dans l'arbre).</summary>
-    private static async Task<IResult> PublishCategoryAsync(Guid id, ISender sender, CancellationToken ct)
+    /// <summary>
+    /// Publie une catégorie : Draft -> Published (visible dans l'arbre).
+    ///
+    /// `includeDescendants` publie aussi toute la descendance. La commande renvoie
+    /// désormais le nombre de catégories basculées — il peut être inférieur à
+    /// l'attendu si des sous-catégories sont archivées, celles-ci étant ignorées.
+    /// </summary>
+    private static async Task<IResult> PublishCategoryAsync(
+        Guid id, bool includeDescendants, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new PublishCategoryCommand(id), ct);
-        return result.Match(() => Results.NoContent());
+        var result = await sender.Send(new PublishCategoryCommand(id, includeDescendants), ct);
+        return result.Match(count => Results.Ok(new { published = count }));
     }
 
     // ------------------------------------------------------- Contrats d'entrée

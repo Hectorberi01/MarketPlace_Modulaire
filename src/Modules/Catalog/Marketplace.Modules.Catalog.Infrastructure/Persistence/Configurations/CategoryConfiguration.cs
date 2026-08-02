@@ -35,8 +35,22 @@ internal sealed class CategoryConfiguration : IEntityTypeConfiguration<Category>
             .HasColumnName("attribute_schema")
             .IsRequired();
 
-        builder.HasIndex(c => c.Slug).IsUnique();
-        builder.HasIndex(c => c.Path);
+        // ─────────────────────────────────────────────────────────────────────────
+        // L'UNICITÉ PORTE SUR LE CHEMIN, PLUS SUR LE SLUG.
+        //
+        // L'index unique sur le slug interdisait toute taxonomie à noms répétés :
+        // « Alimentation » ne pouvait exister qu'une seule fois dans l'arbre entier,
+        // alors qu'il en faut une sous « Chiens » et une sous « Chats ».
+        //
+        // Le chemin porte la branche, donc la contrainte tombe au bon endroit : deux
+        // sœurs homonymes produisent le même chemin et restent refusées ; deux
+        // homonymes sous des parents différents sont acceptées.
+        //
+        // Le slug garde un index NON unique : il n'identifie rien à lui seul (aucune
+        // recherche ne s'y appuie), mais il reste utile aux tris et aux filtres.
+        // ─────────────────────────────────────────────────────────────────────────
+        builder.HasIndex(c => c.Slug);
+        builder.HasIndex(c => c.Path).IsUnique();
         builder.HasIndex(c => c.ParentId);
 
         builder.Ignore(c => c.DomainEvents);
