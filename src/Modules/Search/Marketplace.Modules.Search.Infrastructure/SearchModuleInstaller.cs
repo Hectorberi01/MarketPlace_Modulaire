@@ -44,6 +44,7 @@ public sealed class SearchModuleInstaller : IModuleInstaller
         services.AddScoped<IIntegrationEventHandler<ProductDeletedIntegrationEvent>, ProductDeletedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<OfferCreatedIntegrationEvent>, OfferCreatedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<OfferPriceChangedIntegrationEvent>, OfferPriceChangedSearchHandler>();
+        services.AddScoped<IIntegrationEventHandler<OfferDeletedIntegrationEvent>, OfferDeletedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<ReviewPublishedIntegrationEvent>, ReviewPublishedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<ReviewRejectedIntegrationEvent>, ReviewRejectedSearchHandler>();
 

@@ -66,6 +66,23 @@ public sealed class OfferPriceChangedSearchHandler : IIntegrationEventHandler<Of
         => _indexer.SetOfferPriceAsync(e.ProductId, e.BasePriceAmount, e.Currency, cancellationToken);
 }
 
+/// <summary>
+/// Répercute la suppression d'une offre sur le prix « à partir de » (Offers) : on
+/// réaligne sur l'offre la moins chère restante, ou on efface le prix s'il n'en reste
+/// aucune. Sans ce gestionnaire, l'index conservait le prix d'une offre disparue.
+/// </summary>
+public sealed class OfferDeletedSearchHandler : IIntegrationEventHandler<OfferDeletedIntegrationEvent>
+{
+    private readonly SearchIndexer _indexer;
+
+    public OfferDeletedSearchHandler(SearchIndexer indexer) => _indexer = indexer;
+
+    public Task HandleAsync(OfferDeletedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => e.RemainingMinPriceAmount is { } amount && e.Currency is { } currency
+            ? _indexer.SetOfferPriceAsync(e.ProductId, amount, currency, cancellationToken)
+            : _indexer.ClearOfferPriceAsync(e.ProductId, cancellationToken);
+}
+
 /// <summary>Rafraîchit la note d'un produit après publication d'un avis (Reviews).</summary>
 public sealed class ReviewPublishedSearchHandler : IIntegrationEventHandler<ReviewPublishedIntegrationEvent>
 {

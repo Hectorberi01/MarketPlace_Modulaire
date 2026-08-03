@@ -394,13 +394,40 @@ public static class SellerCatalogEndpoints
                 statusCode: 503);
         }
 
-        if (offers.Value.Count > 0)
+        // ─────────────────────────────────────────────────────────────────────────
+        // ON DISTINGUE SES OFFRES DE CELLES DES AUTRES.
+        //
+        // `ListOffersByProductQuery` renvoie les offres de TOUS les vendeurs sur ce
+        // produit. Le vendeur ne peut supprimer que les siennes (`OwnsOfferAsync`
+        // refuse le reste) : lui dire « supprimez-les d'abord » quand l'offre
+        // bloquante appartient à un tiers, c'est lui demander l'impossible — le
+        // défaut même que ce garde-fou prétendait corriger.
+        //
+        // Le cas ne devrait plus se produire depuis le contrôle de propriété ajouté à
+        // la création d'offre, mais des données antérieures peuvent exister. On le
+        // traite donc explicitement, avec un message qui dit la vérité.
+        // ─────────────────────────────────────────────────────────────────────────
+        var mine = offers.Value.Count(o => o.SellerId == seller.Id);
+        var others = offers.Value.Count - mine;
+
+        if (mine > 0)
         {
             return Results.Json(
                 new
                 {
-                    error = $"Ce produit porte encore {offers.Value.Count} offre(s). "
+                    error = $"Ce produit porte encore {mine} mise(s) en vente. "
                           + "Supprimez-les d'abord — sinon elles resteraient en vente sans fiche produit.",
+                },
+                statusCode: 409);
+        }
+
+        if (others > 0)
+        {
+            return Results.Json(
+                new
+                {
+                    error = "Ce produit porte des mises en vente qui ne vous appartiennent pas. "
+                          + "Contactez l'assistance : la suppression laisserait ces offres sans fiche produit.",
                 },
                 statusCode: 409);
         }
