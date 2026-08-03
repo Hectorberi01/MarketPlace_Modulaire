@@ -63,9 +63,12 @@ public static class SellerNotificationEndpoints
 
     /// <summary>Retire un jeton d'appareil (déconnexion / désabonnement push).</summary>
     private static async Task<IResult> UnregisterDeviceAsync(ClaimsPrincipal user, DeviceUnregisterRequest request, ISender sender, CancellationToken ct)
-        => SellerBff.CurrentUserId(user) is null
+        // L'identifiant est PASSÉ à la commande, pas seulement vérifié : il servait
+        // uniquement de test de présence, et le désabonnement s'appliquait ensuite au
+        // jeton de n'importe qui.
+        => SellerBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
-            : (await sender.Send(new UnregisterDeviceTokenCommand(request.Token), ct)).Match(() => Results.NoContent());
+            : (await sender.Send(new UnregisterDeviceTokenCommand(userId, request.Token), ct)).Match(() => Results.NoContent());
 
     /// <summary>Notifications de l'utilisateur du vendeur (les plus récentes d'abord).</summary>
     private static async Task<IResult> ListAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)

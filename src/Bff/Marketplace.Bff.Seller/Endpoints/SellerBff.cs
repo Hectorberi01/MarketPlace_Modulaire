@@ -3,6 +3,7 @@ using MediatR;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Offers.Application.Offers.Queries;
+using Marketplace.Modules.Inventory.Application.Locations.Queries;
 using Marketplace.Modules.Shipping.Application.Shipments.Queries;
 using Marketplace.Modules.Returns.Application.Returns;
 using Marketplace.Modules.Reviews.Application.Reviews.Queries;
@@ -110,6 +111,24 @@ internal static class SellerBff
         => Results.Json(new { error = "not_implemented", capability }, statusCode: StatusCodes.Status501NotImplemented);
 
     // --- Vérifications de propriété (anti-IDOR) ---
+
+    /// <summary>
+    /// Cette localisation d'expédition appartient-elle bien à la boutique ?
+    ///
+    /// ⚠️ ÉCHOUE FERMÉ : si la liste des lieux ne peut pas être obtenue, on répond
+    /// « non ». Traiter l'incertitude comme une autorisation, c'est ouvrir la porte
+    /// précisément le jour où quelque chose ne va pas.
+    /// </summary>
+    public static async Task<bool> OwnsLocationAsync(ISender sender, Guid sellerId, Guid locationId, CancellationToken ct)
+    {
+        if (locationId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var locations = await sender.Send(new ListFulfillmentLocationsQuery(sellerId), ct);
+        return locations.IsSuccess && locations.Value.Any(l => l.Id == locationId);
+    }
 
     /// <summary>Vrai si l'offre existe ET appartient au vendeur.</summary>
     public static async Task<bool> OwnsOfferAsync(ISender sender, Guid sellerId, Guid offerId, CancellationToken ct)

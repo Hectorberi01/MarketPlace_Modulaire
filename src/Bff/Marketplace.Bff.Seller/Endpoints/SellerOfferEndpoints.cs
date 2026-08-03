@@ -191,6 +191,20 @@ public static class SellerOfferEndpoints
             return SellerBff.NotFoundOrForbidden("product");
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // LE LIEU D'EXPÉDITION AUSSI DOIT ÊTRE À SOI.
+        //
+        // Le produit était contrôlé, le lieu ne l'était pas — alors que le même champ
+        // l'est côté stock (`SellerInventoryEndpoints.CreateItemAsync`). Une offre
+        // pouvait donc s'adosser à l'entrepôt d'un concurrent : c'est ce lieu qui sert
+        // d'origine aux estimations de délai de livraison affichées à l'acheteur, et
+        // le vendeur visé n'avait aucun moyen de le voir.
+        // ─────────────────────────────────────────────────────────────────────────
+        if (!await SellerBff.OwnsLocationAsync(sender, seller.Id, request.ShipFromLocationId, ct))
+        {
+            return SellerBff.NotFoundOrForbidden("location");
+        }
+
         var result = await sender.Send(new CreateOfferCommand(
             request.ProductId, seller.Id, request.Sku, request.SellerPrice, request.Currency,
             request.Condition, request.FulfillmentType, request.ShipFromLocationId, request.HandlingTime), ct);

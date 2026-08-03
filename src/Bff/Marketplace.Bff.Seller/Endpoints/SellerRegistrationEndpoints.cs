@@ -94,6 +94,24 @@ public static class SellerRegistrationEndpoints
         return Results.Ok(new SellerResendResponse(UserId: user.Id));
     }
 
+
+    /// <summary>
+    /// Ce compte peut-il ouvrir une boutique ?
+    ///
+    /// ⚠️ LISTE BLANCHE, et les noms viennent de l'énumération `UserStatus` :
+    /// `PendingVerification`, `Active`, `Suspended`, `Deleted`. Écrire « Pending » —
+    /// le raccourci naturel — n'aurait correspondu à AUCUNE valeur, et aurait donc
+    /// bloqué tous les comptes fraîchement inscrits, qui sont précisément ceux que ce
+    /// parcours doit servir. Une liste blanche mal orthographiée refuse tout ; une
+    /// liste noire mal orthographiée laisse tout passer. La première se voit au
+    /// premier essai, la seconde jamais.
+    ///
+    /// `Suspended` et `Deleted` sont exclus : c'est tout l'objet du contrôle.
+    /// </summary>
+    private static bool IsEligibleForOnboarding(string status)
+        => string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(status, "PendingVerification", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Étape 1 : crée le compte (ou identifie l'existant) et envoie le code.</summary>
     private static async Task<IResult> RegisterAsync(
         SellerSelfRegisterRequest request,
@@ -110,6 +128,33 @@ public static class SellerRegistrationEndpoints
                     request.FirstName, request.LastName, request.Email,
                     request.PhoneNumber ?? string.Empty, request.Password, CreatedByAdmin: false), ct))
                 .Match(userId => Results.Ok(new SellerRegisterResponse(userId, IsNewAccount: true)));
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // UN COMPTE SUSPENDU OU FERMÉ NE PASSE PAS PAR ICI.
+        //
+        // Le seul contrôle était « ce compte a-t-il déjà une boutique ? ». Le STATUT
+        // n'était jamais regardé — et la suite du parcours, elle, appelle
+        // `ApproveUserCommand`, qui fait passer le compte à `Active` DEPUIS N'IMPORTE
+        // QUEL état, suspension comprise.
+        //
+        // Autrement dit : un vendeur suspendu pour fraude, qui garde l'accès à sa boîte
+        // mail, se réactivait tout seul en deux requêtes anonymes — nouveau rôle
+        // Seller, nouvelle boutique, aucun KYB, aucune intervention humaine. La
+        // sanction administrative ne valait rien.
+        //
+        // On répond ici, AVANT d'envoyer le moindre code : rien ne doit inviter à
+        // poursuivre un parcours qui se refermera de toute façon.
+        //
+        // Le message reste vague à dessein — « contactez l'assistance » — pour ne pas
+        // renseigner sur le motif ni confirmer le statut à un appelant anonyme.
+        // ─────────────────────────────────────────────────────────────────────────
+        if (!IsEligibleForOnboarding(existing.Status))
+        {
+            return Results.Problem(
+                title: "identity.user.not_eligible",
+                detail: "Ce compte ne peut pas ouvrir de boutique. Contactez l'assistance.",
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         var shop = await sellers.GetSellerByUserIdAsync(existing.Id, ct);
@@ -129,8 +174,30 @@ public static class SellerRegistrationEndpoints
     private static async Task<IResult> VerifyAsync(
         SellerVerifyRequest request,
         ISender sender,
+        IIdentityModuleApi identity,
         CancellationToken ct)
     {
+        // ─────────────────────────────────────────────────────────────────────────
+        // LE CONTRÔLE DE STATUT EST REFAIT ICI, ET CE N'EST PAS REDONDANT.
+        //
+        // `/register` et `/verify` sont deux endpoints ANONYMES distincts. Rien
+        // n'oblige un appelant à passer par le premier : il suffit d'un identifiant de
+        // compte et d'un code valide — obtenus lors d'une inscription antérieure,
+        // avant la suspension — pour attaquer `/verify` directement.
+        //
+        // Or c'est `/verify` qui attribue le rôle Seller et appelle `ApproveUserCommand`.
+        // Poser la barrière uniquement à l'entrée revenait à fermer la porte en
+        // laissant la fenêtre ouverte.
+        // ─────────────────────────────────────────────────────────────────────────
+        var account = await identity.GetUserAsync(request.UserId, ct);
+        if (account is null || !IsEligibleForOnboarding(account.Status))
+        {
+            return Results.Problem(
+                title: "identity.user.not_eligible",
+                detail: "Ce compte ne peut pas ouvrir de boutique. Contactez l'assistance.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         // 1. Code (strict : preuve de possession de la boîte).
         var verified = await sender.Send(new VerifyEmailCodeCommand(request.UserId, request.Code), ct);
         if (verified.IsFailure)
@@ -162,9 +229,12 @@ public static class SellerRegistrationEndpoints
             r => r.Name.Equals("Seller", StringComparison.OrdinalIgnoreCase));
         if (sellerRole is null)
         {
+            // Message NEUTRE : l'ancien (« La base n'a pas été correctement
+            // initialisée ») renseignait un appelant anonyme sur l'état interne de
+            // l'installation. Le détail appartient aux journaux, pas à la réponse.
             return Results.Problem(
                 title: "identity.role.seller_missing",
-                detail: "Le rôle « Seller » est introuvable. La base n'a pas été correctement initialisée.",
+                detail: "L'inscription vendeur est momentanément indisponible. Réessayez plus tard.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 

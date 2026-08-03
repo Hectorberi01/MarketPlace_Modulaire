@@ -224,9 +224,11 @@ public static class MobileAccountEndpoints
 
     /// <summary>Retire un jeton d'appareil (déconnexion / désabonnement push).</summary>
     private static async Task<IResult> UnregisterDeviceAsync(ClaimsPrincipal user, MobileDeviceUnregisterRequest request, ISender sender, CancellationToken ct)
-        => MobileBff.CurrentUserId(user) is null
+        // Même correction que sur la surface vendeur : l'identifiant borne l'opération
+        // à son propriétaire, il ne sert plus seulement de test de présence.
+        => MobileBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
-            : (await sender.Send(new UnregisterDeviceTokenCommand(request.Token), ct)).Match(() => Results.NoContent());
+            : (await sender.Send(new UnregisterDeviceTokenCommand(userId, request.Token), ct)).Match(() => Results.NoContent());
 
     /// <summary>Profil utilisateur.</summary>
     private static async Task<IResult> ProfileAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
