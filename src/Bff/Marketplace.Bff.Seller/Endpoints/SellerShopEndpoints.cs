@@ -210,11 +210,23 @@ public static class SellerShopEndpoints
             return SellerBff.NotASeller();
         }
 
-        if (seller.KybDocuments.All(d => d.Id != id))
-        {
-            return SellerBff.NotFoundOrForbidden("kyb_document");
-        }
-
+        // ─────────────────────────────────────────────────────────────────────────
+        // PAS DE PRÉ-CONTRÔLE SUR LE RÉSUMÉ EN CACHE.
+        //
+        // Ce garde-fou lisait `seller.KybDocuments`, c'est-à-dire un résumé servi par
+        // le cache. Il n'apportait AUCUNE sécurité — `RemoveKybDocumentCommand` est
+        // déjà scopée au vendeur, et le domaine ne cherche la pièce que parmi les
+        // enfants de CET agrégat : un identifiant appartenant à une autre boutique ne
+        // peut pas être trouvé. Anti-IDOR par construction, pas par vérification.
+        //
+        // En revanche il NUISAIT, dans les deux sens : un résumé périmé laissait
+        // passer une pièce déjà supprimée (le vendeur recevait alors le message du
+        // domaine, « Pièce KYB introuvable pour cette boutique », sur une ligne que
+        // l'écran affichait encore), et aurait tout aussi bien pu refuser une pièce
+        // légitime pas encore visible dans le cache.
+        //
+        // On laisse donc le domaine trancher : il lit la base, lui.
+        // ─────────────────────────────────────────────────────────────────────────
         return (await sender.Send(new RemoveKybDocumentCommand(seller.Id, id), ct)).Match(() => Results.NoContent());
     }
 
