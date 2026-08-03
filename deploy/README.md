@@ -206,6 +206,63 @@ docker compose -f docker-compose.staging.yml exec api \
 Le premier détourage après un démarrage à froid met la session ONNX en place : comptez
 quelques secondes de plus que les suivants.
 
+## Console vendeur (pro.<domaine>)
+
+Dépôt : `HbaExpress_seller_dashboard`. Elle se déploie comme la console admin — image
+construite par GitHub Actions, poussée sur GHCR, tirée par la stack du VPS.
+
+`develop_staging` → staging (`seller-console:staging`) · `develop` → prod (`seller-console:latest`)
+
+### ⚠️ Ordre de la PREMIÈRE mise en service
+
+Ansible lance `docker compose up -d --no-build` sur **toute** la pile. Si l'image
+`seller-console` n'est pas encore sur GHCR, le déploiement échoue **et emporte les
+autres services**. Dans cet ordre, donc :
+
+1. **DNS** — créer `pro.<domaine>` (A / AAAA vers le VPS). Sans cet enregistrement,
+   Let's Encrypt ne peut pas émettre le certificat, et Traefik servira une erreur TLS.
+2. **Secrets GitHub** — dans `HbaExpress_seller_dashboard`, environnements `staging`
+   et `prod` : `GHCR_TOKEN`, `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`
+   (et `DEPLOY_SSH_PORT` si ce n'est pas 8022).
+3. **Secret de session** — `seller_session_secret` dans le vault Ansible :
+   `openssl rand -base64 32`. **Jamais celui de la console admin** : deux surfaces
+   distinctes, deux compromissions indépendantes. Vide, le compose échoue sur un `:?`
+   — c'est voulu.
+4. **Publier l'image** — pousser sur `develop_staging`, attendre le workflow vert.
+5. **Déployer le backend** — Ansible, comme d'habitude. La console démarre avec.
+
+Une fois la première mise en service faite, l'ordre n'a plus d'importance : chaque
+push sur le dépôt de la console redéploie ce seul service.
+
+### Ce que le workflow vérifie
+
+`tsc --noEmit`, puis `next build`, **avant** de construire l'image : une erreur de type
+ne produit aucune image. Après le déploiement, il attend que le conteneur soit
+`healthy` et **échoue** sinon, en affichant les 80 dernières lignes de journal — sans
+cela, un démarrage raté (secret absent, BFF injoignable) remonterait en vert.
+
+Chaque image porte deux étiquettes : `:staging`/`:latest` (mobiles) et `:<sha>` (fixe).
+La seconde permet de savoir quel commit tourne, et de revenir en arrière sans
+reconstruire :
+
+```bash
+cd /opt/marketplace   # ou /opt/marketplace-staging
+sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
+  up -d --no-deps seller-console
+# retour arrière : éditer IMAGE_TAG, ou lancer l'image :<sha> voulue
+```
+
+### Vérifier
+
+```bash
+# État et santé du conteneur
+sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod ps seller-console
+
+# La console voit-elle le BFF ? (depuis le réseau interne)
+sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
+  exec seller-console node -e "require('http').get('http://bff-seller:8080/health',r=>console.log(r.statusCode))"
+```
+
 ## Notes
 
 - **JWT** : `JWT_SIGNING_KEY` (dans `.env`) est injecté à l'identique dans les 5

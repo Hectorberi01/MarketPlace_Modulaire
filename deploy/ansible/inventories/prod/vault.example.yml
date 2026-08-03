@@ -72,3 +72,9 @@ fcm_service_account_b64: "CHANGE_ME_BASE64_SUR_UNE_LIGNE"
 #     "project_id": "CHANGE_ME",
 #     ...
 #   }
+
+# Secret de session de la console VENDEUR (pro.<domaine>).
+#   openssl rand -base64 32
+# Vide = déploiement en échec. Ne jamais réutiliser celui de la console admin :
+# deux surfaces distinctes, deux compromissions indépendantes.
+seller_session_secret: ""

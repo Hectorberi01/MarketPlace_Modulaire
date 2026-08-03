@@ -15,6 +15,12 @@ jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
 # Générer : openssl rand -base64 32
 admin_session_secret: "CHANGE_ME_openssl_rand_base64_32"
 
+# Secret de session de la console VENDEUR (pro.<domaine>).
+#   openssl rand -base64 32
+# Vide = déploiement en échec. Ne jamais réutiliser celui de la console admin :
+# deux surfaces distinctes, deux compromissions indépendantes.
+seller_session_secret: ""
+
 # Mot de passe admin Grafana (stack monitoring).
 grafana_password: "CHANGE_ME_STRONG_RANDOM"
 

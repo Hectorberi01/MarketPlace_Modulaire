@@ -440,6 +440,62 @@ services:
   # interne vers le BFF Admin (ADMIN_BFF_URL=http://bff-admin:8080). Aucun jeton
   # ne transite par le JavaScript client.
   # ---------------------------------------------------------------------------
+  # ---------------- Console VENDEUR (Next.js) ----------------
+  # ⚠️ ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
+  #
+  # Ansible lance `docker compose up -d --no-build` sur TOUTE la pile. Si l'image
+  # `seller-console` n'existe pas encore sur GHCR, ce déploiement ÉCHOUE — et il
+  # emporte les autres services avec lui. C'est exactement le piège décrit plus bas
+  # pour le service « site ».
+  #
+  # La console doit donc être publiée EN PREMIER : pousser sur `develop_staging`
+  # (ou `develop`) dans HbaExpress_seller_dashboard, attendre que le workflow soit
+  # vert, et seulement ensuite déployer le backend.
+  # Image construite et poussée par le dépôt HbaExpress_seller_dashboard
+  # (.github/workflows/deploy.yml), puis tirée ici. Ce compose ne la construit pas :
+  # le backend et la console vivent dans deux dépôts distincts, avec deux cycles de
+  # publication distincts.
+  #
+  # Le vendeur ne parle JAMAIS au BFF directement : la console détient les jetons dans
+  # un cookie chiffré côté serveur et relaie les appels. D'où `SELLER_BFF_URL` sur
+  # l'adresse INTERNE du réseau Docker — passer par l'URL publique ferait sortir puis
+  # rentrer chaque requête par Traefik, et ferait perdre l'IP réelle du vendeur.
+  seller-console:
+    image: ${IMAGE_PREFIX:-marketplace}/seller-console:${IMAGE_TAG:-staging}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      SELLER_BFF_URL: "http://bff-seller:8080"
+      # `:?` et non `:-` : ce secret CHIFFRE LA SESSION VENDEUR. Vide ou trop faible,
+      # il la rend forgeable — donc le jeton de rafraîchissement d'un vendeur, valable
+      # trente jours, devient extractible. La console refuse de servir sans lui ; ce
+      # `:?` fait échouer le déploiement AVANT, ce qui est préférable à une pile qui
+      # démarre et renvoie tout le monde vers la page de connexion.
+      SESSION_SECRET: "${SELLER_SESSION_SECRET:?SELLER_SESSION_SECRET requis (openssl rand -base64 32, 32 caracteres minimum, pas une valeur d'exemple)}"
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      bff-seller:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      # `pro.` et non `seller.` : ce dernier sert déjà le BFF vendeur. Deux routeurs
+      # sur le même hôte, et Traefik en choisirait un au hasard.
+      - "traefik.http.routers.seller-console.rule=Host(`pro.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.seller-console.entrypoints=websecure"
+      - "traefik.http.routers.seller-console.tls.certresolver=letsencrypt"
+      # edge-chain : HSTS, en-têtes de sécurité, limitation de débit de bordure.
+      # L'omettre priverait la console de tout ce que Traefik apporte.
+      - "traefik.http.routers.seller-console.middlewares=edge-chain@file"
+      - "traefik.http.services.seller-console.loadbalancer.server.port=3000"
+
   console:
     image: ${IMAGE_PREFIX:-marketplace}/console:${IMAGE_TAG:-staging}
     restart: unless-stopped
