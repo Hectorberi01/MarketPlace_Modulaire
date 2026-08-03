@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Inventory.Application.Abstractions;
 using Marketplace.Modules.Inventory.Domain.Locations;
+using Marketplace.Modules.Inventory.Domain.Stock;
 
 namespace Marketplace.Modules.Inventory.Application.Locations.Commands;
 
@@ -122,11 +123,16 @@ public sealed record DeleteFulfillmentLocationCommand(Guid LocationId, Guid? Own
 internal sealed class DeleteFulfillmentLocationCommandHandler : ICommandHandler<DeleteFulfillmentLocationCommand>
 {
     private readonly IFulfillmentLocationRepository _repository;
+    private readonly IInventoryItemRepository _items;
     private readonly IInventoryUnitOfWork _unitOfWork;
 
-    public DeleteFulfillmentLocationCommandHandler(IFulfillmentLocationRepository repository, IInventoryUnitOfWork unitOfWork)
+    public DeleteFulfillmentLocationCommandHandler(
+        IFulfillmentLocationRepository repository,
+        IInventoryItemRepository items,
+        IInventoryUnitOfWork unitOfWork)
     {
         _repository = repository;
+        _items = items;
         _unitOfWork = unitOfWork;
     }
 
@@ -143,6 +149,32 @@ internal sealed class DeleteFulfillmentLocationCommandHandler : ICommandHandler<
         if (command.OwnerId is { } ownerId && location.OwnerId != ownerId)
         {
             return Result.Failure(Error.NotFound("inventory.location.not_found", "Lieu d'expédition introuvable."));
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // ON NE SUPPRIME PAS UN LIEU QUI PORTE ENCORE DU STOCK.
+        //
+        // Rien n'empêchait cette suppression : ni contrôle ici, ni clé étrangère —
+        // `InventoryItemConfiguration` déclare `LocationId` comme une simple colonne,
+        // sans `HasOne` vers les lieux. Les articles survivaient donc au lieu, rattachés
+        // à un identifiant qui ne désignait plus rien.
+        //
+        // Ils ne réapparaissaient nulle part : toute lecture de stock passe par les
+        // lieux du vendeur, si bien que ces articles disparaissaient des écrans SANS
+        // avertissement, tandis que les offres pointant ce lieu restaient actives. Le
+        // stock semblait s'être évaporé.
+        //
+        // Le contrôle est posé DANS LE DOMAINE, pas dans l'interface : c'est une règle
+        // d'intégrité, pas une commodité d'affichage. Elle vaut donc pour le BFF
+        // vendeur, pour l'admin, et pour tout futur appelant.
+        // ─────────────────────────────────────────────────────────────────────────
+        var attached = await _items.ListByLocationsAsync(new[] { command.LocationId }, cancellationToken);
+        if (attached.Count > 0)
+        {
+            return Result.Failure(Error.Conflict(
+                "inventory.location.has_stock",
+                $"Ce lieu porte encore {attached.Count} référence(s) en stock. "
+                + "Transférez-les ou cessez de les suivre avant de le supprimer."));
         }
 
         _repository.Remove(location);

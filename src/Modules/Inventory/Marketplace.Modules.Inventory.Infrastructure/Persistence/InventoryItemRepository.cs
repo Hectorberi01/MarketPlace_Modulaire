@@ -48,6 +48,26 @@ internal sealed class InventoryItemRepository : IInventoryItemRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<InventoryItem>> ListByLocationsAsync(
+        IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken = default)
+    {
+        // Un IN () vide est une requête inutile, et selon le fournisseur une syntaxe
+        // invalide. Une boutique sans localisation n'a aucun stock.
+        if (locationIds.Count == 0)
+        {
+            return Array.Empty<InventoryItem>();
+        }
+
+        // `Include(Reservations)` est indispensable : `Available` et `IsLowStock` sont
+        // calculés à partir des réservations. Sans lui, tout le stock apparaîtrait
+        // comme intégralement disponible — un mensonge dans le sens le plus coûteux,
+        // celui qui fait vendre ce qu'on n'a pas.
+        return await _dbContext.InventoryItems
+            .Include(i => i.Reservations)
+            .Where(i => locationIds.Contains(i.LocationId))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<InventoryItem>> ListLowStockAsync(CancellationToken cancellationToken = default)
     {
         // Available dépend des réservations (calculé en mémoire) : on charge puis on filtre.

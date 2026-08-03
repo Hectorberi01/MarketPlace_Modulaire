@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Offers.Contracts;
+using Marketplace.Modules.Inventory.Contracts;
 using Marketplace.Modules.Inventory.Application.Locations.Commands;
 using Marketplace.Modules.Inventory.Application.Locations.Queries;
 using Marketplace.Modules.Inventory.Application.Stock.Commands;
@@ -47,6 +48,7 @@ public static class SellerInventoryEndpoints
         locations.MapDelete("/{id:guid}", DeleteLocationAsync);
 
         var stock = app.MapSellerGroup("/seller/inventory", "Vendeur · Stock");
+        stock.MapGet("/", ListMineAsync);
         stock.MapPost("/items", CreateItemAsync);
         stock.MapPost("/items/{id:guid}/receive", ReceiveAsync);
         stock.MapPost("/items/{id:guid}/adjust", AdjustAsync);
@@ -55,6 +57,56 @@ public static class SellerInventoryEndpoints
         stock.MapGet("/by-sku/{sku}", ListBySkuAsync);
 
         return app;
+    }
+
+    /// <summary>
+    /// TOUT le stock de la boutique du jeton, toutes localisations confondues.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Cette route manquait, et son absence était structurante : on ne pouvait
+    /// consulter du stock qu'en partant d'un SKU précis (`/by-sku/{sku}`). Un écran
+    /// « Stock » devait donc appeler cette route une fois par référence du catalogue —
+    /// autant de requêtes que de SKU, à chaque affichage — pour reconstituer une liste
+    /// que la base sait produire d'un coup.
+    ///
+    /// Le filtrage par localisation se fait EN BASE, via `ListInventoryByLocationsQuery`.
+    /// Il repose sur le même chaînage que les gardes de ce fichier : article →
+    /// localisation → `OwnerId`. Aucun article d'un concurrent ne peut donc entrer dans
+    /// la réponse, pour la même raison qu'aucun ne peut être modifié.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> ListMineAsync(
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        // ⚠️ On interroge le module DIRECTEMENT, sans passer par `SellerLocationIdsAsync`.
+        //
+        // Ce helper renvoie un ensemble VIDE quand la requête échoue. C'est le bon
+        // comportement sur les chemins d'ÉCRITURE, où il fait échouer fermé : aucune
+        // localisation connue, donc aucune mutation autorisée.
+        //
+        // En LECTURE, il produirait l'inverse : une panne du service des lieux
+        // deviendrait un 200 avec une liste vide, que l'écran affiche « aucune référence
+        // suivie ». Un vendeur conclurait que son stock a disparu. On distingue donc
+        // explicitement l'échec de l'absence.
+        var locations = await sender.Send(new ListFulfillmentLocationsQuery(seller.Id), ct);
+        if (locations.IsFailure)
+        {
+            return locations.Match(l => Results.Ok(l));
+        }
+
+        var mine = locations.Value.Select(l => l.Id).ToList();
+        if (mine.Count == 0)
+        {
+            return Results.Ok(Array.Empty<InventoryItemSummary>());
+        }
+
+        return (await sender.Send(new ListInventoryByLocationsQuery(mine), ct)).Match(i => Results.Ok(i));
     }
 
     /// <summary>
