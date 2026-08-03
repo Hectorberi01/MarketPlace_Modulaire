@@ -30,6 +30,21 @@
     <!-- Clients HTTP typés/nommés (appels PSP réels : MTN MoMo, Moov…). -->
     <PackageVersion Include="Microsoft.Extensions.Http" Version="8.0.1" />
 
+    <!-- ═══════════════════════════════════════════════════════════════════════════
+         Encodage d'image : aplatir le détourage sur fond blanc et rendre du JPEG.
+
+         SkiaSharp (MIT, Microsoft/Xamarin, au-dessus du Skia de Google en BSD). Le
+         choix n'est pas indifférent : ImageSharp est passé en licence commerciale
+         « Six Labors Split » à partir de la 2.0 — gratuite pour l'open source, payante
+         pour une place de marché. SkiaSharp reste MIT sans condition.
+
+         La variante « NoDependencies » embarque un libSkiaSharp.so autonome : aucun
+         paquet système à installer dans l'image Docker (ni fontconfig ni libgdiplus).
+         On n'écrit pas de texte, seulement des pixels.
+         ═══════════════════════════════════════════════════════════════════════════ -->
+    <PackageVersion Include="SkiaSharp" Version="2.88.8" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.8" />
+
     <!-- Notifications push (Firebase Cloud Messaging, API HTTP v1). -->
     <PackageVersion Include="FirebaseAdmin" Version="3.1.0" />
 

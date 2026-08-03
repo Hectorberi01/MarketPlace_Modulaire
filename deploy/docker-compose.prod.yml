@@ -84,6 +84,18 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
   Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Détourage d'image — LOCAL (service `rembg` ci-dessous), sans service tiers.
+  #
+  # Vider REMBG_URL désactive proprement la fonction : l'image reste inchangée et les
+  # interfaces cessent de promettre un détourage (drapeau de capacité).
+  #
+  # ⚠️ MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
+  # (« bria-rmbg ») : ses poids sont en CC BY-NC 4.0, donc interdits sur une place de
+  # marché. Le code refuse d'ailleurs de les activer.
+  # ─────────────────────────────────────────────────────────────────────────────
+  Media__Rembg__BaseUrl: "${REMBG_URL-http://rembg:7000}"
+  Media__Rembg__Model: "${REMBG_MODEL:-u2net}"
   # Firebase Cloud Messaging (push). JSON écrit par Ansible depuis le vault dans
   # deploy/fcm/service-account.json, monté en RO (voir volumes de x-app-common).
   # Fichier absent -> NullPushSender (aucun push, pas d'erreur).
@@ -125,6 +137,66 @@ x-app-common: &app-common
         memory: 640M
 
 services:
+  # ---------------- Détourage d'image (local, sans service tiers) ----------------
+  # ⚠️ AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ :
+  # il n'a NI authentification NI limitation de débit, et son endpoint GET
+  # /api/remove va chercher une URL pour le compte de l'appelant. La 2.0.75 y a ajouté
+  # un filtrage des adresses privées, mais un endpoint d'inférence libre reste une
+  # invitation au déni de service. Réseau interne uniquement.
+  #
+  # AUCUN service applicatif n'en DÉPEND : un `depends_on: service_healthy` ferait
+  # attendre toute la pile derrière le démarrage de ce conteneur, pour une fonction
+  # de confort. rembg absent, la création de produit marche — la photo n'est
+  # simplement pas détourée, et les consoles cessent de l'annoncer.
+  rembg:
+    # Version ÉPINGLÉE, pas `latest` : `--no-ui` n'existe pas avant la 2.0.75, et le
+    # correctif de la CVE-2026-40086 (traversée de chemin, non authentifiée) y est
+    # arrivé en même temps. Un `pull` qui ramènerait une image antérieure produirait
+    # soit une boucle de redémarrage, soit une régression de sécurité silencieuse.
+    image: danielgatis/rembg:2.0.77
+    restart: unless-stopped
+    # `--threads 2` BORNE LES INFÉRENCES SIMULTANÉES.
+    #
+    # Sans lui, rembg exécute chaque détourage dans le pool de threads anyio, dont la
+    # limite par défaut est 40. Huit photos par vendeur, quelques vendeurs en même
+    # temps, et le conteneur tente quarante inférences u2net de front : il est tué
+    # pour dépassement mémoire bien avant de saturer le processeur.
+    command: ["s", "--host", "0.0.0.0", "--port", "7000", "--no-ui", "--threads", "${REMBG_THREADS:-2}"]
+    environment:
+      # Threads INTERNES à une inférence ONNX. Ne borne PAS le nombre d'inférences
+      # simultanées — c'est le rôle de `--threads` dans la commande ci-dessus.
+      OMP_NUM_THREADS: "${REMBG_THREADS:-2}"
+    volumes:
+      # ⚠️ MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
+      #
+      # L'image amont exécute `rembg d u2net` à la construction : u2net.onnx est déjà
+      # dans une couche, à cet endroit. Le déplacer avec U2NET_HOME écartait ce
+      # fichier et FORÇAIT un téléchargement de 176 Mo au premier appel — à
+      # l'intérieur de la requête d'un vendeur, donc au-delà du délai imparti.
+      #
+      # Un volume nommé, lui, est initialisé avec le contenu du dossier de l'image :
+      # le modèle est là dès le premier démarrage, et tout modèle téléchargé plus
+      # tard survit aux redémarrages.
+      - rembgmodels:/root/.u2net
+    healthcheck:
+      # `/api` est la page de documentation OpenAPI : elle ne charge aucun modèle, ce
+      # qui en fait une sonde honnête (« le service répond ») sans coût de calcul.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/api').read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Le modèle est déjà dans l'image (et dans le volume) : il ne reste que le
+      # démarrage d'uvicorn. Pas besoin des trois minutes qu'exigeait un
+      # téléchargement à froid.
+      start_period: 60s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          memory: "${REMBG_MEMORY:-2G}"
+          cpus: "${REMBG_CPUS:-2}"
+
   # ---------------- Redis (backplane + cache) ----------------
   redis:
     image: redis:7-alpine
@@ -416,3 +488,5 @@ volumes:
   pgdata:
   redisdata:
   acme:
+  # Cache des modèles ONNX de rembg (sinon retéléchargés à chaque redémarrage).
+  rembgmodels:

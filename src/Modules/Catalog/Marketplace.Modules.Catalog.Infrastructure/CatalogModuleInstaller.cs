@@ -99,12 +99,48 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
             services.AddScoped<IMediaStorage, SimulatedMediaStorage>();
         }
 
-        // Traitement d'image (détourage IA + fond blanc) via Cloudinary s'il est
-        // configuré. Cloudinary ne sert qu'au traitement : l'image finale est
-        // rapatriée dans R2 par le flux de création. Sinon, no-op (image inchangée).
+        // ─────────────────────────────────────────────────────────────────────────
+        // TRAITEMENT D'IMAGE : UN CHOIX AU DÉMARRAGE, PAS UN REPLI À CHAUD.
+        //
+        // Les deux implémentations rendent le même service — détourage puis fond
+        // blanc — et ne servent QU'À CELA : l'image finale part sur R2 par le flux de
+        // création. rembg passe devant Cloudinary quand il est configuré : pas de
+        // quota, pas de facture à l'usage, et les photos des vendeurs ne quittent pas
+        // l'infrastructure.
+        //
+        // ⚠️ CE N'EST PAS UNE CHAÎNE DE SECOURS. L'adaptateur est choisi ICI, une fois,
+        // et ne change plus. Si le conteneur rembg tombe, les détourages échouent —
+        // ils NE BASCULENT PAS sur Cloudinary. C'est assumé : un basculement
+        // silencieux vers un service payant, déclenché par une panne, est exactement
+        // le genre de mécanisme qu'on découvre sur une facture.
+        //
+        // Pour revenir à Cloudinary, on vide `Media:Rembg:BaseUrl` et on redémarre.
+        //
+        // Sans aucun des deux, `NullImageProcessor` renvoie l'image inchangée. Il ne
+        // se déclare PAS disponible (`IImageProcessingAvailability`), ce qui permet
+        // aux interfaces de ne pas promettre un détourage qui n'aura pas lieu.
+        // ─────────────────────────────────────────────────────────────────────────
+        var rembg = BindRembgOptions(configuration);
         var cloudinary = BindCloudinaryOptions(configuration);
+        services.AddSingleton(rembg);
         services.AddSingleton(cloudinary);
-        if (cloudinary.IsConfigured)
+
+        if (rembg.IsConfigured)
+        {
+            services.AddHttpClient(RembgImageProcessor.ClientName, client =>
+            {
+                // Le délai est porté par un CancellationToken dans l'adaptateur, afin
+                // de distinguer « trop lent » d'« annulé par l'appelant ». On laisse
+                // néanmoins une borne large ici : un HttpClient sans limite garderait
+                // une socket ouverte indéfiniment si le service se fige.
+                client.Timeout = TimeSpan.FromSeconds(Math.Max(30, rembg.TimeoutSeconds) + 30);
+            });
+            // Santé partagée par tout le processus : une panne constatée par une
+            // requête doit être connue de la suivante, et de l'endpoint de capacités.
+            services.AddSingleton<RembgHealth>();
+            services.AddScoped<IImageProcessor, RembgImageProcessor>();
+        }
+        else if (cloudinary.IsConfigured)
         {
             services.AddHttpClient(CloudinaryImageProcessor.ClientName);
             services.AddScoped<IImageProcessor, CloudinaryImageProcessor>();
@@ -152,6 +188,38 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         {
             options.Region = section["Region"]!;
         }
+        return options;
+    }
+
+    /// <summary>
+    /// Lie « Media:Rembg ». Absence de section = fonction inactive, jamais d'erreur au
+    /// démarrage : une installation sans détourage doit rester une installation qui
+    /// démarre.
+    /// </summary>
+    private static RembgOptions BindRembgOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Media:Rembg");
+        var options = new RembgOptions
+        {
+            BaseUrl = section["BaseUrl"] ?? string.Empty,
+        };
+
+        var model = section["Model"];
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            options.Model = model.Trim();
+        }
+
+        if (int.TryParse(section["TimeoutSeconds"], out var timeout) && timeout > 0)
+        {
+            options.TimeoutSeconds = timeout;
+        }
+
+        if (int.TryParse(section["JpegQuality"], out var quality) && quality is > 0 and <= 100)
+        {
+            options.JpegQuality = quality;
+        }
+
         return options;
     }
 

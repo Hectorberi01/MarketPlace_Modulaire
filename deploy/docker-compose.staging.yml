@@ -79,7 +79,21 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
   Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
-  # Cloudinary — traitement d'image (détourage IA + fond blanc). Secrets via .env non versionné.
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Détourage d'image — LOCAL par défaut (service `rembg` ci-dessous).
+  #
+  # Renseigné, il PRIME sur Cloudinary : pas de quota, pas de facture à l'usage, et
+  # les photos des vendeurs ne quittent pas le VPS. Vider REMBG_URL fait retomber sur
+  # Cloudinary ; vider les deux désactive proprement la fonction (image inchangée,
+  # et les interfaces cessent de promettre un détourage).
+  #
+  # ⚠️ MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
+  # (« bria-rmbg ») : ses poids sont en CC BY-NC 4.0, donc interdits sur une place de
+  # marché. Le code refuse d'ailleurs de les activer.
+  # ─────────────────────────────────────────────────────────────────────────────
+  Media__Rembg__BaseUrl: "${REMBG_URL-http://rembg:7000}"
+  Media__Rembg__Model: "${REMBG_MODEL:-u2net}"
+  # Cloudinary — repli si le service local est désactivé. Secrets via .env non versionné.
   Media__Cloudinary__CloudName: "${CLOUDINARY_CLOUD_NAME:-}"
   Media__Cloudinary__ApiKey: "${CLOUDINARY_API_KEY:-}"
   Media__Cloudinary__ApiSecret: "${CLOUDINARY_API_SECRET:-}"
@@ -132,6 +146,69 @@ services:
       retries: 10
     logging: *logging
     networks: [marketplace-net]
+
+  # ---------------- Détourage d'image (local, sans service tiers) ----------------
+  # rembg — remplace Cloudinary pour le détourage IA des photos produit.
+  #
+  # ⚠️ AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ.
+  # Il n'a ni authentification ni limitation de débit, et son endpoint GET
+  # /api/remove va chercher une URL arbitraire (SSRF). Il n'est joignable que depuis
+  # le réseau Docker interne, par l'API et les BFF.
+  #
+  # `--no-ui` coupe l'interface Gradio : inutile sur un serveur, et elle consomme du
+  # CPU au repos.
+  #
+  # Le volume de cache est indispensable : sans lui, le conteneur retélécharge le
+  # modèle (~176 Mo pour u2net) à CHAQUE redémarrage, et le premier vendeur qui
+  # importe une photo attend ce téléchargement.
+  rembg:
+    # Version ÉPINGLÉE, pas `latest` : `--no-ui` n'existe pas avant la 2.0.75, et le
+    # correctif de la CVE-2026-40086 (traversée de chemin, non authentifiée) y est
+    # arrivé en même temps. Un `pull` qui ramènerait une image antérieure produirait
+    # soit une boucle de redémarrage, soit une régression de sécurité silencieuse.
+    image: danielgatis/rembg:2.0.77
+    restart: unless-stopped
+    # `--threads 2` BORNE LES INFÉRENCES SIMULTANÉES.
+    #
+    # Sans lui, rembg exécute chaque détourage dans le pool de threads anyio, dont la
+    # limite par défaut est 40. Huit photos par vendeur, quelques vendeurs en même
+    # temps, et le conteneur tente quarante inférences u2net de front : il est tué
+    # pour dépassement mémoire bien avant de saturer le processeur.
+    command: ["s", "--host", "0.0.0.0", "--port", "7000", "--no-ui", "--threads", "${REMBG_THREADS:-2}"]
+    environment:
+      # Threads INTERNES à une inférence ONNX. Ne borne PAS le nombre d'inférences
+      # simultanées — c'est le rôle de `--threads` dans la commande ci-dessus.
+      OMP_NUM_THREADS: "${REMBG_THREADS:-2}"
+    volumes:
+      # ⚠️ MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
+      #
+      # L'image amont exécute `rembg d u2net` à la construction : u2net.onnx est déjà
+      # dans une couche, à cet endroit. Le déplacer avec U2NET_HOME écartait ce
+      # fichier et FORÇAIT un téléchargement de 176 Mo au premier appel — à
+      # l'intérieur de la requête d'un vendeur, donc au-delà du délai imparti.
+      #
+      # Un volume nommé, lui, est initialisé avec le contenu du dossier de l'image :
+      # le modèle est là dès le premier démarrage, et tout modèle téléchargé plus
+      # tard survit aux redémarrages.
+      - rembgmodels:/root/.u2net
+    healthcheck:
+      # `/api` est la page de documentation OpenAPI : elle ne charge aucun modèle, ce
+      # qui en fait une sonde honnête (« le service répond ») sans coût de calcul.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/api').read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Généreux : le premier démarrage télécharge le modèle avant de répondre.
+      start_period: 180s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          # L'inférence u2net tient dans ~1,5 Go. La marge évite que le noyau ne tue
+          # le conteneur en pleine requête sur un petit VPS.
+          memory: "${REMBG_MEMORY:-2G}"
+          cpus: "${REMBG_CPUS:-2}"
 
   # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
   # Remplace Neon : Postgres local, JAMAIS exposé sur Internet (aucun `ports:`),
@@ -404,3 +481,6 @@ volumes:
   pgdata:
   redisdata:
   acme:
+  # Cache des modèles ONNX de rembg : sans lui, ~176 Mo retéléchargés à chaque
+  # redémarrage du conteneur.
+  rembgmodels:

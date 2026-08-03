@@ -139,6 +139,73 @@ docker compose -f docker-compose.staging.yml ps
 docker compose -f docker-compose.staging.yml logs -f --tail=100 api bff-seller
 ```
 
+## Détourage des photos produit (rembg, local)
+
+Le détourage IA + fond blanc tourne dans un conteneur `rembg` du réseau interne, avec
+le modèle **u2net**. Il remplace Cloudinary : pas de quota, pas de facture à l'usage,
+et les photos des vendeurs ne quittent pas le serveur.
+
+**Rien à configurer dans le cas courant.** Le service est déclaré dans les compose
+staging et prod, et l'API comme les BFF pointent dessus par défaut.
+
+### Le commutateur d'arrêt
+
+| Réglage dans le `.env` | Effet |
+|---|---|
+| `REMBG_URL` **commentée ou absente** | rembg actif (`http://rembg:7000`) |
+| `REMBG_URL=` **présente et vide** | rembg désactivé → repli sur Cloudinary s'il est configuré, sinon image inchangée |
+
+La distinction tient à la substitution `${REMBG_URL-…}` — **sans deux-points**, elle
+sépare « absente » de « vide ». Écrire `${REMBG_URL:-…}` réunirait les deux cas et le
+commutateur ne couperait plus rien. Côté Ansible, la ligne n'est rendue que si
+`rembg_url` est défini dans l'inventaire, pour la même raison.
+
+### Le choix de l'adaptateur est fait AU DÉMARRAGE
+
+Ce n'est pas une chaîne de secours : si le conteneur rembg tombe, les détourages
+échouent, ils ne basculent pas sur Cloudinary. Un basculement silencieux vers un
+service payant, déclenché par une panne, est le genre de mécanisme qu'on découvre sur
+une facture. Pour revenir à Cloudinary : vider `REMBG_URL`, redémarrer.
+
+Une panne n'empêche pas de créer des produits — seule la photo n'est pas détourée, et
+les consoles cessent de l'annoncer (`GET /seller/products/media/capabilities` reflète
+la santé observée, avec deux minutes de latence après un échec).
+
+### Licences — le point qui engage
+
+`rembg` est sous MIT, **mais ses modèles ne le sont pas tous**. Ceux de la famille BRIA
+(`bria-rmbg`) sont en CC BY-NC 4.0 : usage non commercial, donc interdits ici.
+
+Le code applique une **liste blanche** (`u2net`, `u2netp`, `u2net_human_seg`,
+`silueta`) ; toute autre valeur de `REMBG_MODEL` retombe sur `u2net`. Ajouter une
+entrée suppose d'avoir lu la licence des **poids**, pas seulement celle de rembg.
+
+### Dimensionnement
+
+`REMBG_THREADS` (défaut 2) borne les détourages **simultanés** — c'est l'argument
+`--threads` de rembg. Sans lui, le serveur en tenterait jusqu'à quarante de front et
+le conteneur serait tué pour dépassement mémoire bien avant de saturer le processeur.
+
+Sur un petit VPS : `REMBG_CPUS=1`, `REMBG_MEMORY=1500M`, `REMBG_THREADS=1`, et
+abaisser le parallélisme d'envoi côté console vendeur (paquets de trois par défaut).
+
+L'image pèse environ 1 Go et n'est publiée qu'en **linux/amd64** : sur un VPS ARM, elle
+ne démarrera pas.
+
+### Vérifier
+
+```bash
+# Le service répond (depuis le serveur)
+docker compose -f docker-compose.staging.yml exec api \
+  curl -fsS http://rembg:7000/api > /dev/null && echo OK
+
+# Ce que la console vendeur croit savoir
+#   → { "backgroundRemoval": true }
+```
+
+Le premier détourage après un démarrage à froid met la session ONNX en place : comptez
+quelques secondes de plus que les suivants.
+
 ## Notes
 
 - **JWT** : `JWT_SIGNING_KEY` (dans `.env`) est injecté à l'identique dans les 5
