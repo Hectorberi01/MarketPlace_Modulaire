@@ -9,6 +9,7 @@ using Marketplace.Modules.Offers.Application.Offers.Commands.ChangeOfferPrice;
 using Marketplace.Modules.Offers.Application.Offers.Commands.RemoveOfferDiscount;
 using Marketplace.Modules.Offers.Application.Offers.Commands.ChangeOfferStatus;
 using Marketplace.Modules.Offers.Application.Offers.Commands.CreateOffer;
+using Marketplace.Modules.Offers.Application.Offers.Commands.DeleteOffer;
 using Marketplace.Modules.Offers.Application.Offers.Commands.SetHandlingTime;
 using Marketplace.Modules.Offers.Application.Offers.Queries;
 
@@ -33,6 +34,8 @@ public static class SellerOfferEndpoints
         // Remise (promo vendeur) : appliquer / retirer.
         offers.MapPost("/{id:guid}/discount", ApplyDiscountAsync);
         offers.MapDelete("/{id:guid}/discount", RemoveDiscountAsync);
+        // Retrait définitif de la mise en vente.
+        offers.MapDelete("/{id:guid}", DeleteAsync);
 
         return app;
     }
@@ -178,6 +181,27 @@ public static class SellerOfferEndpoints
     private static async Task<IResult> RemoveDiscountAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct,
             () => sender.Send(new RemoveOfferDiscountCommand(id), ct));
+
+    /// <summary>
+    /// Supprime définitivement une mise en vente.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// POURQUOI CETTE ROUTE MANQUAIT — ET POURQUOI ELLE MANQUAIT VRAIMENT
+    ///
+    /// Le vendeur pouvait créer une offre, en changer le prix, la suspendre… mais
+    /// jamais s'en défaire. `IOfferRepository.Remove` existait pourtant, sans aucun
+    /// appelant. Conséquence directe : `SellerCatalogEndpoints.DeleteAsync` refuse
+    /// désormais de supprimer un produit qui porte des offres, ce qui rendait TOUT
+    /// produit ayant été mis en vente une fois définitivement indestructible — le
+    /// message d'erreur demandait une action qu'aucune surface ne permettait.
+    ///
+    /// Suspendre (`Paused`) n'est pas supprimer : l'offre reste, et continue de
+    /// bloquer la suppression du produit.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> DeleteAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct,
+            () => sender.Send(new DeleteOfferCommand(id), ct));
 
     /// <summary>Résout le vendeur, vérifie la propriété de l'offre, puis exécute la commande.</summary>
     private static async Task<IResult> GuardAsync(

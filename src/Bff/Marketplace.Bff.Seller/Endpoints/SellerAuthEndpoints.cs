@@ -3,7 +3,6 @@ using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Identity.Application.Users.Commands.Login;
 using Marketplace.Modules.Identity.Application.Users.Commands.Logout;
-using Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 using Marketplace.Modules.Identity.Application.Users.Commands.RefreshToken;
 
 namespace Marketplace.Bff.Seller.Endpoints;
@@ -23,49 +22,18 @@ public static class SellerAuthEndpoints
         auth.MapPost("/login", LoginAsync).AllowAnonymous();
         auth.MapPost("/refresh", RefreshAsync).AllowAnonymous();
         auth.MapPost("/logout", LogoutAsync).RequireAuthorization();
-        auth.MapPost("/forgot-password", ForgotPasswordAsync).AllowAnonymous();
-        auth.MapPost("/reset-password", ResetPasswordAsync).AllowAnonymous();
+
+        // ⚠️ PAS de route de mot de passe ici. Elles existent déjà, dans
+        // `SellerRegistrationEndpoints` : `/seller/auth/password/forgot` et
+        // `/seller/auth/password/reset`.
+        //
+        // J'en avais ajouté une seconde paire (`/forgot-password`, `/reset-password`)
+        // sans avoir vu les premières. Aucun conflit de routage — les chemins diffèrent —
+        // mais deux façons de faire la même chose, dont une seule connue de l'application
+        // mobile. C'est ainsi qu'on corrige un bug d'un côté et pas de l'autre.
 
         return app;
     }
-
-    /// <summary>
-    /// Demande de réinitialisation du mot de passe.
-    ///
-    /// ─────────────────────────────────────────────────────────────────────────────
-    /// Ces deux routes manquaient à la surface vendeur, alors qu'elles existent mot
-    /// pour mot côté Admin (`AdminAuthEndpoints`) et côté acheteur. Un vendeur qui
-    /// oubliait son mot de passe n'avait AUCUN recours : il fallait une intervention
-    /// manuelle en base. Sur une place de marché où le vendeur ne se connecte parfois
-    /// qu'une fois par semaine, c'est le premier motif de support.
-    ///
-    /// Aucun code de domaine n'est ajouté : `RequestPasswordResetCommand` et
-    /// `ResetPasswordCommand` existaient déjà et sont partagés par les trois surfaces.
-    /// Ce sont les deux points d'entrée HTTP qui manquaient.
-    ///
-    /// ⚠️ RÉPONSE VOLONTAIREMENT AVEUGLE — `204` que l'adresse existe ou non. Répondre
-    /// « compte inconnu » transformerait cette route en oracle d'existence de comptes
-    /// vendeurs, exploitable pour dresser la liste des boutiques de la plateforme.
-    /// C'est précisément le défaut relevé par l'audit sur le renvoi de vérification
-    /// (§2.6) ; on ne l'introduit pas ici.
-    ///
-    /// Le jeton généré n'est jamais renvoyé par l'API : il part par e-mail. Le groupe
-    /// porte déjà `RequireRateLimiting("auth")`, qui borne le rythme des tentatives.
-    /// ─────────────────────────────────────────────────────────────────────────────
-    /// </summary>
-    private static async Task<IResult> ForgotPasswordAsync(
-        ForgotPasswordRequest request, ISender sender, CancellationToken ct)
-    {
-        // Le résultat est délibérément ignoré : succès comme échec donnent 204.
-        _ = await sender.Send(new RequestPasswordResetCommand(request.Email), ct);
-        return Results.NoContent();
-    }
-
-    /// <summary>Réinitialise le mot de passe à partir du jeton reçu par e-mail.</summary>
-    private static async Task<IResult> ResetPasswordAsync(
-        ResetPasswordRequestBody request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ResetPasswordCommand(request.Email, request.Token, request.NewPassword), ct))
-            .Match(() => Results.NoContent());
 
     /// <summary>Connexion : renvoie access + refresh token.</summary>
     /// <summary>
@@ -93,6 +61,4 @@ public static class SellerAuthEndpoints
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);
-    public sealed record ForgotPasswordRequest(string Email);
-    public sealed record ResetPasswordRequestBody(string Email, string Token, string NewPassword);
 }

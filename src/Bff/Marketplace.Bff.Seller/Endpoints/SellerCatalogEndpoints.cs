@@ -20,6 +20,8 @@ using Marketplace.Modules.Catalog.Application.Products.Commands.UpdateProduct;
 using Marketplace.Modules.Catalog.Application.Products.Queries.ListProductsBySeller;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 using Marketplace.Modules.Catalog.Application.Brands.Queries.ListBrands;
+// Suppression produit : on vérifie d'abord qu'aucune offre n'y est rattachée.
+using Marketplace.Modules.Offers.Application.Offers.Queries;
 
 namespace Marketplace.Bff.Seller.Endpoints;
 
@@ -349,9 +351,62 @@ public static class SellerCatalogEndpoints
         => await GuardAsync(user, catalog, sellers, id, ct,
             () => sender.Send(new RemoveProductVariantCommand(id, variantId), ct));
 
+    /// <summary>
+    /// Supprime un produit — REFUSÉ tant qu'il porte des offres.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// POURQUOI CE GARDE-FOU
+    ///
+    /// `DeleteProductCommandHandler` efface le produit et ses images, publie
+    /// `ProductDeletedIntegrationEvent` pour désindexer la recherche… et ne touche
+    /// pas au module Offers, qui ne l'écoute pas. Les offres survivaient donc à leur
+    /// produit : `EnrichAsync` (SellerOfferEndpoints) prévoit d'ailleurs déjà le cas
+    /// et affiche « Produit introuvable ». Ce repli constate le dégât, il ne l'évite
+    /// pas — et une offre orpheline reste en statut `Active`.
+    ///
+    /// Le contrôle est posé ICI, dans le BFF : c'est la seule couche qui voit à la
+    /// fois le catalogue et les offres, exactement comme pour le contrôle de
+    /// propriété du produit à la création d'une offre.
+    ///
+    /// 409 plutôt que 400 : ce n'est pas la requête qui est mal formée, c'est l'état
+    /// courant qui l'interdit. Le message dit quoi faire, pas seulement que c'est non.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
     private static async Task<IResult> DeleteAsync(ClaimsPrincipal user, Guid id, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
-        => await GuardAsync(user, catalog, sellers, id, ct,
-            () => sender.Send(new DeleteProductCommand(id), ct));
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, id, ct))
+        {
+            return SellerBff.NotFoundOrForbidden("product");
+        }
+
+        var offers = await sender.Send(new ListOffersByProductQuery(id), ct);
+        if (offers.IsFailure)
+        {
+            // Fail-CLOSED : sans certitude sur les offres, on ne supprime pas. Servir
+            // ce doute comme un feu vert détruirait la fiche et laisserait les offres.
+            return Results.Json(
+                new { error = "Impossible de vérifier les offres liées à ce produit. Suppression annulée." },
+                statusCode: 503);
+        }
+
+        if (offers.Value.Count > 0)
+        {
+            return Results.Json(
+                new
+                {
+                    error = $"Ce produit porte encore {offers.Value.Count} offre(s). "
+                          + "Supprimez-les d'abord — sinon elles resteraient en vente sans fiche produit.",
+                },
+                statusCode: 409);
+        }
+
+        return (await sender.Send(new DeleteProductCommand(id), ct)).Match(() => Results.NoContent());
+    }
 
     /// <summary>Résout le vendeur, vérifie la propriété du produit, puis exécute la commande.</summary>
     private static async Task<IResult> GuardAsync(
