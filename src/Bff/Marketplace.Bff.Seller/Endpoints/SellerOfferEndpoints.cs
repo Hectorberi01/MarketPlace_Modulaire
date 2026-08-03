@@ -23,6 +23,10 @@ public static class SellerOfferEndpoints
 {
     public static IEndpointRouteBuilder MapSellerOfferEndpoints(this IEndpointRouteBuilder app)
     {
+        // Barème de prix en vigueur, en lecture seule. Voir `GetPricing`.
+        var pricing = app.MapSellerGroup("/seller/pricing", "Vendeur · Offres");
+        pricing.MapGet("/", GetPricing);
+
         var offers = app.MapSellerGroup("/seller/offers", "Vendeur · Offres");
 
         offers.MapGet("/", ListMineAsync);
@@ -39,6 +43,38 @@ public static class SellerOfferEndpoints
 
         return app;
     }
+
+    /// <summary>
+    /// Barème de prix en vigueur : commission plateforme et frais du prestataire de
+    /// paiement, en FRACTION du prix vendeur (0,10 = 10 %).
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// POURQUOI EXPOSER CES TAUX
+    ///
+    /// Le vendeur saisit ce qu'il veut PERCEVOIR ; la plateforme empile sa commission
+    /// et les frais de paiement par-dessus pour obtenir le prix acheteur. Sans cette
+    /// route, une interface qui veut montrer le détail avant enregistrement n'a qu'une
+    /// option : recopier les taux dans son code. C'est ce que fait l'application mobile
+    /// vendeur (`app_config.dart` : 10 % et 5 % en dur) — et au premier changement de
+    /// barème, elle annonce un prix faux jusqu'à sa prochaine publication sur les
+    /// stores, sans que personne ne s'en aperçoive.
+    ///
+    /// ⚠️ Ce sont bien les taux GLOBAUX (`PricingOptions`, section « Pricing ») qui
+    /// font foi, et non `Seller.CommissionRate` : ce champ existe encore sur l'agrégat
+    /// vendeur mais n'entre plus dans le calcul — sa propre documentation le dit.
+    /// Servir celui-là produirait un détail plausible et faux.
+    ///
+    /// Lecture seule, et sans secret : ces taux figurent déjà sur chaque offre
+    /// renvoyée (`commissionAmount`, `providerFeeAmount`), dont ils se déduisent.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static IResult GetPricing(
+        Marketplace.Modules.Offers.Application.Offers.PricingOptions pricing)
+        => Results.Ok(new
+        {
+            platformCommissionRate = pricing.PlatformCommissionRate,
+            providerFeeRate = pricing.ProviderFeeRate,
+        });
 
     private static async Task<IResult> ListMineAsync(
         ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, ICatalogModuleApi catalog, CancellationToken ct)
