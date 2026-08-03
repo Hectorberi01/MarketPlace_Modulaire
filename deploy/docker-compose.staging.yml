@@ -486,9 +486,20 @@ services:
       start_period: 20s
     labels:
       - "traefik.enable=true"
+      # ─────────────────────────────────────────────────────────────────────────
+      # NOM D'HÔTE COMPLET — pas forcément un sous-domaine de ${ROOT_DOMAIN}.
+      #
+      # En staging le défaut suffit : `pro.${ROOT_DOMAIN}`. La variable existe pour la
+      # PROD, où la console vendeur est servie sur `pro.hba-express.com` alors que
+      # toute l'infrastructure vit sous `hba-express.org`. Y écrire en dur
+      # `pro.${ROOT_DOMAIN}` aurait produit `pro.hba-express.org` — un nom que
+      # personne n'a demandé, et pour lequel Let's Encrypt aurait quand même émis un
+      # certificat, donnant l'illusion que tout fonctionne.
+      #
       # `pro.` et non `seller.` : ce dernier sert déjà le BFF vendeur. Deux routeurs
       # sur le même hôte, et Traefik en choisirait un au hasard.
-      - "traefik.http.routers.seller-console.rule=Host(`pro.${ROOT_DOMAIN}`)"
+      # ─────────────────────────────────────────────────────────────────────────
+      - "traefik.http.routers.seller-console.rule=Host(`${SELLER_CONSOLE_DOMAIN:-pro.${ROOT_DOMAIN}}`)"
       - "traefik.http.routers.seller-console.entrypoints=websecure"
       - "traefik.http.routers.seller-console.tls.certresolver=letsencrypt"
       # edge-chain : HSTS, en-têtes de sécurité, limitation de débit de bordure.

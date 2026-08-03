@@ -206,7 +206,7 @@ docker compose -f docker-compose.staging.yml exec api \
 Le premier détourage après un démarrage à froid met la session ONNX en place : comptez
 quelques secondes de plus que les suivants.
 
-## Console vendeur (pro.<domaine>)
+## Console vendeur (`pro.hba-express.com`)
 
 Dépôt : `HbaExpress_seller_dashboard`. Elle se déploie comme la console admin — image
 construite par GitHub Actions, poussée sur GHCR, tirée par la stack du VPS.
@@ -219,8 +219,25 @@ Ansible lance `docker compose up -d --no-build` sur **toute** la pile. Si l'imag
 `seller-console` n'est pas encore sur GHCR, le déploiement échoue **et emporte les
 autres services**. Dans cet ordre, donc :
 
-1. **DNS** — créer `pro.<domaine>` (A / AAAA vers le VPS). Sans cet enregistrement,
-   Let's Encrypt ne peut pas émettre le certificat, et Traefik servira une erreur TLS.
+1. **DNS** — créer l'enregistrement A / AAAA vers le VPS. Sans lui, Let's Encrypt ne
+   peut pas émettre le certificat, et Traefik servira une erreur TLS.
+
+   ⚠️ **La console vendeur n'est PAS sur `$ROOT_DOMAIN`.** En prod elle répond sur
+   `pro.hba-express.com`, alors que toute l'infrastructure (api, m, web, seller, admin,
+   console) vit sous `hba-express.org`. C'est pourquoi le compose lit une variable
+   dédiée, `SELLER_CONSOLE_DOMAIN` (`seller_console_domain` côté Ansible), et non
+   `pro.${ROOT_DOMAIN}` : ce dernier aurait produit `pro.hba-express.org`, un nom que
+   personne n'utilise — mais pour lequel Let's Encrypt aurait quand même émis un
+   certificat. Le déploiement serait passé au vert et `pro.hba-express.com` aurait
+   répondu 404. Laissée vide, la variable retombe sur `pro.${ROOT_DOMAIN}` : c'est le
+   comportement voulu en staging, où tout partage la même racine.
+
+   Si la zone `hba-express.com` est gérée par **Cloudflare**, l'enregistrement doit
+   être en **« DNS only » (nuage GRIS)**. Proxifié (nuage orange), Cloudflare termine
+   le TLS lui-même et intercepte le challenge HTTP-01 : Traefik n'obtient jamais son
+   certificat. Le domaine sert déjà le site vitrine sur Cloudflare Pages et les e-mails
+   Resend — vérifier de ne pas toucher aux enregistrements existants (`@`, `www`, DKIM,
+   SPF).
 2. **Secrets GitHub** — dans `HbaExpress_seller_dashboard`, environnements `staging`
    et `prod` : `GHCR_TOKEN`, `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`
    (et `DEPLOY_SSH_PORT` si ce n'est pas 8022).

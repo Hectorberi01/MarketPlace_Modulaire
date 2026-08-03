@@ -16,6 +16,12 @@ registry_username: hectorberi01
 #postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
 # Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
 root_domain: hba-express.org
+
+# Console vendeur : nom d'hôte COMPLET, sur une AUTRE racine que root_domain.
+# `pro.{{ root_domain }}` aurait donné « pro.hba-express.org » — un nom que
+# personne n'utilise, et pour lequel Let's Encrypt aurait quand même émis un
+# certificat, donnant l'illusion que tout va bien.
+seller_console_domain: pro.hba-express.com
 acme_email: hector.adjakpa@hbatechettrade.com
 
 # Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
