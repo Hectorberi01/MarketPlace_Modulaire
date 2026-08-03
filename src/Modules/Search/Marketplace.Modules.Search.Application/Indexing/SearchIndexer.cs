@@ -73,6 +73,24 @@ public sealed class SearchIndexer
         await _unitOfWork.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Efface le prix quand le produit n'a plus d'offre. `EnsureAsync` NE reconstruit
+    /// PAS de document absent ici : si l'index ne connaît pas ce produit, il n'y a pas
+    /// de prix fantôme à effacer, et l'y créer pour le laisser sans prix n'apporterait
+    /// rien.
+    /// </summary>
+    public async Task ClearOfferPriceAsync(Guid productId, CancellationToken ct)
+    {
+        var doc = await _repository.GetByProductAsync(productId, ct);
+        if (doc is null)
+        {
+            return;
+        }
+
+        doc.ClearOfferPrice();
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
     /// <summary>Affiche (validation admin → Active) ou masque (Draft / Archived) le produit en vitrine.</summary>
     public async Task SetVisibilityAsync(Guid productId, bool visible, CancellationToken ct)
     {

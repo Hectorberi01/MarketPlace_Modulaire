@@ -89,6 +89,25 @@ public sealed class SearchDocument
         Touch();
     }
 
+    /// <summary>
+    /// Efface le prix affiché : le produit n'a plus AUCUNE offre.
+    ///
+    /// Sans cela, la suppression de la dernière mise en vente laissait le document
+    /// avec le prix de l'offre disparue — un montant qui n'existe plus, servant
+    /// pourtant à la fois d'affichage et de critère de tri par prix.
+    ///
+    /// On ne masque PAS le document au passage : la visibilité relève du statut du
+    /// produit (validé par l'administration), et la remettre à `true` n'est déclenché
+    /// par aucun événement de création d'offre. Un produit rendu invisible ici serait
+    /// resté invisible même après remise en vente.
+    /// </summary>
+    public void ClearOfferPrice()
+    {
+        MinPrice = null;
+        Currency = null;
+        Touch();
+    }
+
     public void ApplyRating(double average, int count)
     {
         AverageRating = average;
