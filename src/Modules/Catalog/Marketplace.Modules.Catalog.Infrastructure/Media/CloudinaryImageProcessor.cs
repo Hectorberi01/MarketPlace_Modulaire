@@ -16,8 +16,11 @@ namespace Marketplace.Modules.Catalog.Infrastructure.Media;
 /// Cloudinary est ensuite détruit : Cloudinary ne sert qu'au traitement, l'image
 /// finale étant stockée dans Cloudflare R2 par le flux de création de produit.
 /// </summary>
-public sealed class CloudinaryImageProcessor : IImageProcessor
+public sealed class CloudinaryImageProcessor : IImageProcessor, IImageProcessingAvailability
 {
+    /// <summary>Enregistré uniquement quand les identifiants sont renseignés.</summary>
+    public bool IsAvailable => true;
+
     public const string ClientName = "cloudinary-image-processor";
 
     private readonly IHttpClientFactory _httpClientFactory;

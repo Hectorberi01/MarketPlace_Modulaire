@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Catalog.Application.Products.Commands.AddProductMedia;
 using Marketplace.Modules.Catalog.Application.Products.Commands.AddProductVariant;
@@ -42,6 +43,8 @@ public static class SellerCatalogEndpoints
         // Traitement d'une image (détourage IA + fond blanc) AVANT création, pour
         // que le vendeur valide le rendu. Renvoie l'image traitée (JPEG).
         products.MapPost("/media/process", ProcessMediaAsync).DisableAntiforgery();
+        // Le traitement d'image est-il RÉELLEMENT actif ? Voir MediaCapabilities.
+        products.MapGet("/media/capabilities", MediaCapabilities);
         products.MapPut("/{id:guid}", UpdateAsync);
         products.MapPatch("/{id:guid}/status", ChangeStatusAsync);
         products.MapPost("/{id:guid}/media", AddMediaAsync);
@@ -202,6 +205,27 @@ public static class SellerCatalogEndpoints
 
         return result.Match(r => Results.Ok(r));
     }
+
+    /// <summary>
+    /// Dit si le détourage est RÉELLEMENT opérationnel.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// Sans identifiants Cloudinary, `NullImageProcessor` renvoie l'image D'ORIGINE
+    /// avec un succès. `POST /media/process` répond donc 200 avec des octets
+    /// strictement inchangés, et une interface honnête n'a AUCUN moyen de distinguer
+    /// « détourage réussi » de « détourage jamais tenté ». Les consoles affichaient
+    /// « Détourée » sur une photo intacte ; le vendeur cliquait un bouton sans effet,
+    /// et concluait que le produit était cassé.
+    ///
+    /// Cette route ne fuite rien : ni identifiant, ni nom de fournisseur — seulement
+    /// « la fonction marche ou non », ce que l'utilisateur constate de toute façon.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static IResult MediaCapabilities(IImageProcessor processor)
+        => Results.Ok(new
+        {
+            backgroundRemoval = processor is IImageProcessingAvailability { IsAvailable: true },
+        });
 
     /// <summary>
     /// Traite une image (détourage IA + fond blanc) via Cloudinary et renvoie
