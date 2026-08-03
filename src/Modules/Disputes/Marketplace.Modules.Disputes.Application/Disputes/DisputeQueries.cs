@@ -14,8 +14,35 @@ public sealed record ListDisputesByOrderQuery(Guid OrderId) : IQuery<IReadOnlyLi
 /// <summary>Liste les litiges où l'utilisateur est partie.</summary>
 public sealed record ListMyDisputesQuery(Guid UserId) : IQuery<IReadOnlyList<DisputeSummary>>;
 
+/// <summary>
+/// Liste les litiges portant sur un ensemble de commandes.
+///
+/// Sert au BFF Vendeur : le module ignorant la notion de boutique, l'appelant résout
+/// d'abord les commandes du vendeur, puis interroge cette requête. Le filtre s'exécute
+/// EN BASE, de sorte que le plafond porte bien sur les litiges retenus — et non, comme
+/// avec `ListAllDisputesQuery` suivi d'un filtrage en mémoire, sur les 500 derniers
+/// litiges de toute la plateforme.
+/// </summary>
+public sealed record ListDisputesByOrdersQuery(IReadOnlyCollection<Guid> OrderIds)
+    : IQuery<IReadOnlyList<DisputeSummary>>;
+
 /// <summary>Liste tous les litiges de la plateforme (back-office admin).</summary>
 public sealed record ListAllDisputesQuery : IQuery<IReadOnlyList<DisputeSummary>>;
+
+internal sealed class ListDisputesByOrdersQueryHandler
+    : IQueryHandler<ListDisputesByOrdersQuery, IReadOnlyList<DisputeSummary>>
+{
+    private readonly IDisputeRepository _repository;
+    public ListDisputesByOrdersQueryHandler(IDisputeRepository repository) => _repository = repository;
+
+    public async Task<Result<IReadOnlyList<DisputeSummary>>> Handle(
+        ListDisputesByOrdersQuery query, CancellationToken cancellationToken)
+    {
+        var disputes = await _repository.ListByOrdersAsync(query.OrderIds, cancellationToken: cancellationToken);
+        IReadOnlyList<DisputeSummary> summaries = disputes.Select(DisputeMapper.ToSummary).ToList();
+        return Result.Success(summaries);
+    }
+}
 
 internal sealed class ListAllDisputesQueryHandler : IQueryHandler<ListAllDisputesQuery, IReadOnlyList<DisputeSummary>>
 {
