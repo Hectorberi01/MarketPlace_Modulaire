@@ -21,6 +21,27 @@ public sealed record BeninCommune(string Code, string Name, string DepartmentCod
     public BeninDepartment Department => BeninGeography.Department(DepartmentCode)!;
 }
 
+
+/// <summary>Une commune telle qu'elle est servie aux applications.</summary>
+public sealed record BeninCommuneView(string Code, string Name, string DepartmentCode, string DepartmentName);
+
+/// <summary>Un département tel qu'il est servi aux applications.</summary>
+public sealed record BeninDepartmentView(string Code, string Name);
+
+/// <summary>
+/// Charge utile complète du référentiel, prête à sérialiser.
+///
+/// Elle vit ICI et pas dans un BFF : deux BFF la servent (Mobile et Vendeur), et une
+/// charge utile recopiée dans deux fichiers diverge au premier ajustement. Le
+/// référentiel a déjà une autorité unique — sa représentation aussi.
+/// </summary>
+public sealed record BeninGeographyReference(
+    string CountryCode,
+    string DialingCode,
+    int PhoneLength,
+    IReadOnlyList<BeninDepartmentView> Departments,
+    IReadOnlyList<BeninCommuneView> Communes);
+
 /// <summary>
 /// ═════════════════════════════════════════════════════════════════════════════════
 /// DÉCOUPAGE ADMINISTRATIF DU BÉNIN — 12 DÉPARTEMENTS, 77 COMMUNES.
@@ -186,6 +207,23 @@ public static class BeninGeography
         new("zogbodomey", "Zogbodomey", "zou"),
     ];
 
+    /// <summary>
+    /// Le référentiel prêt à servir. Construit UNE FOIS au chargement du type.
+    ///
+    /// Communes triées par CODE, qui est déjà désaccentué. Trier par libellé avec
+    /// <c>StringComparer.CurrentCulture</c> serait un piège : la solution active
+    /// <c>InvariantGlobalization</c>, ce qui ramène la comparaison à un tri ordinal —
+    /// « Ségbana » et « Sèmè-Podji » se retrouveraient après « Zogbodomey ».
+    /// </summary>
+    public static BeninGeographyReference Reference { get; } = new(
+        CountryCode,
+        DialingCode,
+        LocalPhoneLength,
+        [.. Departments.Select(d => new BeninDepartmentView(d.Code, d.Name))],
+        [.. Communes
+            .OrderBy(c => c.Code, StringComparer.Ordinal)
+            .Select(c => new BeninCommuneView(c.Code, c.Name, c.DepartmentCode, c.Department.Name))]);
+
     private static readonly Dictionary<string, BeninCommune> ByCode =
         Communes.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
 
@@ -310,6 +348,16 @@ public static class BeninGeography
             index.TryAdd(Normalize(alias), commune);
         }
     }
+
+    /// <summary>
+    /// Minuscules, sans accent, sans ponctuation, espaces repliés. « Sô-Ava »,
+    /// « SO AVA » et « so_ava » donnent tous « so ava ».
+    ///
+    /// PUBLIQUE parce que d'autres modules doivent fabriquer des clés SELON LA MÊME
+    /// RÈGLE — les codes de zones de livraison, par exemple. Deux normalisations
+    /// voisines mais différentes finissent toujours par diverger sur un cas limite.
+    /// </summary>
+    public static string FoldForKey(string? value) => Normalize(value);
 
     /// <summary>
     /// Minuscules, sans accent, sans ponctuation, espaces repliés. « Sô-Ava »,

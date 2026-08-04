@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Sellers.Domain.Sellers;
 
@@ -38,7 +39,12 @@ internal static class SellerMapper
         m is null
             ? null
             : new SellerCompanyInfoSummary(
-                m.LegalName, m.Rccm, m.Ifu, m.Address, m.City, m.Activity, m.ManagerName, m.Phone);
+                m.LegalName, m.Rccm, m.Ifu, m.Address,
+                m.Commune,
+                // Résolu ICI, une fois, plutôt que par chaque client : un écran de
+                // lecture seule n'a aucune raison d'avoir chargé les 77 communes.
+                BeninGeography.CommuneName(m.Commune),
+                m.Activity, m.ManagerName, m.Phone);
 
     /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>
     private static string ResolveDocStatus(KybDocument doc, KybStatus sellerStatus) =>

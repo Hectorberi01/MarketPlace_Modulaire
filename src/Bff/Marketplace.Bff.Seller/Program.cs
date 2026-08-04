@@ -263,6 +263,7 @@ app.UseRateLimiter();
 app.MapObservability();
 
 // Surface /seller (back-office vendeur).
+app.MapSellerGeographyEndpoints();
 app.MapSellerAuthEndpoints();
 app.MapSellerRegistrationEndpoints();
 app.MapSellerDashboardEndpoints();

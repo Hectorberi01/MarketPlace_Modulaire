@@ -222,8 +222,8 @@ public partial class BeninAddressModel : Migration
                AND a.""City"" IS NOT NULL
                AND btrim(regexp_replace(
                        translate(lower(a.""City""),
-                                 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿ',
-                                 'aaaaaaceeeeiiiinooooouuuuyy'),
+                                 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ',
+                                 'aaaaaaceeeeiiiinooooouuuuyyaaaaaaceeeeiiiinooooouuuuy'),
                        '[^a-z0-9]+', ' ', 'g')) = m.normalized;");
 
         // Le pays devient un code ISO : « Bénin », « BENIN » et « BJ » convergent.

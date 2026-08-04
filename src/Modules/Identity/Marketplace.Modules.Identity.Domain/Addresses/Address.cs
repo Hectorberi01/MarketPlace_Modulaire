@@ -175,13 +175,13 @@ public sealed class Address : AggregateRoot<AddressId>
                 "Le point de repère est obligatoire (ex. « en face de la pharmacie Sainte-Rita »)."));
         }
 
-        Label = Truncate(Trim(label) ?? "Adresse", MaxLabel);
-        Recipient = Truncate(cleanRecipient, MaxRecipient);
+        Label = Cap(Trim(label) ?? "Adresse", MaxLabel);
+        Recipient = Cap(cleanRecipient, MaxRecipient);
         Phone = normalizedPhone;
         CommuneCode = resolvedCommune;
-        Quartier = Truncate(Trim(quartier), MaxQuartier);
-        Landmark = Truncate(cleanLandmark, MaxLandmark);
-        Line1 = Truncate(Trim(line1), MaxLine);
+        Quartier = Clean(quartier, MaxQuartier);
+        Landmark = Cap(cleanLandmark, MaxLandmark);
+        Line1 = Clean(line1, MaxLine);
         CountryCode = BeninGeography.CountryCode;
 
         return Result.Success();
@@ -189,7 +189,19 @@ public sealed class Address : AggregateRoot<AddressId>
 
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
+    /// <summary>
+    /// Borne une valeur DÉJÀ connue non nulle.
+    ///
+    /// ⚠️ Ne pas ajouter de surcharge <c>Cap(string?, int)</c> : en C#, deux méthodes qui
+    /// ne diffèrent que par l'annotation de nullabilité ont la MÊME signature (CS0111).
+    /// C'est l'erreur que cette paire de noms distincts évite.
+    /// </summary>
+    private static string Cap(string value, int max) => value.Length <= max ? value : value[..max];
 
-    private static string? Truncate(string? value, int max) => value is null ? null : Truncate(value, max);
+    /// <summary>Nettoie et borne : <c>null</c> si vide, tronqué si trop long.</summary>
+    private static string? Clean(string? value, int max)
+    {
+        var trimmed = Trim(value);
+        return trimmed is null ? null : Cap(trimmed, max);
+    }
 }

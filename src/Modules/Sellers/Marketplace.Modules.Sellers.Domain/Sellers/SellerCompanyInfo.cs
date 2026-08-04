@@ -17,7 +17,11 @@ public sealed record SellerCompanyInfo(
     string? Rccm = null,         // registre du commerce et du crédit mobilier
     string? Ifu = null,          // identifiant fiscal unique
     string? Address = null,
-    string? City = null,
+    // Commune de la boutique : CODE d'une des 77 communes (« abomey-calavi »), pas un
+    // libellé libre. Remplace l'ancien champ « City », où « Cotonou », « cotonou » et
+    // « COTONOU » cohabitaient. Reste facultatif comme le reste de cette structure : c'est
+    // du déclaratif de pré-remplissage, pas une adresse de livraison.
+    string? Commune = null,
     string? Activity = null,     // secteur / activité déclarée
     string? ManagerName = null,  // gérant / représentant légal
     string? Phone = null);

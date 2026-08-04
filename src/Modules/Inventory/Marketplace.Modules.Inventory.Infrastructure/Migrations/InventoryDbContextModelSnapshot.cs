@@ -168,27 +168,36 @@ namespace Marketplace.Modules.Inventory.Infrastructure.Migrations
                             b1.Property<Guid>("FulfillmentLocationId")
                                 .HasColumnType("uuid");
 
-                            b1.Property<string>("City")
+                            b1.Property<string>("CommuneCode")
                                 .IsRequired()
-                                .HasMaxLength(150)
-                                .HasColumnType("character varying(150)")
-                                .HasColumnName("address_city");
+                                .HasMaxLength(40)
+                                .HasColumnType("character varying(40)")
+                                .HasColumnName("address_commune_code");
 
-                            b1.Property<string>("Country")
+                            b1.Property<string>("CountryCode")
                                 .IsRequired()
-                                .HasMaxLength(100)
-                                .HasColumnType("character varying(100)")
-                                .HasColumnName("address_country");
+                                .HasMaxLength(2)
+                                .HasColumnType("character varying(2)")
+                                .HasColumnName("address_country_code");
+
+                            b1.Property<string>("Landmark")
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("address_landmark");
 
                             b1.Property<double?>("Latitude")
                                 .HasColumnType("double precision")
                                 .HasColumnName("address_latitude");
 
                             b1.Property<string>("Line")
-                                .IsRequired()
                                 .HasMaxLength(500)
                                 .HasColumnType("character varying(500)")
                                 .HasColumnName("address_line");
+
+                            b1.Property<string>("Quartier")
+                                .HasMaxLength(120)
+                                .HasColumnType("character varying(120)")
+                                .HasColumnName("address_quartier");
 
                             b1.Property<double?>("Longitude")
                                 .HasColumnType("double precision")

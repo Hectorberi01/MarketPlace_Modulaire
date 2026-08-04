@@ -41,25 +41,6 @@ public static class MobileGeographyEndpoints
         // administratif peut changer, très rarement, mais il peut changer.
         http.Response.Headers.CacheControl = "public, max-age=86400";
 
-        return Results.Ok(new
-        {
-            countryCode = BeninGeography.CountryCode,
-            dialingCode = BeninGeography.DialingCode,
-            phoneLength = BeninGeography.LocalPhoneLength,
-            departments = BeninGeography.Departments.Select(d => new { code = d.Code, name = d.Name }),
-
-            // Triées par LIBELLÉ, pas par département : dans une liste déroulante,
-            // l'utilisateur cherche « Cotonou », pas « Littoral ». Le département reste
-            // présent pour permettre un regroupement à l'affichage si besoin.
-            communes = BeninGeography.Communes
-                .OrderBy(c => c.Name, StringComparer.CurrentCulture)
-                .Select(c => new
-                {
-                    code = c.Code,
-                    name = c.Name,
-                    departmentCode = c.DepartmentCode,
-                    departmentName = c.Department.Name,
-                }),
-        });
+        return Results.Ok(BeninGeography.Reference);
     }
 }

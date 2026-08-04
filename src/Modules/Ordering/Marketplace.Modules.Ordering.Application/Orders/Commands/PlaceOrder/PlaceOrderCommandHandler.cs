@@ -57,13 +57,35 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 
         var order = orderResult.Value;
 
-        // Fige l'adresse de livraison choisie au checkout (snapshot).
-        if (command.ShippingAddress is { } addr)
+        // ─────────────────────────────────────────────────────────────────────────────
+        // L'ADRESSE DE LIVRAISON EST UN INVARIANT DE LA COMMANDE, PAS UNE VÉRIFICATION
+        // D'INTERFACE.
+        //
+        // Ce contrôle vivait dans un `if` du BFF Mobile, et il n'y suffisait pas :
+        // `PayRequest.AddressId` vaut `null` par défaut, si bien qu'omettre simplement le
+        // champ passait à côté du garde-fou et créait une commande SANS adresse — payée.
+        // Deux autres surfaces (l'API historique et le BFF Web) appellent d'ailleurs cette
+        // commande sans jamais fournir d'adresse.
+        //
+        // Un invariant qui n'est vrai que sur l'un des trois chemins d'écriture n'est pas
+        // un invariant. Il est donc ici, là où toutes les commandes passent.
+        //
+        // Ce qu'on exige : la COMMUNE et le POINT DE REPÈRE. Pas la rue — au Bénin elle
+        // est souvent inexistante, et l'exiger reviendrait à faire inventer une adresse.
+        // Le repère, lui, est ce que le coursier utilise vraiment.
+        // ─────────────────────────────────────────────────────────────────────────────
+        if (command.ShippingAddress is not { } addr
+            || string.IsNullOrWhiteSpace(addr.CommuneCode)
+            || string.IsNullOrWhiteSpace(addr.Landmark))
         {
-            order.SetShippingAddress(
-                addr.Label, addr.Recipient, addr.Phone,
-                addr.CommuneCode, addr.Quartier, addr.Landmark, addr.Line1, addr.CountryCode);
+            return Result.Failure<Guid>(Error.Validation(
+                "ordering.shipping_address_required",
+                "Une adresse de livraison complète est obligatoire : commune et point de repère."));
         }
+
+        order.SetShippingAddress(
+            addr.Label, addr.Recipient, addr.Phone,
+            addr.CommuneCode, addr.Quartier, addr.Landmark, addr.Line1, addr.CountryCode);
 
         // Fige les frais de livraison (forfait choisi) : entrent dans le total et
         // alimenteront le solde « frais de livraison » de la plateforme.

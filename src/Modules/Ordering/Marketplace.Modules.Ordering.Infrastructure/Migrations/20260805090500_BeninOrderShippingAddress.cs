@@ -160,8 +160,8 @@ public partial class BeninOrderShippingAddress : Migration
                AND o.""ShipToCity"" IS NOT NULL
                AND btrim(regexp_replace(
                        translate(lower(o.""ShipToCity""),
-                                 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿ',
-                                 'aaaaaaceeeeiiiinooooouuuuyy'),
+                                 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ',
+                                 'aaaaaaceeeeiiiinooooouuuuyyaaaaaaceeeeiiiinooooouuuuy'),
                        '[^a-z0-9]+', ' ', 'g')) = m.normalized;");
 
         migrationBuilder.Sql(@"

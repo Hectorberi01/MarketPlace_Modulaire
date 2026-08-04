@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Microsoft.EntityFrameworkCore;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.Modules.Sellers.Application;
@@ -107,7 +108,10 @@ internal sealed class SellerModuleApi : ISellerModuleApi
             ? null
             : new SellerCompanyInfoSummary(
                 seller.Metadata.LegalName, seller.Metadata.Rccm, seller.Metadata.Ifu,
-                seller.Metadata.Address, seller.Metadata.City, seller.Metadata.Activity,
+                seller.Metadata.Address,
+                seller.Metadata.Commune,
+                BeninGeography.CommuneName(seller.Metadata.Commune),
+                seller.Metadata.Activity,
                 seller.Metadata.ManagerName, seller.Metadata.Phone));
 
     /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>

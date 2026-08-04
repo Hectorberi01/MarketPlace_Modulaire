@@ -268,6 +268,7 @@ app.UseRateLimiter();
 app.MapObservability();
 
 // Surface /admin (back-office plateforme).
+app.MapAdminGeographyEndpoints();
 app.MapAdminAuthEndpoints();
 app.MapAdminAccountEndpoints();
 app.MapAdminSellerEndpoints();

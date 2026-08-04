@@ -77,12 +77,29 @@ public sealed record PayoutAccountSummary(
 /// Informations société déclarées par le vendeur (raison sociale, RCCM, IFU…).
 /// Miroir contractuel du VO domaine SellerCompanyInfo. Tous les champs optionnels.
 /// </summary>
+/// <param name="Commune">
+/// CODE d'une des 77 communes (« abomey-calavi »). C'est la valeur STOCKÉE, et celle
+/// qu'un client renvoie à l'écriture.
+/// </param>
+/// <param name="CommuneName">
+/// Libellé accentué (« Abomey-Calavi »), RÉSOLU PAR LE SERVEUR — jamais stocké.
+///
+/// Il existe parce que sans lui les écrans en lecture seule affichaient le code brut :
+/// la fiche vendeur de la console d'administration et l'écran boutique de l'application
+/// vendeur montraient « abomey-calavi » là où le formulaire, juste à côté, affichait
+/// « Abomey-Calavi ». Faire résoudre le libellé par chaque client supposerait qu'il ait
+/// chargé le référentiel — vrai sur un formulaire, faux sur une simple fiche de lecture.
+///
+/// Chaîne vide si aucune commune n'est déclarée (le champ reste facultatif : c'est du
+/// déclaratif de dossier KYB, pas une adresse de livraison).
+/// </param>
 public sealed record SellerCompanyInfoSummary(
     string? LegalName,
     string? Rccm,
     string? Ifu,
     string? Address,
-    string? City,
+    string? Commune,
+    string CommuneName,
     string? Activity,
     string? ManagerName,
     string? Phone);

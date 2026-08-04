@@ -136,7 +136,8 @@ public static class InventoryEndpoints
     private static async Task<IResult> CreateLocationAsync(CreateLocationRequest request, ISender sender, CancellationToken ct)
     {
         var command = new CreateFulfillmentLocationCommand(
-            request.Type, request.OwnerId, request.Line, request.City, request.Country, request.Latitude, request.Longitude);
+            request.Type, request.OwnerId, request.Commune, request.Quartier, request.Landmark,
+            request.Line, request.Latitude, request.Longitude);
         var result = await sender.Send(command, ct);
         return result.Match(id => Results.Created($"/api/inventory/locations/{id}", new { id }));
     }
@@ -144,7 +145,9 @@ public static class InventoryEndpoints
     /// <summary>Met à jour l'adresse d'un lieu d'expédition.</summary>
     private static async Task<IResult> UpdateLocationAddressAsync(Guid id, AddressRequest request, ISender sender, CancellationToken ct)
     {
-        var command = new UpdateLocationAddressCommand(id, request.Line, request.City, request.Country, request.Latitude, request.Longitude);
+        var command = new UpdateLocationAddressCommand(
+            id, request.Commune, request.Quartier, request.Landmark, request.Line,
+            request.Latitude, request.Longitude);
         var result = await sender.Send(command, ct);
         return result.Match(() => Results.NoContent());
     }
@@ -157,6 +160,12 @@ public static class InventoryEndpoints
     public sealed record ThresholdRequest(int Threshold);
     public sealed record ReserveRequest(string Sku, Guid LocationId, Guid OrderId, int Quantity);
     public sealed record OrderRefRequest(string Sku, Guid LocationId, Guid OrderId);
-    public sealed record CreateLocationRequest(string Type, Guid? OwnerId, string Line, string City, string Country, double? Latitude, double? Longitude);
-    public sealed record AddressRequest(string Line, string City, string Country, double? Latitude, double? Longitude);
+    // « Commune » accepte le code (« abomey-calavi ») comme le libellé (« Abomey-Calavi »).
+    public sealed record CreateLocationRequest(
+        string Type, Guid? OwnerId, string? Commune, string? Quartier, string? Landmark,
+        string? Line, double? Latitude, double? Longitude);
+
+    public sealed record AddressRequest(
+        string? Commune, string? Quartier, string? Landmark, string? Line,
+        double? Latitude, double? Longitude);
 }

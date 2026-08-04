@@ -23,11 +23,14 @@ internal sealed class FulfillmentLocationConfiguration : IEntityTypeConfiguratio
         // Address (VO) en type owned.
         builder.OwnsOne(l => l.Address, address =>
         {
-            address.Property(a => a.Line).HasColumnName("address_line").HasMaxLength(500).IsRequired();
-            address.Property(a => a.City).HasColumnName("address_city").HasMaxLength(150).IsRequired();
-            address.Property(a => a.Country).HasColumnName("address_country").HasMaxLength(100).IsRequired();
+            address.Property(a => a.CommuneCode).HasColumnName("address_commune_code").HasMaxLength(40).IsRequired();
+            address.Property(a => a.Quartier).HasColumnName("address_quartier").HasMaxLength(120);
+            address.Property(a => a.Landmark).HasColumnName("address_landmark").HasMaxLength(200);
+            address.Property(a => a.Line).HasColumnName("address_line").HasMaxLength(500);
+            address.Property(a => a.CountryCode).HasColumnName("address_country_code").HasMaxLength(2).IsRequired();
             address.Property(a => a.Latitude).HasColumnName("address_latitude");
             address.Property(a => a.Longitude).HasColumnName("address_longitude");
+            address.Ignore(a => a.CommuneName);
         });
         builder.Navigation(l => l.Address).IsRequired();
 

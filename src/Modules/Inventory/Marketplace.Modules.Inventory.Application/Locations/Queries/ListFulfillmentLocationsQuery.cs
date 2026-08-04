@@ -25,9 +25,14 @@ internal sealed class ListAllFulfillmentLocationsQueryHandler
     {
         var locations = await _repository.ListAllAsync(500, cancellationToken);
         IReadOnlyList<FulfillmentLocationSummary> summaries = locations
+            // ⚠️ Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
+            // Le value object les validait, le BFF les acceptait, et cette projection les
+            // jetait : une saisie GPS ne survivait pas à sa propre relecture.
             .Select(l => new FulfillmentLocationSummary(
                 l.Id.Value, l.Type.ToString(), l.OwnerId,
-                l.Address.Line, l.Address.City, l.Address.Country, null, null))
+                l.Address.CommuneCode, l.Address.CommuneName, l.Address.Quartier,
+                l.Address.Landmark, l.Address.Line, l.Address.CountryCode,
+                l.Address.Latitude, l.Address.Longitude))
             .ToList();
         return Result.Success(summaries);
     }
@@ -46,9 +51,14 @@ internal sealed class ListFulfillmentLocationsQueryHandler
     {
         var locations = await _repository.ListByOwnerAsync(query.OwnerId, cancellationToken);
         IReadOnlyList<FulfillmentLocationSummary> summaries = locations
+            // ⚠️ Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
+            // Le value object les validait, le BFF les acceptait, et cette projection les
+            // jetait : une saisie GPS ne survivait pas à sa propre relecture.
             .Select(l => new FulfillmentLocationSummary(
                 l.Id.Value, l.Type.ToString(), l.OwnerId,
-                l.Address.Line, l.Address.City, l.Address.Country, null, null))
+                l.Address.CommuneCode, l.Address.CommuneName, l.Address.Quartier,
+                l.Address.Landmark, l.Address.Line, l.Address.CountryCode,
+                l.Address.Latitude, l.Address.Longitude))
             .ToList();
         return Result.Success(summaries);
     }

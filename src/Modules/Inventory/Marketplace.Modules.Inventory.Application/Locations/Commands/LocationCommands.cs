@@ -13,9 +13,10 @@ namespace Marketplace.Modules.Inventory.Application.Locations.Commands;
 public sealed record CreateFulfillmentLocationCommand(
     string Type,
     Guid? OwnerId,
-    string Line,
-    string City,
-    string Country,
+    string? Commune,
+    string? Quartier,
+    string? Landmark,
+    string? Line,
     double? Latitude,
     double? Longitude) : ICommand<Guid>;
 
@@ -25,9 +26,12 @@ public sealed class CreateFulfillmentLocationCommandValidator : AbstractValidato
     {
         RuleFor(c => c.Type).Must(t => t is "SellerAddress" or "PlatformWarehouse")
             .WithMessage("Type de lieu invalide (SellerAddress, PlatformWarehouse).");
-        RuleFor(c => c.Line).NotEmpty().MaximumLength(500);
-        RuleFor(c => c.City).NotEmpty().MaximumLength(150);
-        RuleFor(c => c.Country).NotEmpty().MaximumLength(100);
+        // Commune et repère sont validés par le VO Address, qui sait résoudre un code
+        // comme un libellé et rend des messages métier. Les dupliquer ici en règles de
+        // longueur ne ferait que produire deux messages différents pour la même erreur.
+        RuleFor(c => c.Line).MaximumLength(500);
+        RuleFor(c => c.Quartier).MaximumLength(120);
+        RuleFor(c => c.Landmark).MaximumLength(200);
     }
 }
 
@@ -49,7 +53,9 @@ internal sealed class CreateFulfillmentLocationCommandHandler : ICommandHandler<
             return Error.Validation("inventory.location.type_invalid", "Type de lieu invalide.");
         }
 
-        var addressResult = Address.Create(command.Line, command.City, command.Country, command.Latitude, command.Longitude);
+        var addressResult = Address.Create(
+            command.Commune, command.Quartier, command.Landmark, command.Line,
+            command.Latitude, command.Longitude);
         if (addressResult.IsFailure)
         {
             return Result.Failure<Guid>(addressResult.Error);
@@ -73,9 +79,10 @@ internal sealed class CreateFulfillmentLocationCommandHandler : ICommandHandler<
 /// <summary>Met à jour l'adresse d'un lieu d'expédition.</summary>
 public sealed record UpdateLocationAddressCommand(
     Guid LocationId,
-    string Line,
-    string City,
-    string Country,
+    string? Commune,
+    string? Quartier,
+    string? Landmark,
+    string? Line,
     double? Latitude,
     double? Longitude) : ICommand;
 
@@ -98,7 +105,9 @@ internal sealed class UpdateLocationAddressCommandHandler : ICommandHandler<Upda
             return Result.Failure(Error.NotFound("inventory.location.not_found", "Lieu d'expédition introuvable."));
         }
 
-        var addressResult = Address.Create(command.Line, command.City, command.Country, command.Latitude, command.Longitude);
+        var addressResult = Address.Create(
+            command.Commune, command.Quartier, command.Landmark, command.Line,
+            command.Latitude, command.Longitude);
         if (addressResult.IsFailure)
         {
             return Result.Failure(addressResult.Error);

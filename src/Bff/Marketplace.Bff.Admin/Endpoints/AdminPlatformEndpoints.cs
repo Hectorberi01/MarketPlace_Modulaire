@@ -191,7 +191,8 @@ public static class AdminPlatformEndpoints
 
     private static async Task<IResult> CreateLocationAsync(LocationRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new CreateFulfillmentLocationCommand(
-                request.Type, request.OwnerId, request.Line, request.City, request.Country, request.Latitude, request.Longitude), ct))
+                request.Type, request.OwnerId, request.Commune, request.Quartier, request.Landmark,
+                request.Line, request.Latitude, request.Longitude), ct))
             .Match(id => Results.Ok(new { locationId = id }));
 
     private static async Task<IResult> ListLocationsAsync(ISender sender, CancellationToken ct)
@@ -199,7 +200,8 @@ public static class AdminPlatformEndpoints
 
     private static async Task<IResult> UpdateLocationAsync(Guid id, LocationRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new UpdateLocationAddressCommand(
-                id, request.Line, request.City, request.Country, request.Latitude, request.Longitude), ct))
+                id, request.Commune, request.Quartier, request.Landmark, request.Line,
+                request.Latitude, request.Longitude), ct))
             .Match(() => Results.NoContent());
 
     private static async Task<IResult> DeleteLocationAsync(Guid id, ISender sender, CancellationToken ct)
@@ -223,7 +225,11 @@ public static class AdminPlatformEndpoints
     public sealed record PromotionRefRequest(Guid PromotionId);
     public sealed record RecommendationRequest(string Type, Guid? ContextProductId, Guid? UserId, IReadOnlyList<Guid> RecommendedProductIds, double Score);
     public sealed record AssessRiskRequest(string SubjectType, Guid SubjectId, IReadOnlyDictionary<string, double> Signals);
-    public sealed record LocationRequest(string Type, Guid? OwnerId, string Line, string City, string Country, double? Latitude, double? Longitude);
+    // « Commune » accepte indifféremment le code (« abomey-calavi ») ou le libellé
+    // (« Abomey-Calavi ») : les consoles envoient le code, les imports des libellés.
+    public sealed record LocationRequest(
+        string Type, Guid? OwnerId, string? Commune, string? Quartier, string? Landmark,
+        string? Line, double? Latitude, double? Longitude);
     public sealed record NotificationRequest(Guid RecipientUserId, string? Channel, string Subject, string Body);
     public sealed record QuantityRequest(int Quantity);
     public sealed record DeltaRequest(int Delta);

@@ -154,7 +154,8 @@ public static class SellerInventoryEndpoints
         }
 
         var result = await sender.Send(new CreateFulfillmentLocationCommand(
-            "SellerAddress", seller.Id, request.Line, request.City, request.Country, request.Latitude, request.Longitude), ct);
+            "SellerAddress", seller.Id, request.Commune, request.Quartier, request.Landmark,
+            request.Line, request.Latitude, request.Longitude), ct);
 
         return result.Match(id => Results.Ok(new { locationId = id }));
     }
@@ -273,7 +274,11 @@ public static class SellerInventoryEndpoints
             : locations.Value.Select(l => l.Id).ToHashSet();
     }
 
-    public sealed record LocationRequest(string Line, string City, string Country, double? Latitude, double? Longitude);
+    // « Commune » accepte indifféremment le code (« abomey-calavi ») ou le libellé
+    // (« Abomey-Calavi ») : les consoles envoient le code, les imports des libellés.
+    public sealed record LocationRequest(
+        string? Commune, string? Quartier, string? Landmark, string? Line,
+        double? Latitude, double? Longitude);
     public sealed record CreateItemRequest(string Sku, Guid LocationId, int OnHand, int ReorderThreshold);
     public sealed record QuantityRequest(int Quantity);
     public sealed record DeltaRequest(int Delta);

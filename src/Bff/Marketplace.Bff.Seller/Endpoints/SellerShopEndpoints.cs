@@ -239,13 +239,21 @@ public static class SellerShopEndpoints
         string? Rccm,
         string? Ifu,
         string? Address,
-        string? City,
+        /// <summary>
+        /// Commune de la boutique. Accepte le CODE (« abomey-calavi ») ou le libellé
+        /// (« Abomey-Calavi ») : le domaine résout les deux et normalise en code. C'est du
+        /// déclaratif de dossier, donc facultatif — contrairement à l'adresse de livraison
+        /// et au lieu d'expédition, où la commune est obligatoire.
+        /// </summary>
+        string? Commune,
         string? Activity,
         string? ManagerName,
         string? Phone)
     {
         public SellerCompanyInfo ToDomain()
-            => new(LegalName, Rccm, Ifu, Address, City, Activity, ManagerName, Phone);
+            => new(LegalName, Rccm, Ifu, Address,
+                   Marketplace.BuildingBlocks.Domain.Geography.BeninGeography.ResolveCommuneCode(Commune),
+                   Activity, ManagerName, Phone);
     }
     public sealed record PayoutAccountRequest(string Provider, string AccountNumber, string AccountName);
     public sealed record KybDocumentRequest(string Type, string FileUrl);
