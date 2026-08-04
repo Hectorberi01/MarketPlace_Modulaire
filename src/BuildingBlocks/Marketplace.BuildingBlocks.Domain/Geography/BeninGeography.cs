@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace Marketplace.BuildingBlocks.Domain.Geography;
@@ -379,9 +378,34 @@ public static class BeninGeography
     public static string FoldForKey(string? value) => Normalize(value);
 
     /// <summary>
-    /// Minuscules, sans accent, sans ponctuation, espaces repliés. « Sô-Ava »,
-    /// « SO AVA » et « so_ava » donnent tous « so ava ».
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// REPLI D'ACCENTS PAR TABLE EXPLICITE — PAS PAR `string.Normalize(FormD)`.
+    ///
+    /// La première version décomposait en FormD puis retirait les marques diacritiques.
+    /// Élégant, et FAUX ICI : la solution active `InvariantGlobalization` (voir
+    /// Directory.Build.props). Dans ce mode, `Normalize(FormD)` NE DÉCOMPOSE RIEN —
+    /// « è » reste un caractère composé, que la boucle traitait alors comme un
+    /// séparateur. « Sèmè-Kpodji » devenait « s m kpodji », « Zè » devenait « z ».
+    ///
+    /// L'index restait cohérent avec lui-même, donc la plupart des recherches
+    /// marchaient — ce qui rendait le défaut d'autant plus difficile à voir. Seuls
+    /// tombaient les ALIAS, écrits sans accent : « seme kpodji » produisait
+    /// « seme kpodji » quand la saisie de l'utilisateur produisait « s m kpodji ».
+    ///
+    /// Plus grave : les migrations SQL replient les accents par `translate()` avec
+    /// CETTE table. Les deux normalisations avaient donc silencieusement divergé, alors
+    /// que tout le rattrapage de données repose sur leur équivalence.
+    ///
+    /// La table est le miroir exact du `translate()` des migrations
+    /// (BeninAddressModel, BeninOrderShippingAddress, BeninLocationAddress,
+    /// BeninSellerCommune). Toute modification ici doit être reportée là-bas, et
+    /// réciproquement.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
+    private const string AccentedChars = "àáâãäåçèéêëìíîïñòóôõöùúûüýÿÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ";
+
+    private const string FoldedChars = "aaaaaaceeeeiiiinooooouuuuyyaaaaaaceeeeiiiinooooouuuuy";
+
     private static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -389,16 +413,15 @@ public static class BeninGeography
             return string.Empty;
         }
 
-        var decomposed = value.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(decomposed.Length);
+        var builder = new StringBuilder(value.Length);
         var lastWasSeparator = false;
 
-        foreach (var ch in decomposed)
+        foreach (var raw in value.Trim())
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
-            {
-                continue;
-            }
+            // Repli d'accent d'abord, minuscule ASCII ensuite : on ne dépend ni de
+            // l'ICU, ni de la culture courante, ni du mode de globalisation.
+            var index = AccentedChars.IndexOf(raw);
+            var ch = index >= 0 ? FoldedChars[index] : char.ToLowerInvariant(raw);
 
             if (char.IsAsciiLetterOrDigit(ch))
             {
