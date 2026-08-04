@@ -11,10 +11,30 @@ public sealed record CreateCommissionRuleCommand(
     string Scope, Guid? TargetId, decimal Rate, decimal FixedFee, string Currency,
     decimal? MinFee, decimal? MaxFee, DateTime EffectiveFromUtc) : ICommand<Guid>;
 
-/// <summary>Modifie une règle de commission existante (le périmètre n'est pas modifiable).</summary>
+/// <summary>
+/// Modifie une règle de commission existante (le périmètre n'est pas modifiable).
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// <c>EffectiveFromUtc</c> EST NULLABLE, ET C'EST LA CORRECTION D'UN BOGUE.
+///
+/// Il était auparavant <c>DateTime</c> non nullable, et le BFF comblait l'absence par
+/// <c>?? DateTime.UtcNow</c>. Or la console d'administration n'a jamais su renvoyer ce
+/// champ — son type TypeScript ne le porte même pas. Résultat : la moindre correction
+/// de taux sur une règle PROGRAMMÉE la rendait applicable SUR-LE-CHAMP
+/// (<see cref="CommissionRule.IsApplicableAt"/> teste <c>EffectiveFromUtc &lt;= nowUtc</c>),
+/// et la faisait passer devant ses sœurs de même portée, que
+/// <see cref="CommissionResolver"/> départage par <c>ThenByDescending(EffectiveFromUtc)</c>.
+/// Une date d'entrée en vigueur qu'un simple clic ramène à « maintenant » n'est pas une
+/// date d'entrée en vigueur.
+///
+/// <c>null</c> signifie désormais « ne touche pas à la date », pas « aujourd'hui ». C'est
+/// le contrat qu'applique déjà le module Tax (<c>UpdateTaxRuleCommand</c>), et il n'y a
+/// aucune raison que deux tables de règles datées se comportent différemment.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
 public sealed record UpdateCommissionRuleCommand(
     Guid RuleId, decimal Rate, decimal FixedFee, string Currency,
-    decimal? MinFee, decimal? MaxFee, DateTime EffectiveFromUtc) : ICommand;
+    decimal? MinFee, decimal? MaxFee, DateTime? EffectiveFromUtc) : ICommand;
 
 /// <summary>Désactive une règle de commission.</summary>
 public sealed record DeactivateCommissionRuleCommand(Guid RuleId) : ICommand;
@@ -113,7 +133,11 @@ internal sealed class UpdateCommissionRuleCommandHandler : ICommandHandler<Updat
             return Result.Failure(Error.NotFound("billing.rule.not_found", "Règle introuvable."));
         }
 
-        var result = rule.Update(command.Rate, command.FixedFee, command.Currency, command.MinFee, command.MaxFee, command.EffectiveFromUtc);
+        // `?? rule.EffectiveFromUtc` — on PRÉSERVE, on ne remet pas à « maintenant ».
+        // Même contrat que UpdateTaxRuleCommandHandler.
+        var result = rule.Update(
+            command.Rate, command.FixedFee, command.Currency, command.MinFee, command.MaxFee,
+            command.EffectiveFromUtc ?? rule.EffectiveFromUtc);
         if (result.IsFailure)
         {
             return result;

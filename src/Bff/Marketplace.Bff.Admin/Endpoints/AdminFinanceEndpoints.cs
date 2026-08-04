@@ -148,10 +148,21 @@ public static class AdminFinanceEndpoints
                 request.MinFee, request.MaxFee, request.EffectiveFromUtc ?? DateTime.UtcNow), ct))
             .Match(id => Results.Ok(new { ruleId = id }));
 
+    /// <summary>
+    /// Modifie une règle de commission.
+    ///
+    /// ⚠️ `EffectiveFromUtc` est transmis TEL QUEL, sans `?? DateTime.UtcNow`.
+    ///
+    /// À la création, ce repli est légitime : une règle neuve sans date entre en vigueur
+    /// tout de suite. À la modification, il était destructeur — il transformait « le client
+    /// n'a pas envoyé la date » en « la date est maintenant », et faisait basculer en
+    /// vigueur immédiate toute règle programmée dès qu'on en corrigeait le taux. C'est au
+    /// handler de décider, et il préserve la date existante.
+    /// </summary>
     private static async Task<IResult> UpdateCommissionRuleAsync(Guid id, CommissionRuleRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new UpdateCommissionRuleCommand(
                 id, request.Rate, request.FixedFee, request.Currency,
-                request.MinFee, request.MaxFee, request.EffectiveFromUtc ?? DateTime.UtcNow), ct))
+                request.MinFee, request.MaxFee, request.EffectiveFromUtc), ct))
             .Match(() => Results.NoContent());
 
     private static async Task<IResult> DeactivateCommissionRuleAsync(Guid id, ISender sender, CancellationToken ct)
