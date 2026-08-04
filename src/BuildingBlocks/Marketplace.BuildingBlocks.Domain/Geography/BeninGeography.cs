@@ -208,21 +208,40 @@ public static class BeninGeography
     ];
 
     /// <summary>
-    /// Le référentiel prêt à servir. Construit UNE FOIS au chargement du type.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE RÉFÉRENTIEL PRÊT À SERVIR — CONSTRUIT PARESSEUSEMENT, ET C'EST OBLIGATOIRE.
+    ///
+    /// Les initialiseurs de champs statiques s'exécutent DANS L'ORDRE DE DÉCLARATION,
+    /// avant tout accès au type. La première version construisait la valeur directement
+    /// ici, or elle lit <c>c.Department</c>, qui interroge <c>DepartmentsByCode</c> —
+    /// déclaré PLUS BAS, donc encore <c>null</c> à cet instant.
+    ///
+    /// Le résultat n'était pas une simple valeur fausse : le constructeur de type levait
+    /// une <c>NullReferenceException</c>, enveloppée en <c>TypeInitializationException</c>,
+    /// et TOUTE utilisation de <c>BeninGeography</c> devenait impossible — y compris la
+    /// simple résolution d'une commune, sans rapport avec le référentiel servi.
+    ///
+    /// <c>Lazy</c> supprime la classe de bogue entière plutôt que ce cas précis : la
+    /// fabrique n'est appelée qu'au PREMIER ACCÈS, quand le constructeur de type est
+    /// achevé et que tous les dictionnaires existent. Réordonner les déclarations ne peut
+    /// plus rien casser.
     ///
     /// Communes triées par CODE, qui est déjà désaccentué. Trier par libellé avec
-    /// <c>StringComparer.CurrentCulture</c> serait un piège : la solution active
+    /// <c>StringComparer.CurrentCulture</c> serait un autre piège : la solution active
     /// <c>InvariantGlobalization</c>, ce qui ramène la comparaison à un tri ordinal —
     /// « Ségbana » et « Sèmè-Podji » se retrouveraient après « Zogbodomey ».
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public static BeninGeographyReference Reference { get; } = new(
+    public static BeninGeographyReference Reference => LazyReference.Value;
+
+    private static readonly Lazy<BeninGeographyReference> LazyReference = new(() => new(
         CountryCode,
         DialingCode,
         LocalPhoneLength,
         [.. Departments.Select(d => new BeninDepartmentView(d.Code, d.Name))],
         [.. Communes
             .OrderBy(c => c.Code, StringComparer.Ordinal)
-            .Select(c => new BeninCommuneView(c.Code, c.Name, c.DepartmentCode, c.Department.Name))]);
+            .Select(c => new BeninCommuneView(c.Code, c.Name, c.DepartmentCode, c.Department.Name))]));
 
     private static readonly Dictionary<string, BeninCommune> ByCode =
         Communes.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
