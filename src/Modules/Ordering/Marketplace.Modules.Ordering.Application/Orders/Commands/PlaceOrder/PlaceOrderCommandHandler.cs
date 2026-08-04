@@ -60,7 +60,9 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         // Fige l'adresse de livraison choisie au checkout (snapshot).
         if (command.ShippingAddress is { } addr)
         {
-            order.SetShippingAddress(addr.Label, addr.Recipient, addr.Line1, addr.Line2, addr.City, addr.Country, addr.Phone);
+            order.SetShippingAddress(
+                addr.Label, addr.Recipient, addr.Phone,
+                addr.CommuneCode, addr.Quartier, addr.Landmark, addr.Line1, addr.CountryCode);
         }
 
         // Fige les frais de livraison (forfait choisi) : entrent dans le total et

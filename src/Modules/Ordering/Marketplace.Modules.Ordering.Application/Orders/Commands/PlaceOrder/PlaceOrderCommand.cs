@@ -7,4 +7,5 @@ public sealed record PlaceOrderCommand(Guid BuyerId, ShippingAddressInput? Shipp
 
 /// <summary>Adresse de livraison choisie au checkout (figée sur la commande).</summary>
 public sealed record ShippingAddressInput(
-    string? Label, string? Recipient, string? Line1, string? Line2, string? City, string? Country, string? Phone);
+    string? Label, string? Recipient, string? Phone,
+    string? CommuneCode, string? Quartier, string? Landmark, string? Line1, string? CountryCode);

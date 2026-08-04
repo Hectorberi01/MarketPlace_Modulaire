@@ -101,11 +101,16 @@ public static class MobileOrderEndpoints
                 {
                     label = o.ShippingAddress.Label,
                     recipient = o.ShippingAddress.Recipient,
-                    line1 = o.ShippingAddress.Line1,
-                    line2 = o.ShippingAddress.Line2,
-                    city = o.ShippingAddress.City,
-                    country = o.ShippingAddress.Country,
                     phone = o.ShippingAddress.Phone,
+                    communeCode = o.ShippingAddress.CommuneCode,
+                    // Le LIBELLÉ est envoyé résolu : ni l'application ni la console n'ont à
+                    // embarquer les 77 communes pour afficher une commande déjà passée.
+                    communeName = o.ShippingAddress.CommuneName,
+                    quartier = o.ShippingAddress.Quartier,
+                    // Le point de repère : ce que le livreur lit en premier.
+                    landmark = o.ShippingAddress.Landmark,
+                    line1 = o.ShippingAddress.Line1,
+                    countryCode = o.ShippingAddress.CountryCode,
                 },
                 lines,
             },

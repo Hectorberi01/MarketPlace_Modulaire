@@ -144,10 +144,37 @@ public static class MobileCheckoutEndpoints
             if (addresses.IsSuccess)
             {
                 var a = addresses.Value.FirstOrDefault(x => x.Id == addressId);
-                if (a is not null)
+                if (a is null)
                 {
-                    shipTo = new ShippingAddressInput(a.Label, a.Recipient, a.Line1, a.Line2, a.City, a.Country, a.Phone);
+                    return Results.BadRequest(new { error = "Adresse de livraison introuvable." });
                 }
+
+                // ─────────────────────────────────────────────────────────────────────
+                // ON REFUSE DE PAYER UNE LIVRAISON QU'ON NE SAIT PAS FAIRE.
+                //
+                // Les adresses saisies avant la refonte n'ont ni commune normalisée, ni
+                // point de repère, ni forcément un téléphone joignable. Au Bénin, un
+                // coursier sans repère et sans numéro à appeler ne trouve pas la maison :
+                // le colis revient, l'acheteur est remboursé, et tout le monde a perdu son
+                // temps et ses frais.
+                //
+                // Mieux vaut un refus explicite AVANT le paiement qu'un échec de livraison
+                // après. L'application renvoie l'acheteur vers l'écran d'adresse, où une
+                // simple modification suffit à la compléter.
+                // ─────────────────────────────────────────────────────────────────────
+                if (!a.IsComplete)
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = "Cette adresse est incomplète. Ajoutez la commune, un point de repère et un numéro de téléphone avant de commander.",
+                        code = "address_incomplete",
+                        addressId = a.Id,
+                    });
+                }
+
+                shipTo = new ShippingAddressInput(
+                    a.Label, a.Recipient, a.Phone,
+                    a.CommuneCode, a.Quartier, a.Landmark, a.Line1, a.CountryCode);
             }
         }
 
@@ -292,8 +319,9 @@ public static class MobileCheckoutEndpoints
         }
 
         var result = await sender.Send(new AddAddressCommand(
-            userId, request.Label, request.Recipient, request.Line1, request.Line2,
-            request.City, request.Country, request.Phone, request.MakeDefault), ct);
+            userId, request.Label, request.Recipient, request.Phone,
+            request.CommuneCode, request.Quartier, request.Landmark, request.Line1,
+            request.MakeDefault), ct);
         return result.Match(id => Results.Ok(new { id }));
     }
 
@@ -306,8 +334,9 @@ public static class MobileCheckoutEndpoints
         }
 
         var result = await sender.Send(new UpdateAddressCommand(
-            userId, id, request.Label, request.Recipient, request.Line1, request.Line2,
-            request.City, request.Country, request.Phone, request.MakeDefault), ct);
+            userId, id, request.Label, request.Recipient, request.Phone,
+            request.CommuneCode, request.Quartier, request.Landmark, request.Line1,
+            request.MakeDefault), ct);
         return result.Match(() => Results.NoContent());
     }
 
@@ -327,7 +356,19 @@ public static class MobileCheckoutEndpoints
         string Method, string Provider, string? Flow, string? ReturnUrl, string? CancelUrl, string? PayerPhone,
         Guid? AddressId = null, string? ShippingCode = null);
 
+    /// <summary>
+    /// Adresse de livraison. « Commune » et « Landmark » sont obligatoires côté domaine ;
+    /// ils sont déclarés nullables ici pour que l'absence produise un message métier clair
+    /// plutôt qu'un 400 de désérialisation illisible.
+    ///
+    /// « Commune » accepte le code (« abomey-calavi ») comme le libellé (« Abomey-Calavi ») :
+    /// les applications envoient le code, les imports n'ont que des libellés.
+    /// </summary>
     public sealed record AddressRequest(
-        string? Label, string? Recipient, string Line1, string? Line2,
-        string City, string? Country, string? Phone, bool MakeDefault);
+        string? Label, string? Recipient, string? Phone,
+        string? Commune, string? Quartier, string? Landmark, string? Line1, bool MakeDefault)
+    {
+        /// <summary>Alias de lecture : le domaine résout indifféremment code ou libellé.</summary>
+        public string? CommuneCode => Commune;
+    }
 }

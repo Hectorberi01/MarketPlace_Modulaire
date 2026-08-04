@@ -21,8 +21,10 @@ internal static class OrderMapper
             l.UnitBasePrice, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice, l.LineTotal)).ToList(),
         order.HasShippingAddress
             ? new OrderShippingAddressSummary(
-                order.ShipToLabel, order.ShipToRecipient, order.ShipToLine1, order.ShipToLine2,
-                order.ShipToCity, order.ShipToCountry, order.ShipToPhone)
+                order.ShipToLabel, order.ShipToRecipient,
+                order.ShipToCommuneCode, order.ShipToCommuneName,
+                order.ShipToQuartier, order.ShipToLandmark, order.ShipToLine1,
+                order.ShipToCountryCode, order.ShipToPhone)
             : null,
         order.ShippingFee);
 }

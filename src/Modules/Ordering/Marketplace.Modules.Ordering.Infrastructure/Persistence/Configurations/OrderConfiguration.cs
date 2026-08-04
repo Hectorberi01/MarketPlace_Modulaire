@@ -65,11 +65,15 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         // Adresse de livraison figée (snapshot, toutes colonnes nullables).
         builder.Property(o => o.ShipToLabel).HasMaxLength(60);
         builder.Property(o => o.ShipToRecipient).HasMaxLength(120);
+        builder.Property(o => o.ShipToPhone).HasMaxLength(20);
+        builder.Property(o => o.ShipToCommuneCode).HasMaxLength(40);
+        builder.Property(o => o.ShipToQuartier).HasMaxLength(120);
+        builder.Property(o => o.ShipToLandmark).HasMaxLength(200);
         builder.Property(o => o.ShipToLine1).HasMaxLength(200);
-        builder.Property(o => o.ShipToLine2).HasMaxLength(200);
-        builder.Property(o => o.ShipToCity).HasMaxLength(120);
-        builder.Property(o => o.ShipToCountry).HasMaxLength(80);
-        builder.Property(o => o.ShipToPhone).HasMaxLength(30);
+        builder.Property(o => o.ShipToCountryCode).HasMaxLength(2);
+
+        // Résolus depuis BeninGeography à l'affichage : rien à stocker.
+        builder.Ignore(o => o.ShipToCommuneName);
 
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //

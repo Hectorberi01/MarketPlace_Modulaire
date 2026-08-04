@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Ordering.Domain.Orders.Events;
@@ -58,18 +59,35 @@ public sealed class Order : AggregateRoot<OrderId>
 
     public string? CancellationReason { get; private set; }
 
-    // Adresse de livraison figée au moment de la commande (snapshot, pas de FK
-    // vers Identity : on conserve une copie pour l'historique de la commande).
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Adresse de livraison FIGÉE au moment de la commande. Copie, pas de FK vers
+    // Identity : si l'acheteur modifie ou supprime son adresse ensuite, la commande
+    // doit continuer de dire où le colis a été envoyé.
+    //
+    // On fige le CODE de commune, pas son libellé. Les codes ne changent jamais (c'est
+    // le contrat de BeninGeography), alors qu'un libellé peut être corrigé — et une
+    // correction d'orthographe ne doit pas réécrire l'historique.
+    // ─────────────────────────────────────────────────────────────────────────────
     public string? ShipToLabel { get; private set; }
     public string? ShipToRecipient { get; private set; }
-    public string? ShipToLine1 { get; private set; }
-    public string? ShipToLine2 { get; private set; }
-    public string? ShipToCity { get; private set; }
-    public string? ShipToCountry { get; private set; }
     public string? ShipToPhone { get; private set; }
+    public string? ShipToCommuneCode { get; private set; }
+    public string? ShipToQuartier { get; private set; }
+    public string? ShipToLandmark { get; private set; }
+    public string? ShipToLine1 { get; private set; }
+    public string? ShipToCountryCode { get; private set; }
 
+    /// <summary>Libellé de la commune de livraison, résolu à l'affichage.</summary>
+    public string ShipToCommuneName => BeninGeography.CommuneName(ShipToCommuneCode);
+
+    /// <summary>
+    /// La commande porte-t-elle une adresse exploitable ?
+    ///
+    /// Elle s'appuie sur la COMMUNE et le REPÈRE — pas sur la rue, qui est facultative
+    /// au Bénin. Une commande dont on ne connaît que « rue X » n'est pas livrable.
+    /// </summary>
     public bool HasShippingAddress =>
-        !string.IsNullOrWhiteSpace(ShipToLine1) || !string.IsNullOrWhiteSpace(ShipToCity);
+        !string.IsNullOrWhiteSpace(ShipToCommuneCode) && !string.IsNullOrWhiteSpace(ShipToLandmark);
 
     public IReadOnlyCollection<OrderLine> Lines => _lines.AsReadOnly();
 
@@ -112,17 +130,19 @@ public sealed class Order : AggregateRoot<OrderId>
         return order;
     }
 
-    /// <summary>Fige l'adresse de livraison choisie (snapshot copié dans la commande).</summary>
+    /// <summary>Fige l'adresse de livraison choisie (copie intégrale dans la commande).</summary>
     public void SetShippingAddress(
-        string? label, string? recipient, string? line1, string? line2, string? city, string? country, string? phone)
+        string? label, string? recipient, string? phone,
+        string? communeCode, string? quartier, string? landmark, string? line1, string? countryCode)
     {
         ShipToLabel = Trim(label, 60);
         ShipToRecipient = Trim(recipient, 120);
+        ShipToPhone = Trim(phone, 20);
+        ShipToCommuneCode = Trim(communeCode, 40);
+        ShipToQuartier = Trim(quartier, 120);
+        ShipToLandmark = Trim(landmark, 200);
         ShipToLine1 = Trim(line1, 200);
-        ShipToLine2 = Trim(line2, 200);
-        ShipToCity = Trim(city, 120);
-        ShipToCountry = Trim(country, 80);
-        ShipToPhone = Trim(phone, 30);
+        ShipToCountryCode = Trim(countryCode, 2) ?? BeninGeography.CountryCode;
     }
 
     private static string? Trim(string? value, int max)

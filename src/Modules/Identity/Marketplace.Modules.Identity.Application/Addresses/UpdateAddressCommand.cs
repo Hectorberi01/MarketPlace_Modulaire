@@ -14,11 +14,11 @@ public sealed record UpdateAddressCommand(
     Guid AddressId,
     string? Label,
     string? Recipient,
-    string Line1,
-    string? Line2,
-    string City,
-    string? Country,
     string? Phone,
+    string? CommuneCode,
+    string? Quartier,
+    string? Landmark,
+    string? Line1,
     bool MakeDefault) : ICommand;
 
 internal sealed class UpdateAddressCommandHandler : ICommandHandler<UpdateAddressCommand>
@@ -42,8 +42,8 @@ internal sealed class UpdateAddressCommandHandler : ICommandHandler<UpdateAddres
         }
 
         var updated = target.Update(
-            command.Label, command.Recipient, command.Line1, command.Line2,
-            command.City, command.Country, command.Phone);
+            command.Label, command.Recipient, command.Phone,
+            command.CommuneCode, command.Quartier, command.Landmark, command.Line1);
         if (updated.IsFailure)
         {
             return updated;

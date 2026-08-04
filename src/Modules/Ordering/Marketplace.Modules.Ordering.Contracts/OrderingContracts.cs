@@ -14,14 +14,22 @@ public sealed record OrderLineSummary(
     decimal FinalUnitPrice,
     decimal LineTotal);
 
-/// <summary>Adresse de livraison figée sur la commande (snapshot).</summary>
+/// <summary>
+/// Adresse de livraison figée sur la commande (instantané).
+///
+/// <c>CommuneName</c> est résolu à la lecture depuis <c>CommuneCode</c> : seul le code est
+/// stocké. <c>Landmark</c> est le point de repère — au Bénin, c'est l'information que le
+/// livreur utilise réellement, bien avant la rue.
+/// </summary>
 public sealed record OrderShippingAddressSummary(
     string? Label,
     string? Recipient,
+    string? CommuneCode,
+    string? CommuneName,
+    string? Quartier,
+    string? Landmark,
     string? Line1,
-    string? Line2,
-    string? City,
-    string? Country,
+    string? CountryCode,
     string? Phone);
 
 /// <summary>Vue publique d'une commande.</summary>

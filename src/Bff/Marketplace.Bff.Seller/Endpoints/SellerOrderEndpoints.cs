@@ -193,11 +193,16 @@ public static class SellerOrderEndpoints
             {
                 label = scoped.ShippingAddress.Label,
                 recipient = scoped.ShippingAddress.Recipient,
-                line1 = scoped.ShippingAddress.Line1,
-                line2 = scoped.ShippingAddress.Line2,
-                city = scoped.ShippingAddress.City,
-                country = scoped.ShippingAddress.Country,
                 phone = scoped.ShippingAddress.Phone,
+                communeCode = scoped.ShippingAddress.CommuneCode,
+                // Le LIBELLÉ est envoyé résolu : ni l'application ni la console n'ont à
+                // embarquer les 77 communes pour afficher une commande déjà passée.
+                communeName = scoped.ShippingAddress.CommuneName,
+                quartier = scoped.ShippingAddress.Quartier,
+                // Le point de repère : ce que le livreur lit en premier.
+                landmark = scoped.ShippingAddress.Landmark,
+                line1 = scoped.ShippingAddress.Line1,
+                countryCode = scoped.ShippingAddress.CountryCode,
             },
             lines,
         });

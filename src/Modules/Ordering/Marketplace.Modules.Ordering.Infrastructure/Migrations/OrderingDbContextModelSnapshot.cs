@@ -101,29 +101,33 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<string>("ShipToCity")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
+                    b.Property<string>("ShipToCommuneCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
-                    b.Property<string>("ShipToCountry")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
+                    b.Property<string>("ShipToCountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
 
                     b.Property<string>("ShipToLabel")
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<string>("ShipToLandmark")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("ShipToLine1")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("ShipToLine2")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<string>("ShipToPhone")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ShipToQuartier")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.Property<string>("ShipToRecipient")
                         .HasMaxLength(120)

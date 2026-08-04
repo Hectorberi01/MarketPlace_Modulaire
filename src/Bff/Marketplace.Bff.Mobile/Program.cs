@@ -231,6 +231,7 @@ app.UseRateLimiter();
 app.MapObservability();
 
 // Surface /mobile (référentiel BFF Mobile).
+app.MapMobileGeographyEndpoints();
 app.MapMobileAuthEndpoints();
 app.MapMobileDiscoveryEndpoints();
 app.MapMobileCatalogEndpoints();

@@ -10,11 +10,11 @@ public sealed record AddAddressCommand(
     Guid UserId,
     string? Label,
     string? Recipient,
-    string Line1,
-    string? Line2,
-    string City,
-    string? Country,
     string? Phone,
+    string? CommuneCode,
+    string? Quartier,
+    string? Landmark,
+    string? Line1,
     bool MakeDefault) : ICommand<Guid>;
 
 internal sealed class AddAddressCommandHandler : ICommandHandler<AddAddressCommand, Guid>
@@ -35,8 +35,8 @@ internal sealed class AddAddressCommandHandler : ICommandHandler<AddAddressComma
         var makeDefault = command.MakeDefault || existing.Count == 0;
 
         var created = Address.Create(
-            command.UserId, command.Label, command.Recipient, command.Line1, command.Line2,
-            command.City, command.Country, command.Phone, makeDefault);
+            command.UserId, command.Label, command.Recipient, command.Phone,
+            command.CommuneCode, command.Quartier, command.Landmark, command.Line1, makeDefault);
         if (created.IsFailure)
         {
             return Result.Failure<Guid>(created.Error);
