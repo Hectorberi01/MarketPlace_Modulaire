@@ -30,6 +30,8 @@ public sealed record OrderShippingAddressSummary(
     string? Landmark,
     string? Line1,
     string? CountryCode,
+    double? Latitude,
+    double? Longitude,
     string? Phone);
 
 /// <summary>Vue publique d'une commande.</summary>

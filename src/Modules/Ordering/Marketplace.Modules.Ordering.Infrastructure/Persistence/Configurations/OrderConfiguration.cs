@@ -71,9 +71,12 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ShipToLandmark).HasMaxLength(200);
         builder.Property(o => o.ShipToLine1).HasMaxLength(200);
         builder.Property(o => o.ShipToCountryCode).HasMaxLength(2);
+        builder.Property(o => o.ShipToLatitude);
+        builder.Property(o => o.ShipToLongitude);
 
         // Résolus depuis BeninGeography à l'affichage : rien à stocker.
         builder.Ignore(o => o.ShipToCommuneName);
+        builder.Ignore(o => o.HasShipToCoordinates);
 
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //

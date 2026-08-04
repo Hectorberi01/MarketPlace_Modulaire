@@ -97,6 +97,12 @@ namespace Marketplace.Modules.Identity.Infrastructure.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("Landmark")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");

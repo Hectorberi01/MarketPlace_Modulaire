@@ -77,6 +77,21 @@ public sealed class Order : AggregateRoot<OrderId>
     public string? ShipToLine1 { get; private set; }
     public string? ShipToCountryCode { get; private set; }
 
+    /// <summary>
+    /// Position figée, quand l'acheteur en avait une. FACULTATIVE : elle complète le
+    /// repère, elle ne le remplace pas — et une commande sans position se livre
+    /// exactement comme avant.
+    ///
+    /// Figée elle aussi : si l'acheteur déplace ensuite le point de son adresse, la
+    /// commande doit continuer de dire où le colis a été envoyé.
+    /// </summary>
+    public double? ShipToLatitude { get; private set; }
+
+    public double? ShipToLongitude { get; private set; }
+
+    /// <summary>La commande porte-t-elle un point ouvrable dans une carto ?</summary>
+    public bool HasShipToCoordinates => ShipToLatitude is not null && ShipToLongitude is not null;
+
     /// <summary>Libellé de la commune de livraison, résolu à l'affichage.</summary>
     public string ShipToCommuneName => BeninGeography.CommuneName(ShipToCommuneCode);
 
@@ -133,7 +148,8 @@ public sealed class Order : AggregateRoot<OrderId>
     /// <summary>Fige l'adresse de livraison choisie (copie intégrale dans la commande).</summary>
     public void SetShippingAddress(
         string? label, string? recipient, string? phone,
-        string? communeCode, string? quartier, string? landmark, string? line1, string? countryCode)
+        string? communeCode, string? quartier, string? landmark, string? line1, string? countryCode,
+        double? latitude, double? longitude)
     {
         ShipToLabel = Trim(label, 60);
         ShipToRecipient = Trim(recipient, 120);
@@ -143,6 +159,11 @@ public sealed class Order : AggregateRoot<OrderId>
         ShipToLandmark = Trim(landmark, 200);
         ShipToLine1 = Trim(line1, 200);
         ShipToCountryCode = Trim(countryCode, 2) ?? BeninGeography.CountryCode;
+
+        // Les deux ou aucune : une latitude seule placerait le point dans le golfe
+        // de Guinée, à 400 km de Cotonou.
+        ShipToLatitude = latitude is not null && longitude is not null ? latitude : null;
+        ShipToLongitude = ShipToLatitude is null ? null : longitude;
     }
 
     private static string? Trim(string? value, int max)

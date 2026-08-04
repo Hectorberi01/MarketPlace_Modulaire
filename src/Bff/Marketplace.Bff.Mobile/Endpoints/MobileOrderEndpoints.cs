@@ -111,6 +111,10 @@ public static class MobileOrderEndpoints
                     landmark = o.ShippingAddress.Landmark,
                     line1 = o.ShippingAddress.Line1,
                     countryCode = o.ShippingAddress.CountryCode,
+                    // Position figée : elle alimente le lien « ouvrir dans Maps » que le
+                    // vendeur transmet au coursier. `null` si l'acheteur n'en avait pas.
+                    latitude = o.ShippingAddress.Latitude,
+                    longitude = o.ShippingAddress.Longitude,
                 },
                 lines,
             },

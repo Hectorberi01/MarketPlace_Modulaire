@@ -26,6 +26,8 @@ public sealed record AddressDto(
     string? Landmark,
     string? Line1,
     string CountryCode,
+    double? Latitude,
+    double? Longitude,
     bool IsDefault,
     bool IsComplete)
 {
@@ -51,6 +53,8 @@ public sealed record AddressDto(
         a.Landmark,
         a.Line1,
         a.CountryCode,
+        a.Latitude,
+        a.Longitude,
         a.IsDefault,
         a.IsComplete);
 }

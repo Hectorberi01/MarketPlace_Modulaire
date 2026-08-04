@@ -37,12 +37,18 @@ internal sealed class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.Line1).HasMaxLength(Address.MaxLine);
 
         builder.Property(a => a.CountryCode).HasMaxLength(2).IsRequired();
+
+        // Position facultative : `double precision`, nullable. Aucun index — rien ne
+        // requête par coordonnées aujourd'hui, et un index spatial supposerait PostGIS.
+        builder.Property(a => a.Latitude);
+        builder.Property(a => a.Longitude);
         builder.Property(a => a.IsDefault).IsRequired();
         builder.Property(a => a.CreatedOnUtc).IsRequired();
 
         // Propriétés calculées : elles se résolvent depuis BeninGeography, rien à stocker.
         builder.Ignore(a => a.CommuneName);
         builder.Ignore(a => a.IsComplete);
+        builder.Ignore(a => a.HasCoordinates);
 
         builder.HasIndex(a => a.UserId);
 

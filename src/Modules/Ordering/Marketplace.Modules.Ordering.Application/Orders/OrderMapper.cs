@@ -24,7 +24,9 @@ internal static class OrderMapper
                 order.ShipToLabel, order.ShipToRecipient,
                 order.ShipToCommuneCode, order.ShipToCommuneName,
                 order.ShipToQuartier, order.ShipToLandmark, order.ShipToLine1,
-                order.ShipToCountryCode, order.ShipToPhone)
+                order.ShipToCountryCode,
+                order.ShipToLatitude, order.ShipToLongitude,
+                order.ShipToPhone)
             : null,
         order.ShippingFee);
 }

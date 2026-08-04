@@ -113,6 +113,12 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<double?>("ShipToLatitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ShipToLongitude")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("ShipToLandmark")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");

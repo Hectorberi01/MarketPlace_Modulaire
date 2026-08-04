@@ -19,6 +19,8 @@ public sealed record UpdateAddressCommand(
     string? Quartier,
     string? Landmark,
     string? Line1,
+    double? Latitude,
+    double? Longitude,
     bool MakeDefault) : ICommand;
 
 internal sealed class UpdateAddressCommandHandler : ICommandHandler<UpdateAddressCommand>
@@ -43,7 +45,8 @@ internal sealed class UpdateAddressCommandHandler : ICommandHandler<UpdateAddres
 
         var updated = target.Update(
             command.Label, command.Recipient, command.Phone,
-            command.CommuneCode, command.Quartier, command.Landmark, command.Line1);
+            command.CommuneCode, command.Quartier, command.Landmark, command.Line1,
+            command.Latitude, command.Longitude);
         if (updated.IsFailure)
         {
             return updated;

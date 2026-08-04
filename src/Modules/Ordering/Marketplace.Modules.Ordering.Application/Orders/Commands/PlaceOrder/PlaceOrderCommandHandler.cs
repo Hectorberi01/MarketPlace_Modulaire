@@ -85,7 +85,8 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 
         order.SetShippingAddress(
             addr.Label, addr.Recipient, addr.Phone,
-            addr.CommuneCode, addr.Quartier, addr.Landmark, addr.Line1, addr.CountryCode);
+            addr.CommuneCode, addr.Quartier, addr.Landmark, addr.Line1, addr.CountryCode,
+            addr.Latitude, addr.Longitude);
 
         // Fige les frais de livraison (forfait choisi) : entrent dans le total et
         // alimenteront le solde « frais de livraison » de la plateforme.

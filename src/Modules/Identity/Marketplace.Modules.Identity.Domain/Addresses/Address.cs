@@ -86,6 +86,30 @@ public sealed class Address : AggregateRoot<AddressId>
     /// <summary>ISO 3166-1 alpha-2. Vaut « BJ » ; la colonne existe pour une ouverture ultérieure.</summary>
     public string CountryCode { get; private set; } = BeninGeography.CountryCode;
 
+    /// <summary>
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// POSITION GPS — FACULTATIVE, ET ELLE DOIT LE RESTER.
+    ///
+    /// Elle COMPLÈTE le point de repère, elle ne le remplace pas. Un acheteur qui
+    /// refuse la permission de localisation, dont le GPS est coupé, ou qui saisit
+    /// son adresse depuis son bureau doit pouvoir commander exactement comme les
+    /// autres. Rendre la position obligatoire reviendrait à refuser des commandes
+    /// pour une raison technique invisible de l'acheteur.
+    ///
+    /// Elle ne participe donc PAS à <see cref="IsComplete"/>.
+    ///
+    /// Ce qu'elle apporte : le coursier reçoit un lien ouvrable dans sa propre
+    /// application de cartographie. C'est là son seul usage aujourd'hui — aucun
+    /// calcul de distance ne s'appuie dessus.
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    public double? Latitude { get; private set; }
+
+    public double? Longitude { get; private set; }
+
+    /// <summary>La position est-elle exploitable ? Les deux coordonnées ou aucune.</summary>
+    public bool HasCoordinates => Latitude is not null && Longitude is not null;
+
     public bool IsDefault { get; private set; }
     public DateTime CreatedOnUtc { get; private set; }
 
@@ -107,7 +131,8 @@ public sealed class Address : AggregateRoot<AddressId>
 
     public static Result<Address> Create(
         Guid userId, string? label, string? recipient, string? phone,
-        string? communeCode, string? quartier, string? landmark, string? line1, bool isDefault)
+        string? communeCode, string? quartier, string? landmark, string? line1,
+        double? latitude, double? longitude, bool isDefault)
     {
         if (userId == Guid.Empty)
         {
@@ -115,7 +140,7 @@ public sealed class Address : AggregateRoot<AddressId>
         }
 
         var address = new Address(AddressId.New(), userId, isDefault);
-        var applied = address.Apply(label, recipient, phone, communeCode, quartier, landmark, line1);
+        var applied = address.Apply(label, recipient, phone, communeCode, quartier, landmark, line1, latitude, longitude);
 
         return applied.IsFailure ? Result.Failure<Address>(applied.Error) : Result.Success(address);
     }
@@ -128,8 +153,9 @@ public sealed class Address : AggregateRoot<AddressId>
     /// </summary>
     public Result Update(
         string? label, string? recipient, string? phone,
-        string? communeCode, string? quartier, string? landmark, string? line1)
-        => Apply(label, recipient, phone, communeCode, quartier, landmark, line1);
+        string? communeCode, string? quartier, string? landmark, string? line1,
+        double? latitude, double? longitude)
+        => Apply(label, recipient, phone, communeCode, quartier, landmark, line1, latitude, longitude);
 
     public void MarkDefault() => IsDefault = true;
 
@@ -137,7 +163,8 @@ public sealed class Address : AggregateRoot<AddressId>
 
     private Result Apply(
         string? label, string? recipient, string? phone,
-        string? communeCode, string? quartier, string? landmark, string? line1)
+        string? communeCode, string? quartier, string? landmark, string? line1,
+        double? latitude, double? longitude)
     {
         var cleanRecipient = Trim(recipient);
         if (cleanRecipient is null)
@@ -167,6 +194,18 @@ public sealed class Address : AggregateRoot<AddressId>
                 "La commune est obligatoire et doit faire partie des 77 communes du Bénin."));
         }
 
+        if (latitude is < -90 or > 90)
+        {
+            return Result.Failure(Error.Validation(
+                "identity.address.latitude_invalid", "Latitude invalide."));
+        }
+
+        if (longitude is < -180 or > 180)
+        {
+            return Result.Failure(Error.Validation(
+                "identity.address.longitude_invalid", "Longitude invalide."));
+        }
+
         var cleanLandmark = Trim(landmark);
         if (cleanLandmark is null)
         {
@@ -183,6 +222,12 @@ public sealed class Address : AggregateRoot<AddressId>
         Landmark = Cap(cleanLandmark, MaxLandmark);
         Line1 = Clean(line1, MaxLine);
         CountryCode = BeninGeography.CountryCode;
+
+        // Une coordonnée seule ne veut rien dire : on prend les deux ou aucune.
+        // Accepter une latitude sans longitude produirait un point sur le méridien
+        // de Greenwich, dans le golfe de Guinée — à 400 km de Cotonou.
+        Latitude = latitude is not null && longitude is not null ? latitude : null;
+        Longitude = Latitude is null ? null : longitude;
 
         return Result.Success();
     }

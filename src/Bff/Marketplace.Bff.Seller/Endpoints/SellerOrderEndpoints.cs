@@ -203,6 +203,10 @@ public static class SellerOrderEndpoints
                 landmark = scoped.ShippingAddress.Landmark,
                 line1 = scoped.ShippingAddress.Line1,
                 countryCode = scoped.ShippingAddress.CountryCode,
+                // Position figée : elle alimente le lien « ouvrir dans Maps » que le
+                // vendeur transmet au coursier. `null` si l'acheteur n'en avait pas.
+                latitude = scoped.ShippingAddress.Latitude,
+                longitude = scoped.ShippingAddress.Longitude,
             },
             lines,
         });

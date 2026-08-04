@@ -15,6 +15,8 @@ public sealed record AddAddressCommand(
     string? Quartier,
     string? Landmark,
     string? Line1,
+    double? Latitude,
+    double? Longitude,
     bool MakeDefault) : ICommand<Guid>;
 
 internal sealed class AddAddressCommandHandler : ICommandHandler<AddAddressCommand, Guid>
@@ -36,7 +38,8 @@ internal sealed class AddAddressCommandHandler : ICommandHandler<AddAddressComma
 
         var created = Address.Create(
             command.UserId, command.Label, command.Recipient, command.Phone,
-            command.CommuneCode, command.Quartier, command.Landmark, command.Line1, makeDefault);
+            command.CommuneCode, command.Quartier, command.Landmark, command.Line1,
+            command.Latitude, command.Longitude, makeDefault);
         if (created.IsFailure)
         {
             return Result.Failure<Guid>(created.Error);

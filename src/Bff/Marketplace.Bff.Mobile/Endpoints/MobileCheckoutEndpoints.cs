@@ -174,7 +174,8 @@ public static class MobileCheckoutEndpoints
 
                 shipTo = new ShippingAddressInput(
                     a.Label, a.Recipient, a.Phone,
-                    a.CommuneCode, a.Quartier, a.Landmark, a.Line1, a.CountryCode);
+                    a.CommuneCode, a.Quartier, a.Landmark, a.Line1, a.CountryCode,
+                    a.Latitude, a.Longitude);
             }
         }
 
@@ -321,6 +322,7 @@ public static class MobileCheckoutEndpoints
         var result = await sender.Send(new AddAddressCommand(
             userId, request.Label, request.Recipient, request.Phone,
             request.Commune, request.Quartier, request.Landmark, request.Line1,
+            request.Latitude, request.Longitude,
             request.MakeDefault), ct);
         return result.Match(id => Results.Ok(new { id }));
     }
@@ -336,6 +338,7 @@ public static class MobileCheckoutEndpoints
         var result = await sender.Send(new UpdateAddressCommand(
             userId, id, request.Label, request.Recipient, request.Phone,
             request.Commune, request.Quartier, request.Landmark, request.Line1,
+            request.Latitude, request.Longitude,
             request.MakeDefault), ct);
         return result.Match(() => Results.NoContent());
     }
@@ -366,5 +369,8 @@ public static class MobileCheckoutEndpoints
     /// </summary>
     public sealed record AddressRequest(
         string? Label, string? Recipient, string? Phone,
-        string? Commune, string? Quartier, string? Landmark, string? Line1, bool MakeDefault);
+        string? Commune, string? Quartier, string? Landmark, string? Line1,
+        // Position FACULTATIVE : absente, l'adresse reste parfaitement livrable.
+        double? Latitude, double? Longitude,
+        bool MakeDefault);
 }
