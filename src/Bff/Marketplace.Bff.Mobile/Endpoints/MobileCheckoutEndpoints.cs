@@ -8,6 +8,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Cart.Application.Carts.Queries;
 using Marketplace.Modules.Identity.Application.Addresses;
 using Marketplace.Modules.Ordering.Application.Orders.Commands.PlaceOrder;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Payments.Application.Payments.Commands;
 using Marketplace.Modules.Payments.Application.Payments.Commands.InitiatePayment;
 using Marketplace.Modules.Payments.Application.Payments.Queries;
@@ -46,7 +47,57 @@ public static class MobileCheckoutEndpoints
         app.MapPost("/mobile/payments/{id:guid}/confirm", ConfirmRedirectAsync)
             .WithTags("Mobile · Checkout").RequireAuthorization();
 
+        // ─────────────────────────────────────────────────────────────────────────────
+        // REPRENDRE LE PAIEMENT D'UNE COMMANDE DÉJÀ PASSÉE.
+        //
+        // `/checkout/pay` crée une commande DEPUIS LE PANIER puis la paie. Quand le
+        // paiement échoue, la commande existe et le panier a été vidé : cette route
+        // n'est donc plus utilisable, et l'acheteur se retrouvait devant une commande
+        // impayable, sans aucun bouton pour recommencer. Le seul recours était le
+        // support.
+        //
+        // Ici, la commande existe déjà : ni panier, ni adresse, ni frais de livraison à
+        // recalculer. Tout est figé sur la commande — c'est justement ce qui rend la
+        // reprise sûre, le montant ne pouvant plus bouger entre deux tentatives.
+        // ─────────────────────────────────────────────────────────────────────────────
+        app.MapPost("/mobile/orders/{id:guid}/pay", PayExistingOrderAsync)
+            .WithTags("Mobile · Checkout").RequireAuthorization();
+
         return app;
+    }
+
+    /// <summary>
+    /// Initie une NOUVELLE tentative de paiement sur une commande existante.
+    ///
+    /// Aucune clé d'idempotence ici, contrairement à <c>/checkout/pay</c> : là-bas elle
+    /// protège d'un double appui qui créerait deux commandes. Ici la commande est déjà
+    /// créée, rien ne peut être dupliqué, et c'est le domaine qui interdit deux paiements
+    /// concurrents — après avoir vérifié auprès du prestataire, pas sur la foi d'un
+    /// statut local peut-être périmé.
+    /// </summary>
+    private static async Task<IResult> PayExistingOrderAsync(
+        ClaimsPrincipal user, Guid id, PayOrderRequest request, ISender sender, CancellationToken ct)
+    {
+        if (MobileBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        // Propriété vérifiée AVANT toute action : sans ce contrôle, n'importe quel
+        // porteur de jeton pourrait déclencher des appels PSP sur la commande d'autrui.
+        // 404 et non 403, pour ne pas confirmer l'existence de la commande.
+        var order = await sender.Send(new GetOrderQuery(id), ct);
+        if (order.IsFailure || order.Value.BuyerId != buyerId)
+        {
+            return Results.NotFound();
+        }
+
+        var payment = await sender.Send(
+            new InitiatePaymentCommand(
+                id, request.Method, request.Provider,
+                request.Flow ?? "HostedCheckout", request.ReturnUrl, request.CancelUrl, request.PayerPhone), ct);
+
+        return payment.Match(result => Results.Ok(new { orderId = id, payment = result }));
     }
 
     /// <summary>
@@ -358,6 +409,15 @@ public static class MobileCheckoutEndpoints
     public sealed record PayRequest(
         string Method, string Provider, string? Flow, string? ReturnUrl, string? CancelUrl, string? PayerPhone,
         Guid? AddressId = null, string? ShippingCode = null);
+
+    /// <summary>
+    /// Reprise de paiement sur une commande existante. Volontairement dépourvu
+    /// d'<c>AddressId</c> et de <c>ShippingCode</c> : l'adresse et les frais de livraison
+    /// sont figés sur la commande depuis sa création. Les accepter ici laisserait croire
+    /// qu'on peut les changer en réessayant, ce qui modifierait le montant dû après coup.
+    /// </summary>
+    public sealed record PayOrderRequest(
+        string Method, string Provider, string? Flow, string? ReturnUrl, string? CancelUrl, string? PayerPhone);
 
     /// <summary>
     /// Adresse de livraison. « Commune » et « Landmark » sont obligatoires côté domaine ;

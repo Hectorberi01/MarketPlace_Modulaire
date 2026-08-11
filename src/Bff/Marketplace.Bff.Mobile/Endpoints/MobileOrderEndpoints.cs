@@ -96,6 +96,12 @@ public static class MobileOrderEndpoints
                 subtotal = o.Subtotal,
                 totalSellerDiscount = o.TotalSellerDiscount,
                 totalPlatformDiscount = o.TotalPlatformDiscount,
+                // Frais de livraison figés à la commande. Ils manquaient dans cette
+                // réponse alors que le domaine les porte : l'application affichait donc
+                // le total sous le libellé « Sous-total », et l'acheteur voyait un article
+                // à 1 150 XOF suivi d'un « sous-total » de 2 650 sans explication. Les
+                // 1 500 manquants étaient la livraison, simplement jamais envoyée.
+                shippingFee = o.ShippingFee,
                 grandTotal = o.GrandTotal,
                 shippingAddress = o.ShippingAddress is null ? null : new
                 {
