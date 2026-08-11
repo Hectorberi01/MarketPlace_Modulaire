@@ -32,7 +32,7 @@ internal sealed class ListAllFulfillmentLocationsQueryHandler
                 l.Id.Value, l.Type.ToString(), l.OwnerId,
                 l.Address.CommuneCode, l.Address.CommuneName, l.Address.Quartier,
                 l.Address.Landmark, l.Address.Line, l.Address.CountryCode,
-                l.Address.Latitude, l.Address.Longitude))
+                l.Address.Latitude, l.Address.Longitude, l.Address.ContactPhone))
             .ToList();
         return Result.Success(summaries);
     }
@@ -58,7 +58,7 @@ internal sealed class ListFulfillmentLocationsQueryHandler
                 l.Id.Value, l.Type.ToString(), l.OwnerId,
                 l.Address.CommuneCode, l.Address.CommuneName, l.Address.Quartier,
                 l.Address.Landmark, l.Address.Line, l.Address.CountryCode,
-                l.Address.Latitude, l.Address.Longitude))
+                l.Address.Latitude, l.Address.Longitude, l.Address.ContactPhone))
             .ToList();
         return Result.Success(summaries);
     }

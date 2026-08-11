@@ -67,6 +67,19 @@ public static class AuthRateLimiter
     private const int GlobalPermitPerWindow = 300;
     private static readonly TimeSpan GlobalWindow = TimeSpan.FromMinutes(1);
 
+    // ── Partenaires de l'API HBA Delivery ───────────────────────────────────────
+    //
+    // Un partenaire est un SERVEUR, pas un humain : il appelle en rafale au moment
+    // où ses commandes tombent, puis se tait. 600/minute laisse passer une pointe
+    // de dix commandes par seconde.
+    private const int PartnerPermitPerWindow = 600;
+
+    // Plafond par ADRESSE, qui s'ajoute au précédent. Il existe pour une raison
+    // précise : un préfixe de clé s'invente. Sans lui, il suffirait de générer des
+    // clés bidons bien formées pour s'offrir un seau neuf à chaque requête et
+    // contourner entièrement la limitation.
+    private const int PartnerIpCeilingPerWindow = 1_200;
+
     public static IServiceCollection AddAuthRateLimiter(this IServiceCollection services)
     {
         services.AddRateLimiter(options =>
@@ -100,32 +113,115 @@ public static class AuthRateLimiter
                         QueueLimit = 0
                     }));
 
-            // Appliquée à TOUS les endpoints qui n'en déclarent pas d'autre. Avant, seuls
-            // les groupes `/auth` étaient protégés : la recherche, le catalogue et les
-            // fiches produit — tout ce qui est anonyme et coûteux — étaient ouverts.
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: PartitionKey(httpContext),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = GlobalPermitPerWindow,
-                        Window = GlobalWindow,
-                        QueueLimit = 0
-                    }));
+            // ─────────────────────────────────────────────────────────────────
+            // LIMITEUR GLOBAL — DEUX LIMITEURS CHAÎNÉS.
+            //
+            // Appliqué à TOUS les endpoints qui n'en déclarent pas d'autre. Avant,
+            // seuls les groupes `/auth` étaient protégés : la recherche, le
+            // catalogue et les fiches produit — tout ce qui est anonyme et coûteux
+            // — étaient ouverts.
+            //
+            // POURQUOI IL EST DÉSORMAIS CHAÎNÉ.
+            //
+            // Un partenaire de l'API publique n'a pas de compte utilisateur : il
+            // tombait donc dans le seau de son ADRESSE. Deux partenaires hébergés
+            // chez le même fournisseur se volaient leur quota — exactement le
+            // raisonnement CGNAT écrit plus haut pour les utilisateurs mobiles,
+            // jamais étendu aux clés d'API.
+            //
+            // La correction évidente — partitionner par préfixe de clé — ouvre un
+            // trou : le préfixe est lu dans un EN-TÊTE, donc il s'invente. Un
+            // attaquant générerait une clé bien formée par requête et obtiendrait
+            // une partition vierge à chaque fois.
+            //
+            // D'où le second maillon : un plafond par adresse, actif UNIQUEMENT
+            // sur le chemin de l'API partenaire. Une requête doit passer les deux.
+            // Un partenaire légitime n'est plus gêné par ses voisins ; un
+            // fabricant de préfixes reste enfermé dans le plafond de son IP.
+            //
+            // ⚠️ Le chaînage n'est possible QUE sur GlobalLimiter : AddPolicy
+            // n'accepte qu'un partitionneur simple, pas un PartitionedRateLimiter.
+            // ─────────────────────────────────────────────────────────────────
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+
+                // Maillon 1 — l'identité : clé d'API, compte, ou adresse.
+                PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: PartitionKey(httpContext),
+                        // Le plafond DÉPEND de la partition : un partenaire est un
+                        // serveur qui appelle en rafale au moment où ses commandes
+                        // tombent, pas un humain qui navigue.
+                        factory: key => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = key.StartsWith(PartnerPartitionPrefix, StringComparison.Ordinal)
+                                ? PartnerPermitPerWindow
+                                : GlobalPermitPerWindow,
+                            Window = GlobalWindow,
+                            QueueLimit = 0
+                        })),
+
+                // Maillon 2 — le plafond par adresse, sur le seul chemin partenaire.
+                //
+                // GetNoLimiter ailleurs : sans lui, ce second seau s'appliquerait à
+                // toute l'application et diviserait par deux le quota déjà réglé
+                // plus haut, sans que personne ne comprenne pourquoi.
+                PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                    IsPartnerApi(httpContext)
+                        ? RateLimitPartition.GetFixedWindowLimiter(
+                            partitionKey: $"partner-ip:{ClientIp(httpContext)}",
+                            factory: _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = PartnerIpCeilingPerWindow,
+                                Window = GlobalWindow,
+                                QueueLimit = 0
+                            })
+                        : RateLimitPartition.GetNoLimiter<string>("hors-api-partenaire")));
         });
 
         return services;
     }
 
+    /// <summary>Préfixe des partitions partenaires. Sert aussi à moduler leur plafond.</summary>
+    private const string PartnerPartitionPrefix = "partner:";
+
+    /// <summary>Chemin de l'API publique partenaires. Voir PartitionKey.</summary>
+    private const string PartnerApiPath = "/api/v1/deliveries";
+
+    /// <summary>La requête vise-t-elle l'API publique partenaires ?</summary>
+    private static bool IsPartnerApi(HttpContext httpContext)
+        => httpContext.Request.Path.StartsWithSegments(PartnerApiPath, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Clé de partition : le COMPTE si l'appelant est authentifié, l'IP sinon.
+    /// Clé de partition : la CLÉ D'API sur l'API partenaire, le COMPTE si
+    /// l'appelant est authentifié, l'IP sinon.
     ///
     /// C'est la ligne qui rend le limiteur utilisable en Afrique de l'Ouest. Partitionner
     /// un utilisateur connecté par son IP reviendrait à faire payer à chacun la
     /// navigation de tous ses voisins d'opérateur.
+    ///
+    /// ⚠️ LE PRÉFIXE DE CLÉ N'EST RETENU QUE SUR LE CHEMIN DE L'API PARTENAIRE.
+    ///
+    /// Il est lu dans un en-tête, donc il s'invente. L'accepter partout
+    /// permettrait de s'offrir une partition vierge sur N'IMPORTE QUELLE route —
+    /// catalogue, recherche, connexion — en ajoutant un « X-API-Key » bidon.
+    /// Restreint au chemin partenaire, il est encadré par le plafond par IP de la
+    /// politique chaînée ; ailleurs, on retombe sur le comportement d'origine.
     /// </summary>
     private static string PartitionKey(HttpContext httpContext)
     {
+        if (IsPartnerApi(httpContext))
+        {
+            var presented = httpContext.Request.Headers[PartnerApiKeyFilter.HeaderName].ToString();
+
+            // ExtractPrefix ne touche PAS la base : c'est une vérification de forme
+            // sur la chaîne présentée. Un flot de clés malformées est donc écarté
+            // ici sans coûter une requête PostgreSQL.
+            if (HBA.Deliveries.Domain.Partners.PartnerApiKey.ExtractPrefix(presented) is { } prefix)
+            {
+                return PartnerPartitionPrefix + prefix;
+            }
+        }
+
         var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? httpContext.User.FindFirstValue("sub");
 

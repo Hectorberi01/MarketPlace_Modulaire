@@ -42,6 +42,14 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     /// <summary>Lien de suivi cliquable, dérivé du transporteur du catalogue (null si aucun modèle).</summary>
     public string? TrackingUrl { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
+
+    /// <summary>
+    /// Quand le vendeur a déclaré le colis prêt. Sert à mesurer le délai de
+    /// préparation — le seul délai que le vendeur maîtrise, et donc le seul qu'on
+    /// puisse lui reprocher.
+    /// </summary>
+    public DateTime? ReadyForPickupAtUtc { get; private set; }
+
     public DateTime? ShippedAtUtc { get; private set; }
     public DateTime? DeliveredAtUtc { get; private set; }
 
@@ -83,13 +91,58 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     }
 
     /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// LE COLIS EST EMBALLÉ ET ATTEND UN LIVREUR.
+    ///
+    /// C'est le geste vendeur qui déclenche la recherche d'un coursier. L'état
+    /// est distinct de « en préparation » : celui-ci dit qu'on a commencé,
+    /// celui-là qu'on a fini. Le dispatch ne peut se fier qu'au second — sinon un
+    /// livreur part vers une boutique où l'on est encore en train d'emballer,
+    /// attend, et finit par refuser la course.
+    ///
+    /// ⚠️ AUCUN ÉVÉNEMENT N'EST LEVÉ SI L'EXPÉDITION Y EST DÉJÀ.
+    ///
+    /// Un vendeur appuie deux fois sur un bouton — c'est la règle, pas
+    /// l'exception, sur un téléphone en zone de mauvaise couverture. Sans cette
+    /// garde, chaque appui produirait un événement, donc une tentative de course
+    /// supplémentaire. La création de course est certes idempotente par
+    /// référence, mais s'appuyer sur la garde AVAL pour excuser un événement
+    /// dupliqué en AMONT, c'est laisser la duplication se propager jusqu'au
+    /// premier consommateur qui n'aura pas pensé à s'en protéger.
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public Result MarkReadyForPickup()
+    {
+        if (Status is ShipmentStatus.ReadyForPickup)
+        {
+            return Result.Success();
+        }
+
+        if (Status is not (ShipmentStatus.Pending or ShipmentStatus.Preparing))
+        {
+            return Result.Failure(Error.Conflict(
+                "shipping.invalid_transition",
+                "Seule une expédition en attente ou en préparation peut être déclarée prête à enlever."));
+        }
+
+        Status = ShipmentStatus.ReadyForPickup;
+        ReadyForPickupAtUtc = DateTime.UtcNow;
+        Raise(new ShipmentReadyForPickupDomainEvent(Id.Value, OrderId, SellerId, ShipFromLocationId));
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Marque « expédiée ». [trackingUrl] est le lien cliquable pré-calculé depuis le
     /// transporteur du catalogue (facultatif : null si le transporteur n'a pas de
     /// modèle d'URL, ou si le nom a été saisi librement).
+    ///
+    /// « Prête à enlever » y mène aussi : c'est le chemin normal quand la course
+    /// est confiée à HBA Delivery — le livreur collecte, et l'expédition passe en
+    /// transit sans jamais avoir vu de transporteur externe.
     /// </summary>
     public Result MarkShipped(string carrier, string trackingNumber, string? trackingUrl = null)
     {
-        if (Status is not (ShipmentStatus.Pending or ShipmentStatus.Preparing))
+        if (Status is not (ShipmentStatus.Pending or ShipmentStatus.Preparing or ShipmentStatus.ReadyForPickup))
         {
             return Result.Failure(Error.Conflict("shipping.invalid_transition", "L'expédition ne peut pas être expédiée dans cet état."));
         }

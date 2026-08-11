@@ -174,6 +174,11 @@ namespace Marketplace.Modules.Inventory.Infrastructure.Migrations
                                 .HasColumnType("character varying(40)")
                                 .HasColumnName("address_commune_code");
 
+                            b1.Property<string>("ContactPhone")
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("address_contact_phone");
+
                             b1.Property<string>("CountryCode")
                                 .IsRequired()
                                 .HasMaxLength(2)
@@ -194,14 +199,14 @@ namespace Marketplace.Modules.Inventory.Infrastructure.Migrations
                                 .HasColumnType("character varying(500)")
                                 .HasColumnName("address_line");
 
+                            b1.Property<double?>("Longitude")
+                                .HasColumnType("double precision")
+                                .HasColumnName("address_longitude");
+
                             b1.Property<string>("Quartier")
                                 .HasMaxLength(120)
                                 .HasColumnType("character varying(120)")
                                 .HasColumnName("address_quartier");
-
-                            b1.Property<double?>("Longitude")
-                                .HasColumnType("double precision")
-                                .HasColumnName("address_longitude");
 
                             b1.HasKey("FulfillmentLocationId");
 

@@ -34,6 +34,7 @@ using Marketplace.Modules.Fraud.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using HBA.Deliveries.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -188,6 +189,41 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RACCORDEMENT MARKETPLACE ↔ HBA DELIVERY.
+//
+// Ces adaptateurs sont enregistrés ICI, au composition root, et non dans un
+// module. Ils connaissent Shipping, Ordering, Inventory, Sellers ET Deliveries —
+// or aucun module n'a le droit d'en savoir autant :
+//
+//   • dans Deliveries, ils violeraient la règle qui lui interdit de dépendre de
+//     quoi que ce soit d'autre, celle qui le rend extractible et vendable ;
+//   • dans Shipping, ils forceraient Shipping à connaître HBA Delivery.
+//
+// Le couplage est inévitable — il faut bien que quelqu'un relie les deux mondes.
+// Il est simplement ISOLÉ dans Marketplace.Api/Integration, qu'on supprime pour
+// les détacher. C'est ce que vérifie DeliveriesBoundaryTests.
+// ─────────────────────────────────────────────────────────────────────────────
+builder.Services.AddScoped<
+    Marketplace.BuildingBlocks.IntegrationEvents.IIntegrationEventHandler<
+        Marketplace.Modules.Shipping.Contracts.IntegrationEvents.ShipmentReadyForPickupIntegrationEvent>,
+    Marketplace.Api.Integration.CreateDeliveryOnShipmentReadyHandler>();
+
+builder.Services.AddScoped<
+    Marketplace.BuildingBlocks.IntegrationEvents.IIntegrationEventHandler<
+        HBA.Deliveries.Contracts.IntegrationEvents.DeliveryCompletedIntegrationEvent>,
+    Marketplace.Api.Integration.MarkShipmentDeliveredOnDeliveryCompletedHandler>();
+
+builder.Services.AddScoped<
+    Marketplace.BuildingBlocks.IntegrationEvents.IIntegrationEventHandler<
+        HBA.Deliveries.Contracts.IntegrationEvents.DeliveryCancelledIntegrationEvent>,
+    Marketplace.Api.Integration.ResetShipmentOnDeliveryCancelledHandler>();
+
+builder.Services.AddScoped<
+    Marketplace.BuildingBlocks.IntegrationEvents.IIntegrationEventHandler<
+        HBA.Deliveries.Contracts.IntegrationEvents.DeliveryNoDriverAvailableIntegrationEvent>,
+    Marketplace.Api.Integration.AlertOnDeliveryNoDriverAvailableHandler>();
 
 var app = builder.Build();
 
@@ -371,6 +407,45 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
 
     var fraudDb = scope.ServiceProvider.GetRequiredService<FraudDbContext>();
     await fraudDb.Database.MigrateAsync();
+
+    // HBA Deliveries — moteur logistique de la v2 (schéma « deliveries »).
+    //
+    // ⚠️ Cette migration doit passer AVANT que le processeur d'outbox du module
+    // ne démarre : il interroge « deliveries.outbox_messages » toutes les cinq
+    // secondes, et une table absente le ferait échouer en boucle, sans que rien
+    // d'autre ne soit cassé — donc sans que personne ne le remarque.
+    var deliveriesDb = scope.ServiceProvider.GetRequiredService<DeliveriesDbContext>();
+    await deliveriesDb.Database.MigrateAsync();
+
+    // ── ZONES ET GRILLES TARIFAIRES ────────────────────────────────────────
+    // Sans elles, le module accepte les demandes, calcule les distances et
+    // refuse TOUS les devis (« pricing.no_rule ») : complet et inutilisable.
+    // C'est de la configuration d'exploitation, comme les rôles RBAC ci-dessus.
+    //
+    // IDEMPOTENT ET NON DESTRUCTIF : rien n'est jamais mis à jour. Un tarif
+    // ajusté depuis l'administration survit à tous les redéploiements.
+    var pricingSeed = await DeliveriesPricingSeeder.SeedAsync(deliveriesDb);
+
+    if (pricingSeed.DidNothing)
+    {
+        app.Logger.LogInformation(
+            "HBA Delivery : tarification déjà configurée ({Count} éléments trouvés) — rien n'a été modifié.",
+            pricingSeed.AlreadyPresent.Count);
+    }
+    else
+    {
+        // Les MONTANTS sont journalisés, pas seulement le nombre : ce sont des
+        // prix qui vont être facturés. Personne ne doit les découvrir sur une
+        // facture parce que le démarrage a dit « 4 grilles créées ».
+        app.Logger.LogWarning(
+            "HBA Delivery : tarification amorcée avec des valeurs PAR DÉFAUT, à valider commercialement.\n"
+            + "  Zones créées   : {Zones}\n"
+            + "  Grilles créées : {Rules}\n"
+            + "  Inchangés      : {Untouched}",
+            string.Join(" | ", pricingSeed.ZonesCreated),
+            string.Join(" | ", pricingSeed.RulesCreated),
+            pricingSeed.AlreadyPresent.Count == 0 ? "aucun" : string.Join(" | ", pricingSeed.AlreadyPresent));
+    }
 }
 
 // Swagger réservé au développement (pas d'exposition d'API en production).
@@ -427,6 +502,23 @@ app.MapMarketingEndpoints();
 app.MapRecommendationsEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapFraudEndpoints();
+
+// HBA Deliveries — API interne (console, application livreur), authentifiée par
+// jeton utilisateur.
+app.MapDeliveryEndpoints();
+
+// HBA Delivery — API PUBLIQUE partenaires, versionnée, authentifiée par CLÉ D'API.
+// Deux populations distinctes, deux mécaniques distinctes : voir PartnerApiKeyFilter.
+app.MapPartnerDeliveryEndpoints();
+
+// Administration des partenaires : c'est ici qu'on émet les clés qui ouvrent
+// l'API ci-dessus. Groupe ADMINISTRATEUR — un jeton acheteur est valide sur cette
+// API, et ne doit surtout pas suffire à émettre une clé.
+app.MapPartnerAdminEndpoints();
+
+// Zones et grilles tarifaires. Le facteur routier est conçu pour se CALIBRER avec
+// les courses réellement livrées ; sans ces routes, il ne s'ajustait qu'en base.
+app.MapDeliveryPricingAdminEndpoints();
 
 await app.RunAsync();
 

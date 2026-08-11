@@ -14,7 +14,7 @@ using Xunit;
 namespace Saga.IntegrationTests;
 
 /// <summary>
-/// Test de composition de bout en bout : monte le graphe DI des 25 modules
+/// Test de composition de bout en bout : monte le graphe DI des 26 modules
 /// (via ModuleRegistry, source unique de vérité du Bootstrap), applique TOUTES
 /// les migrations sur un vrai PostgreSQL, et résout des APIs inter-modules.
 ///
@@ -43,13 +43,34 @@ public sealed class FullCompositionTests : IAsyncLifetime
 
                 // Le module Identity REFUSE de s'installer sans clé de signature —
                 // c'est voulu : une clé absente en production signifierait des jetons
-                // signés avec un secret vide. Ce test compose les 25 modules, donc il
+                // signés avec un secret vide. Ce test compose les 26 modules, donc il
                 // doit fournir la clé comme le ferait un vrai hôte.
                 //
                 // Clé de test, jamais déployée. La longueur compte : HMAC-SHA256 exige
                 // au moins 32 octets, et un secret plus court fait lever la
                 // bibliothèque, pas notre code.
-                ["Jwt:SigningKey"] = "test-only-signing-key-at-least-32-bytes-long!!"
+                ["Jwt:SigningKey"] = "test-only-signing-key-at-least-32-bytes-long!!",
+
+                // ─────────────────────────────────────────────────────────────
+                // MÊME RAISON QUE LA CLÉ JWT : le module Deliveries REFUSE de
+                // s'installer sans Redis hors développement.
+                //
+                // Ce n'est pas une contrainte à contourner, c'est la garde qui
+                // empêche de déployer un dispatch cassé : les positions des
+                // livreurs vivent dans Redis, et deux instances sans cache
+                // partagé ne verraient chacune qu'une partie de la flotte.
+                //
+                // Ce test compose les 26 modules SANS Redis — il déclare donc
+                // qu'il est un environnement de développement, ce qu'il est. On
+                // ne relâche PAS la garde pour lui : la relâcher ferait passer le
+                // test le jour où la production démarrerait sans Redis.
+                //
+                // Les DEUX clés sont posées : un hôte web lit
+                // « ASPNETCORE_ENVIRONMENT », un hôte générique — ce test en est
+                // un — lit « DOTNET_ENVIRONMENT ».
+                // ─────────────────────────────────────────────────────────────
+                ["ASPNETCORE_ENVIRONMENT"] = "Development",
+                ["DOTNET_ENVIRONMENT"] = "Development"
             })
             .Build();
 
@@ -88,9 +109,24 @@ public sealed class FullCompositionTests : IAsyncLifetime
         await _postgres.DisposeAsync();
     }
 
+    /// <summary>
+    /// Nombre de modules composés. 25 marchands + HBA Delivery.
+    ///
+    /// ⚠️ CE NOMBRE EN DUR EST UNE SENTINELLE, PAS UNE CORVÉE.
+    ///
+    /// Il ne sert pas à compter : il sert à faire échouer la construction le jour
+    /// où un module DISPARAÎT du registre. Un module retiré par erreur d'un
+    /// ModuleRegistry ne casse rien d'autre — l'application démarre, ses routes
+    /// répondent 404, et personne ne s'en aperçoit avant qu'un client ne réclame.
+    ///
+    /// Le remplacer par « _dbContextTypes.Should().NotBeEmpty() » supprimerait ce
+    /// travail de mise à jour, et avec lui la seule chose que ce test protège.
+    /// </summary>
+    private const int ModulesComposes = 26;
+
     [Fact]
-    public void Les_25_modules_exposent_chacun_leur_DbContext()
-        => _dbContextTypes.Should().HaveCount(25);
+    public void Chaque_module_expose_son_DbContext()
+        => _dbContextTypes.Should().HaveCount(ModulesComposes);
 
     [Fact]
     public async Task Toutes_les_migrations_sappliquent_sans_erreur()

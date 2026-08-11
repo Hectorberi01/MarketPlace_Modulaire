@@ -19,6 +19,38 @@ internal sealed class InventoryModuleApi : IInventoryModuleApi
         _sender = sender;
     }
 
+    public async Task<FulfillmentLocationSummary?> GetLocationAsync(
+        Guid locationId, CancellationToken cancellationToken = default)
+    {
+        var location = await _dbContext.FulfillmentLocations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == new Domain.Locations.FulfillmentLocationId(locationId), cancellationToken);
+
+        if (location is null)
+        {
+            return null;
+        }
+
+        // ⚠️ Latitude et Longitude sont bien RECOPIÉES. La projection jumelle de
+        // ListFulfillmentLocationsQuery les écrasait autrefois par « null, null » :
+        // une saisie GPS ne survivait pas à sa propre relecture. Une projection
+        // écrite à un second endroit est l'occasion parfaite de refaire la même
+        // erreur — d'où ce rappel plutôt qu'un simple mapping muet.
+        return new FulfillmentLocationSummary(
+            location.Id.Value,
+            location.Type.ToString(),
+            location.OwnerId,
+            location.Address.CommuneCode,
+            location.Address.CommuneName,
+            location.Address.Quartier,
+            location.Address.Landmark,
+            location.Address.Line,
+            location.Address.CountryCode,
+            location.Address.Latitude,
+            location.Address.Longitude,
+            location.Address.ContactPhone);
+    }
+
     public async Task<AvailabilitySummary> GetAvailabilityAsync(string sku, CancellationToken cancellationToken = default)
     {
         var skuResult = Sku.Create(sku);

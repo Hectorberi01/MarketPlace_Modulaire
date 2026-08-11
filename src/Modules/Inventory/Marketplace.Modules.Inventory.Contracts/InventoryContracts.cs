@@ -26,4 +26,8 @@ public sealed record FulfillmentLocationSummary(
     string? Line,
     string CountryCode,
     double? Latitude,
-    double? Longitude);
+    double? Longitude,
+
+    // Numéro à composer sur place. C'est ce que le livreur utilise quand il ne
+    // trouve pas la boutique — le champ le plus rentable du formulaire.
+    string? ContactPhone = null);

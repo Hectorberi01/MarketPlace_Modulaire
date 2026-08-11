@@ -10,6 +10,12 @@ namespace Marketplace.Modules.Shipping.Application.Shipments.Commands;
 public sealed record MarkShipmentPreparingCommand(Guid ShipmentId) : ICommand;
 
 /// <summary>
+/// Le vendeur déclare le colis emballé et prêt à enlever. C'est ce geste qui
+/// déclenche la recherche d'un livreur.
+/// </summary>
+public sealed record MarkShipmentReadyForPickupCommand(Guid ShipmentId) : ICommand;
+
+/// <summary>
 /// Marque l'expédition « expédiée » (transporteur + numéro de suivi). Si [CarrierId]
 /// est fourni (transporteur du catalogue), il fait AUTORITÉ : son nom remplace le
 /// texte libre et son modèle d'URL produit le lien de suivi cliquable.
@@ -59,6 +65,16 @@ internal sealed class MarkShipmentPreparingCommandHandler : ShipmentCommandHandl
 
     public Task<Result> Handle(MarkShipmentPreparingCommand command, CancellationToken cancellationToken)
         => MutateAsync(command.ShipmentId, s => s.MarkPreparing(), cancellationToken);
+}
+
+internal sealed class MarkShipmentReadyForPickupCommandHandler
+    : ShipmentCommandHandlerBase, ICommandHandler<MarkShipmentReadyForPickupCommand>
+{
+    public MarkShipmentReadyForPickupCommandHandler(IShipmentRepository repository, IShippingUnitOfWork unitOfWork)
+        : base(repository, unitOfWork) { }
+
+    public Task<Result> Handle(MarkShipmentReadyForPickupCommand command, CancellationToken cancellationToken)
+        => MutateAsync(command.ShipmentId, s => s.MarkReadyForPickup(), cancellationToken);
 }
 
 internal sealed class MarkShipmentShippedCommandHandler : ShipmentCommandHandlerBase, ICommandHandler<MarkShipmentShippedCommand>

@@ -72,6 +72,16 @@
     <ProjectReference Include="..\..\src\Modules\Analytics\Marketplace.Modules.Analytics.Application\Marketplace.Modules.Analytics.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Fraud\Marketplace.Modules.Fraud.Domain\Marketplace.Modules.Fraud.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Fraud\Marketplace.Modules.Fraud.Application\Marketplace.Modules.Fraud.Application.csproj" />
+
+    <!--
+      HBA Delivery. Les quatre projets sont référencés, Infrastructure comprise :
+      c'est le seul module destiné à être vendu à des tiers, donc le seul dont
+      l'étanchéité est un argument commercial et pas seulement une hygiène.
+    -->
+    <ProjectReference Include="..\..\src\Modules\Delivery\HBA.Deliveries.Domain\HBA.Deliveries.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\HBA.Deliveries.Application\HBA.Deliveries.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\HBA.Deliveries.Contracts\HBA.Deliveries.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\HBA.Deliveries.Infrastructure\HBA.Deliveries.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

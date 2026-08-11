@@ -8,6 +8,17 @@ public interface IInventoryModuleApi
 {
     Task<AvailabilitySummary> GetAvailabilityAsync(string sku, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Un lieu d'expédition, par son identifiant. Nul s'il n'existe pas.
+    ///
+    /// Ajouté pour la logistique : le lieu d'expédition est le POINT DE COLLECTE
+    /// d'une course. On pouvait jusqu'ici lister les lieux d'un propriétaire, pas
+    /// en lire un seul — or l'expédition ne connaît que son identifiant, et
+    /// balayer tous les lieux d'un vendeur pour en retrouver un serait une lecture
+    /// large là où une lecture ponctuelle suffit.
+    /// </summary>
+    Task<FulfillmentLocationSummary?> GetLocationAsync(Guid locationId, CancellationToken cancellationToken = default);
+
     Task<bool> IsInStockAsync(string sku, int quantity, CancellationToken cancellationToken = default);
 
     /// <summary>Réserve du stock pour une commande (étape du Saga Ordering). Vrai si réussi.</summary>

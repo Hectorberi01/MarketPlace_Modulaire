@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\HBA.Deliveries.Domain\HBA.Deliveries.Domain.csproj" />
+    <ProjectReference Include="..\HBA.Deliveries.Contracts\HBA.Deliveries.Contracts.csproj" />
+    <ProjectReference Include="..\HBA.Deliveries.Application\HBA.Deliveries.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Infrastructure\Marketplace.BuildingBlocks.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- BackgroundService, pour la boucle de dispatch. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <!--
+      IHttpClientFactory, pour les webhooks partenaires. Même version centrale
+      que Payments, Catalog et Notifications, qui appellent aussi des tiers.
+
+      La FABRIQUE et non un HttpClient : construit à la main par appel, il épuise
+      les sockets ; en statique, il ne voit jamais un changement de DNS — ce qui
+      compte quand on appelle des hébergeurs de sites marchands.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+  </ItemGroup>
+
+</Project>

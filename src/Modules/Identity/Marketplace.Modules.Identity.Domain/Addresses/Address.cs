@@ -123,11 +123,18 @@ public sealed class Address : AggregateRoot<AddressId>
     /// dessus pour refuser le paiement, plutôt que d'envoyer un coursier chercher une
     /// maison sans repère et sans numéro à appeler.
     /// </summary>
+    /// <remarks>
+    /// ⚠️ <see cref="HasCoordinates"/> EN FAIT PARTIE DEPUIS LA TARIFICATION À LA
+    /// DISTANCE. C'est ce qui permet aux écrans de signaler une adresse ancienne
+    /// à compléter AVANT le passage en caisse, plutôt que de laisser l'acheteur
+    /// découvrir au moment de payer que sa livraison ne peut pas être chiffrée.
+    /// </remarks>
     public bool IsComplete =>
         !string.IsNullOrWhiteSpace(Recipient)
         && BeninGeography.IsValidPhone(Phone)
         && BeninGeography.IsKnownCommune(CommuneCode)
-        && !string.IsNullOrWhiteSpace(Landmark);
+        && !string.IsNullOrWhiteSpace(Landmark)
+        && HasCoordinates;
 
     public static Result<Address> Create(
         Guid userId, string? label, string? recipient, string? phone,
@@ -214,6 +221,35 @@ public sealed class Address : AggregateRoot<AddressId>
                 "Le point de repère est obligatoire (ex. « en face de la pharmacie Sainte-Rita »)."));
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // LA POSITION DEVIENT OBLIGATOIRE — À L'ÉCRITURE SEULEMENT.
+        //
+        // Elle était facultative, et pour de bonnes raisons : au Bénin un acheteur
+        // sur deux ne partage pas sa position, et le repère reste ce qu'un livreur
+        // utilise réellement pour trouver la porte.
+        //
+        // Mais la livraison est désormais TARIFÉE À LA DISTANCE. Sans les deux
+        // extrémités il n'y a ni kilomètres, ni zone, ni prix — donc pas de course
+        // du tout. Une adresse sans position n'est plus une adresse incomplète :
+        // c'est une adresse INLIVRABLE, et il vaut mieux le dire au moment de la
+        // saisie qu'au moment où le colis est prêt.
+        //
+        // ⚠️ CETTE GARDE NE S'APPLIQUE QU'À Create ET Update. Les adresses déjà
+        // enregistrées sont matérialisées par EF sans passer ici : elles restent
+        // lisibles, et leur propriétaire les corrigera à la première modification.
+        // Aucun remplissage automatique n'est fait — un centroïde de commune, dans
+        // le grand Cotonou, c'est plusieurs kilomètres d'erreur, donc un prix faux
+        // et un livreur envoyé au mauvais endroit.
+        // ─────────────────────────────────────────────────────────────────────
+        if (latitude is null || longitude is null)
+        {
+            return Result.Failure(Error.Validation(
+                "identity.address.position_required",
+                "La position est obligatoire : elle sert à calculer la distance, donc le prix de la "
+                + "livraison. Placez le point sur la carte, même approximativement — le point de repère "
+                + "reste ce qui permet au livreur de trouver la porte."));
+        }
+
         Label = Cap(Trim(label) ?? "Adresse", MaxLabel);
         Recipient = Cap(cleanRecipient, MaxRecipient);
         Phone = normalizedPhone;
@@ -223,11 +259,11 @@ public sealed class Address : AggregateRoot<AddressId>
         Line1 = Clean(line1, MaxLine);
         CountryCode = BeninGeography.CountryCode;
 
-        // Une coordonnée seule ne veut rien dire : on prend les deux ou aucune.
-        // Accepter une latitude sans longitude produirait un point sur le méridien
-        // de Greenwich, dans le golfe de Guinée — à 400 km de Cotonou.
-        Latitude = latitude is not null && longitude is not null ? latitude : null;
-        Longitude = Latitude is null ? null : longitude;
+        // Les deux sont désormais garanties non nulles par la garde ci-dessus. On
+        // garde l'affectation conjointe : c'est elle qui documente que ces deux
+        // champs ne se dissocient jamais.
+        Latitude = latitude;
+        Longitude = longitude;
 
         return Result.Success();
     }

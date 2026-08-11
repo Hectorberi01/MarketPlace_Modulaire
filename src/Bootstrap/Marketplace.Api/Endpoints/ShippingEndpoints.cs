@@ -21,6 +21,7 @@ public static class ShippingEndpoints
         shipments.MapGet("/order/{orderId:guid}", ListByOrderAsync).WithName("ListShipmentsByOrder");
         shipments.MapGet("/seller/{sellerId:guid}", ListBySellerAsync).WithName("ListShipmentsBySeller");
         shipments.MapPost("/{id:guid}/prepare", PrepareAsync).WithName("PrepareShipment");
+        shipments.MapPost("/{id:guid}/ready", ReadyAsync).WithName("ReadyShipmentForPickup");
         shipments.MapPost("/{id:guid}/ship", ShipAsync).WithName("ShipShipment");
         shipments.MapPost("/{id:guid}/deliver", DeliverAsync).WithName("DeliverShipment");
         shipments.MapPost("/{id:guid}/cancel", CancelAsync).WithName("CancelShipment");
@@ -50,6 +51,16 @@ public static class ShippingEndpoints
     }
 
     /// <summary>Marque l'expédition « en préparation ».</summary>
+    /// <summary>
+    /// Colis emballé, prêt à enlever. C'est ce geste qui déclenche la recherche
+    /// d'un livreur HBA Delivery.
+    /// </summary>
+    private static async Task<IResult> ReadyAsync(Guid id, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new MarkShipmentReadyForPickupCommand(id), ct);
+        return result.Match(() => Results.NoContent());
+    }
+
     private static async Task<IResult> PrepareAsync(Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new MarkShipmentPreparingCommand(id), ct);

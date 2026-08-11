@@ -43,6 +43,7 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
         services.AddScoped<ICarrierRepository, CarrierRepository>();
         services.AddScoped<IShippingModuleApi, ShippingModuleApi>();
 
+        services.AddScoped<IDomainEventHandler<ShipmentReadyForPickupDomainEvent>, ShipmentReadyForPickupDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ShipmentShippedDomainEvent>, ShipmentShippedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ShipmentDeliveredDomainEvent>, ShipmentDeliveredDomainEventHandler>();
 

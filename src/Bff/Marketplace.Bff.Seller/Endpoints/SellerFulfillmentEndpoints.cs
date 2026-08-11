@@ -25,6 +25,13 @@ public static class SellerFulfillmentEndpoints
         ship.MapGet("/by-order/{orderId:guid}", ByOrderAsync);
         ship.MapGet("/{id:guid}", GetAsync);
         ship.MapPost("/{id:guid}/prepare", PrepareAsync);
+
+        // Le geste qui déclenche la recherche d'un livreur. Distinct de
+        // « prepare » : celui-ci dit qu'on a commencé à emballer, celui-là qu'on a
+        // fini. Le dispatch ne peut se fier qu'au second — sinon le livreur arrive
+        // pendant l'emballage, attend, et finit par refuser la course.
+        ship.MapPost("/{id:guid}/ready", ReadyAsync);
+
         ship.MapPost("/{id:guid}/ship", ShipAsync);
         ship.MapPost("/{id:guid}/deliver", DeliverAsync);
         ship.MapPost("/{id:guid}/cancel", CancelAsync);
@@ -137,6 +144,16 @@ public static class SellerFulfillmentEndpoints
 
     private static async Task<IResult> PrepareAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentPreparingCommand(id), ct));
+
+    /// <summary>
+    /// Le vendeur déclare le colis emballé. Un livreur est alors cherché.
+    ///
+    /// Passe par le même garde de propriété que les autres : sans lui, un vendeur
+    /// pourrait déclarer prêt le colis d'un concurrent et faire partir un livreur
+    /// vers une boutique où personne n'attend.
+    /// </summary>
+    private static async Task<IResult> ReadyAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+        => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentReadyForPickupCommand(id), ct));
 
     private static async Task<IResult> ShipAsync(ClaimsPrincipal user, Guid id, ShipRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct,

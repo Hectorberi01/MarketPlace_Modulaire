@@ -18,7 +18,8 @@ public sealed record CreateFulfillmentLocationCommand(
     string? Landmark,
     string? Line,
     double? Latitude,
-    double? Longitude) : ICommand<Guid>;
+    double? Longitude,
+    string? ContactPhone = null) : ICommand<Guid>;
 
 public sealed class CreateFulfillmentLocationCommandValidator : AbstractValidator<CreateFulfillmentLocationCommand>
 {
@@ -55,7 +56,7 @@ internal sealed class CreateFulfillmentLocationCommandHandler : ICommandHandler<
 
         var addressResult = Address.Create(
             command.Commune, command.Quartier, command.Landmark, command.Line,
-            command.Latitude, command.Longitude);
+            command.Latitude, command.Longitude, command.ContactPhone);
         if (addressResult.IsFailure)
         {
             return Result.Failure<Guid>(addressResult.Error);
@@ -84,7 +85,8 @@ public sealed record UpdateLocationAddressCommand(
     string? Landmark,
     string? Line,
     double? Latitude,
-    double? Longitude) : ICommand;
+    double? Longitude,
+    string? ContactPhone = null) : ICommand;
 
 internal sealed class UpdateLocationAddressCommandHandler : ICommandHandler<UpdateLocationAddressCommand>
 {
@@ -107,7 +109,7 @@ internal sealed class UpdateLocationAddressCommandHandler : ICommandHandler<Upda
 
         var addressResult = Address.Create(
             command.Commune, command.Quartier, command.Landmark, command.Line,
-            command.Latitude, command.Longitude);
+            command.Latitude, command.Longitude, command.ContactPhone);
         if (addressResult.IsFailure)
         {
             return Result.Failure(addressResult.Error);

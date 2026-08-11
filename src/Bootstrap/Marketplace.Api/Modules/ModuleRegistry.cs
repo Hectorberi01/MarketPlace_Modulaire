@@ -1,3 +1,4 @@
+using HBA.Deliveries.Infrastructure;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.Modules.Billing.Infrastructure;
 using Marketplace.Modules.Catalog.Infrastructure;
@@ -60,7 +61,17 @@ public static class ModuleRegistry
         new MarketingModuleInstaller(),
         new RecommendationsModuleInstaller(),
         new AnalyticsModuleInstaller(),
-        new FraudModuleInstaller()
-        // ...
+        new FraudModuleInstaller(),
+
+        // ── HBA Deliveries ───────────────────────────────────────────────────
+        // Premier module de la v2, seul à suivre la convention « HBA.<Domaine
+        // au pluriel> » du cahier d'architecture. Moteur logistique commun à
+        // HBAExpress, HBA Food et aux partenaires externes : il ne connaît que
+        // des références opaques, jamais la nature de ce qu'il transporte.
+        //
+        // ⚠️ Exige Redis hors développement — les positions des livreurs y
+        // vivent. Sans lui, l'installer refuse de démarrer plutôt que de laisser
+        // un dispatch aveugle passer en production.
+        new DeliveriesModuleInstaller()
     };
 }

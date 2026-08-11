@@ -137,7 +137,7 @@ public static class InventoryEndpoints
     {
         var command = new CreateFulfillmentLocationCommand(
             request.Type, request.OwnerId, request.Commune, request.Quartier, request.Landmark,
-            request.Line, request.Latitude, request.Longitude);
+            request.Line, request.Latitude, request.Longitude, request.ContactPhone);
         var result = await sender.Send(command, ct);
         return result.Match(id => Results.Created($"/api/inventory/locations/{id}", new { id }));
     }
@@ -147,7 +147,7 @@ public static class InventoryEndpoints
     {
         var command = new UpdateLocationAddressCommand(
             id, request.Commune, request.Quartier, request.Landmark, request.Line,
-            request.Latitude, request.Longitude);
+            request.Latitude, request.Longitude, request.ContactPhone);
         var result = await sender.Send(command, ct);
         return result.Match(() => Results.NoContent());
     }
@@ -163,9 +163,9 @@ public static class InventoryEndpoints
     // « Commune » accepte le code (« abomey-calavi ») comme le libellé (« Abomey-Calavi »).
     public sealed record CreateLocationRequest(
         string Type, Guid? OwnerId, string? Commune, string? Quartier, string? Landmark,
-        string? Line, double? Latitude, double? Longitude);
+        string? Line, double? Latitude, double? Longitude, string? ContactPhone = null);
 
     public sealed record AddressRequest(
         string? Commune, string? Quartier, string? Landmark, string? Line,
-        double? Latitude, double? Longitude);
+        double? Latitude, double? Longitude, string? ContactPhone = null);
 }

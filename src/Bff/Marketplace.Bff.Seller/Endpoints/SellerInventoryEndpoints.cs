@@ -155,7 +155,7 @@ public static class SellerInventoryEndpoints
 
         var result = await sender.Send(new CreateFulfillmentLocationCommand(
             "SellerAddress", seller.Id, request.Commune, request.Quartier, request.Landmark,
-            request.Line, request.Latitude, request.Longitude), ct);
+            request.Line, request.Latitude, request.Longitude, request.ContactPhone), ct);
 
         return result.Match(id => Results.Ok(new { locationId = id }));
     }
@@ -276,9 +276,16 @@ public static class SellerInventoryEndpoints
 
     // « Commune » accepte indifféremment le code (« abomey-calavi ») ou le libellé
     // (« Abomey-Calavi ») : les consoles envoient le code, les imports des libellés.
+    /// <summary>
+    /// <c>Latitude</c>, <c>Longitude</c> et <c>ContactPhone</c> sont désormais
+    /// EXIGÉS par le domaine : sans position ni numéro joignable sur place, aucun
+    /// livreur ne peut être envoyé chercher les colis de cette boutique. Ils
+    /// restent nullables ici pour que l'omission produise un message métier clair
+    /// plutôt qu'un 400 de désérialisation.
+    /// </summary>
     public sealed record LocationRequest(
         string? Commune, string? Quartier, string? Landmark, string? Line,
-        double? Latitude, double? Longitude);
+        double? Latitude, double? Longitude, string? ContactPhone = null);
     public sealed record CreateItemRequest(string Sku, Guid LocationId, int OnHand, int ReorderThreshold);
     public sealed record QuantityRequest(int Quantity);
     public sealed record DeltaRequest(int Delta);

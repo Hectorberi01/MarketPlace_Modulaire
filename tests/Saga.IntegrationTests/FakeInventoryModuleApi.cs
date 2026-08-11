@@ -16,6 +16,18 @@ public sealed class FakeInventoryModuleApi : IInventoryModuleApi
     public Task<AvailabilitySummary> GetAvailabilityAsync(string sku, CancellationToken cancellationToken = default)
         => Task.FromResult(new AvailabilitySummary(sku, 100));
 
+    /// <summary>
+    /// La saga Ordering ne lit aucun lieu d'expédition : elle réserve, confirme et
+    /// libère du stock, rien de plus.
+    ///
+    /// On renvoie donc « introuvable » plutôt qu'un lieu inventé. Un faux lieu, avec
+    /// une fausse position, ferait passer un test qui n'exerce pas ce chemin — et
+    /// masquerait le jour où la saga se mettrait réellement à en dépendre.
+    /// </summary>
+    public Task<FulfillmentLocationSummary?> GetLocationAsync(
+        Guid locationId, CancellationToken cancellationToken = default)
+        => Task.FromResult<FulfillmentLocationSummary?>(null);
+
     public Task<bool> IsInStockAsync(string sku, int quantity, CancellationToken cancellationToken = default)
         => Task.FromResult(true);
 

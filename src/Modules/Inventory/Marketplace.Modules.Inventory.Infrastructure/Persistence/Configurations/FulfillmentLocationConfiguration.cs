@@ -30,6 +30,7 @@ internal sealed class FulfillmentLocationConfiguration : IEntityTypeConfiguratio
             address.Property(a => a.CountryCode).HasColumnName("address_country_code").HasMaxLength(2).IsRequired();
             address.Property(a => a.Latitude).HasColumnName("address_latitude");
             address.Property(a => a.Longitude).HasColumnName("address_longitude");
+            address.Property(a => a.ContactPhone).HasColumnName("address_contact_phone").HasMaxLength(20);
             address.Ignore(a => a.CommuneName);
         });
         builder.Navigation(l => l.Address).IsRequired();

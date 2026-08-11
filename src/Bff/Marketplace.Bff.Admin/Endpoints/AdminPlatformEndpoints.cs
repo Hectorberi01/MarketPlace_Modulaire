@@ -192,7 +192,7 @@ public static class AdminPlatformEndpoints
     private static async Task<IResult> CreateLocationAsync(LocationRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new CreateFulfillmentLocationCommand(
                 request.Type, request.OwnerId, request.Commune, request.Quartier, request.Landmark,
-                request.Line, request.Latitude, request.Longitude), ct))
+                request.Line, request.Latitude, request.Longitude, request.ContactPhone), ct))
             .Match(id => Results.Ok(new { locationId = id }));
 
     private static async Task<IResult> ListLocationsAsync(ISender sender, CancellationToken ct)
@@ -201,7 +201,7 @@ public static class AdminPlatformEndpoints
     private static async Task<IResult> UpdateLocationAsync(Guid id, LocationRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new UpdateLocationAddressCommand(
                 id, request.Commune, request.Quartier, request.Landmark, request.Line,
-                request.Latitude, request.Longitude), ct))
+                request.Latitude, request.Longitude, request.ContactPhone), ct))
             .Match(() => Results.NoContent());
 
     private static async Task<IResult> DeleteLocationAsync(Guid id, ISender sender, CancellationToken ct)
@@ -227,9 +227,15 @@ public static class AdminPlatformEndpoints
     public sealed record AssessRiskRequest(string SubjectType, Guid SubjectId, IReadOnlyDictionary<string, double> Signals);
     // « Commune » accepte indifféremment le code (« abomey-calavi ») ou le libellé
     // (« Abomey-Calavi ») : les consoles envoient le code, les imports des libellés.
+    /// <summary>
+    /// <c>Latitude</c>, <c>Longitude</c> et <c>ContactPhone</c> sont désormais
+    /// EXIGÉS par le domaine : un lieu d'expédition sans position ni numéro ne
+    /// peut recevoir aucun livreur. Ils restent nullables ici pour que l'omission
+    /// produise un message métier clair plutôt qu'un 400 de désérialisation.
+    /// </summary>
     public sealed record LocationRequest(
         string Type, Guid? OwnerId, string? Commune, string? Quartier, string? Landmark,
-        string? Line, double? Latitude, double? Longitude);
+        string? Line, double? Latitude, double? Longitude, string? ContactPhone = null);
     public sealed record NotificationRequest(Guid RecipientUserId, string? Channel, string Subject, string Body);
     public sealed record QuantityRequest(int Quantity);
     public sealed record DeltaRequest(int Delta);
