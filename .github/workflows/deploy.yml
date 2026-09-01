@@ -12,7 +12,7 @@ name: Backend · build & deploy
 #   DEPLOY_SSH_KEY_PROD     clé privée SSH autorisée sur le VPS de production
 #   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible (commun aux deux)
 #
-# ⚠️ UNE CLÉ PAR ENVIRONNEMENT, ET C'EST DÉLIBÉRÉ.
+# UNE CLÉ PAR ENVIRONNEMENT, ET C'EST DÉLIBÉRÉ.
 #
 # Un secret unique `DEPLOY_SSH_KEY` servait auparavant aux deux cibles. Deux
 # serveurs, deux hébergeurs (Hetzner pour la recette, OVH pour la production),

@@ -81,8 +81,8 @@ terminal_subdomain: "terminal"
 # Le VPS OVH écoute le SSH sur 8022 et n'autorise pas root : wetty se connecte en
 # « ubuntu » (shell sudo-capable). La clé publique ci-dessous est ajoutée aux
 # authorized_keys de cet utilisateur par le rôle.
-terminal_ssh_user: "ubuntu"
-terminal_ssh_port: "8022"
+terminal_ssh_user: "root"
+terminal_ssh_port: "22"
 
 terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
 

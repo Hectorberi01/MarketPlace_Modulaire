@@ -8,7 +8,7 @@
 # le mot de passe ci-dessous : `env.j2` construit MARKETPLACE_CONNECTION tout seul
 # (host = service `postgres`). Ne pas définir `marketplace_connection` dans ce cas.
 #
-# ⚠️ CETTE VARIABLE COMMANDE PLUS QUE LE MOT DE PASSE.
+# CETTE VARIABLE COMMANDE PLUS QUE LE MOT DE PASSE.
 #
 # Sa seule présence conditionne trois comportements des rôles Ansible :
 #   • `env.j2` émet les POSTGRES_* et construit la chaîne de connexion locale ;
