@@ -3,30 +3,32 @@ using Marketplace.Modules.Settlement.Domain.Wallets;
 
 namespace Marketplace.Modules.Settlement.Infrastructure.Persistence;
 
-internal sealed class SellerWalletRepository : ISellerWalletRepository
+internal sealed class WalletRepository : IWalletRepository
 {
     private readonly SettlementDbContext _dbContext;
 
-    public SellerWalletRepository(SettlementDbContext dbContext) => _dbContext = dbContext;
+    public WalletRepository(SettlementDbContext dbContext) => _dbContext = dbContext;
 
-    public async Task<SellerWallet?> GetBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
-        => await _dbContext.SellerWallets.FirstOrDefaultAsync(w => w.SellerId == sellerId, cancellationToken);
+    // SUIVI EF ACTIVÉ, ET LES SOLDES CHARGÉS AVEC. Un portefeuille n'est jamais lu pour
+    // être seulement regardé : il est lu pour être modifié, et modifier un solde exige
+    // que la collection d'entités enfants soit là. Un Include oublié ici donnerait un
+    // agrégat aux comptes vides, donc des crédits silencieusement perdus.
+    public async Task<Wallet?> GetAsync(
+        WalletOwnerType ownerType, Guid ownerId, CancellationToken cancellationToken = default)
+        => await _dbContext.Wallets
+            .Include(w => w.Accounts)
+            .FirstOrDefaultAsync(w => w.OwnerType == ownerType && w.OwnerId == ownerId, cancellationToken);
 
-    public async Task AddAsync(SellerWallet wallet, CancellationToken cancellationToken = default)
-        => await _dbContext.SellerWallets.AddAsync(wallet, cancellationToken);
-}
+    public async Task<Wallet?> GetByIdAsync(WalletId id, CancellationToken cancellationToken = default)
+        => await _dbContext.Wallets
+            .Include(w => w.Accounts)
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
-internal sealed class PlatformWalletRepository : IPlatformWalletRepository
-{
-    private readonly SettlementDbContext _dbContext;
+    public Task<Wallet?> GetPlatformAsync(CancellationToken cancellationToken = default)
+        => GetAsync(WalletOwnerType.Platform, Wallet.PlatformOwnerId, cancellationToken);
 
-    public PlatformWalletRepository(SettlementDbContext dbContext) => _dbContext = dbContext;
-
-    public async Task<PlatformWallet?> GetAsync(CancellationToken cancellationToken = default)
-        => await _dbContext.PlatformWallets.FirstOrDefaultAsync(w => w.Id == PlatformWallet.SingletonId, cancellationToken);
-
-    public async Task AddAsync(PlatformWallet wallet, CancellationToken cancellationToken = default)
-        => await _dbContext.PlatformWallets.AddAsync(wallet, cancellationToken);
+    public async Task AddAsync(Wallet wallet, CancellationToken cancellationToken = default)
+        => await _dbContext.Wallets.AddAsync(wallet, cancellationToken);
 }
 
 internal sealed class WithdrawalRepository : IWithdrawalRepository
@@ -38,10 +40,11 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
     public async Task AddAsync(Withdrawal withdrawal, CancellationToken cancellationToken = default)
         => await _dbContext.Withdrawals.AddAsync(withdrawal, cancellationToken);
 
-    public async Task<IReadOnlyList<Withdrawal>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Withdrawal>> ListByOwnerAsync(
+        WalletOwnerType ownerType, Guid ownerId, CancellationToken cancellationToken = default)
         => await _dbContext.Withdrawals
             .AsNoTracking()
-            .Where(w => w.SellerId == sellerId)
+            .Where(w => w.OwnerType == ownerType && w.OwnerId == ownerId)
             .OrderByDescending(w => w.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -49,10 +52,11 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
     public async Task<Withdrawal?> GetByIdAsync(WithdrawalId id, CancellationToken cancellationToken = default)
         => await _dbContext.Withdrawals.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
-    public async Task<IReadOnlyList<Withdrawal>> ListByStatusAsync(WithdrawalStatus status, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Withdrawal>> ListByStatusAsync(
+        WithdrawalStatus status, WalletOwnerType? ownerType = null, CancellationToken cancellationToken = default)
         => await _dbContext.Withdrawals
             .AsNoTracking()
-            .Where(w => w.Status == status)
+            .Where(w => w.Status == status && (ownerType == null || w.OwnerType == ownerType))
             .OrderBy(w => w.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -134,5 +138,25 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
 
         return await _dbContext.WalletTransactions
             .AnyAsync(t => t.ReferenceType == referenceType && t.ReferenceId == referenceId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Somme signée des écritures d'un compte. Calculée EN BASE, pas en mémoire : un
+    /// portefeuille actif accumule des milliers de lignes, et ce contrôle a vocation à
+    /// tourner sur l'ensemble des portefeuilles.
+    /// </summary>
+    public async Task<decimal> SumForAccountAsync(
+        Guid ownerId, WalletOwnerType ownerType, WalletAccount account, CancellationToken cancellationToken = default)
+    {
+        var rows = _dbContext.WalletTransactions
+            .Where(t => t.OwnerId == ownerId && t.OwnerType == ownerType && t.Account == account);
+
+        var credits = await rows.Where(t => t.Direction == WalletDirection.Credit)
+            .SumAsync(t => (decimal?)t.Amount, cancellationToken) ?? 0m;
+
+        var debits = await rows.Where(t => t.Direction == WalletDirection.Debit)
+            .SumAsync(t => (decimal?)t.Amount, cancellationToken) ?? 0m;
+
+        return credits - debits;
     }
 }

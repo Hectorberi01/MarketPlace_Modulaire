@@ -33,11 +33,18 @@ public sealed record ListPlatformWalletTransactionsQuery(int Take = 50) : IQuery
 
 internal static class WalletMapper
 {
-    public static SellerWalletView ToView(SellerWallet w, decimal pendingWithdrawal)
-        => new(w.SellerId, w.PendingBalance, w.AvailableBalance, pendingWithdrawal, w.Currency);
+    /// <summary>
+    /// Vue vendeur, projetée depuis le portefeuille générique. Le contrat public ne bouge
+    /// pas — les applications déjà déployées lisent les mêmes champs qu'avant — mais il
+    /// n'est plus le reflet direct d'une classe : c'est une projection de comptes nommés.
+    /// </summary>
+    public static SellerWalletView ToSellerView(Wallet w, decimal pendingWithdrawal)
+        => new(w.OwnerId, w.Balance(WalletAccount.Pending), w.Balance(WalletAccount.Available),
+               pendingWithdrawal, w.Currency);
 
-    public static PlatformWalletView ToView(PlatformWallet w)
-        => new(w.CommissionBalance, w.ProviderFeeBalance, w.ShippingBalance, w.RefundsBalance, w.Currency);
+    public static PlatformWalletView ToPlatformView(Wallet w)
+        => new(w.Balance(WalletAccount.Commission), w.Balance(WalletAccount.Provider),
+               w.Balance(WalletAccount.Shipping), w.Balance(WalletAccount.Refunds), w.Currency);
 
     public static CustomerRefundView ToView(CustomerRefund r)
         => new(r.Id.Value, r.OrderId, r.BuyerId, r.Amount, r.Currency, r.Reason, r.Msisdn, r.Provider,
@@ -47,7 +54,7 @@ internal static class WalletMapper
         => new(t.Id, t.Account.ToString(), t.Direction.ToString(), t.Amount, t.Currency, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAtUtc);
 
     public static WithdrawalView ToView(Withdrawal w)
-        => new(w.Id.Value, w.SellerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef,
+        => new(w.Id.Value, w.OwnerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef,
                PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);
 
     /// <summary>
@@ -79,10 +86,10 @@ internal static class WalletMapper
 
 internal sealed class GetSellerWalletQueryHandler : IQueryHandler<GetSellerWalletQuery, SellerWalletView>
 {
-    private readonly ISellerWalletRepository _wallets;
+    private readonly IWalletRepository _wallets;
     private readonly IWithdrawalRepository _withdrawals;
 
-    public GetSellerWalletQueryHandler(ISellerWalletRepository wallets, IWithdrawalRepository withdrawals)
+    public GetSellerWalletQueryHandler(IWalletRepository wallets, IWithdrawalRepository withdrawals)
     {
         _wallets = wallets;
         _withdrawals = withdrawals;
@@ -90,19 +97,19 @@ internal sealed class GetSellerWalletQueryHandler : IQueryHandler<GetSellerWalle
 
     public async Task<Result<SellerWalletView>> Handle(GetSellerWalletQuery query, CancellationToken cancellationToken)
     {
-        var wallet = await _wallets.GetBySellerAsync(query.SellerId, cancellationToken);
+        var wallet = await _wallets.GetAsync(WalletOwnerType.Seller, query.SellerId, cancellationToken);
 
         // Somme retenue : retraits demandés (attente admin) ET versements en cours chez le
         // PSP. Les deux ont déjà quitté le solde principal. Omettre les seconds ferait
         // disparaître l'argent de l'écran du vendeur pendant tout le versement.
-        var pendingWithdrawal = (await _withdrawals.ListBySellerAsync(query.SellerId, cancellationToken))
+        var pendingWithdrawal = (await _withdrawals.ListByOwnerAsync(WalletOwnerType.Seller, query.SellerId, cancellationToken))
             .Where(w => w.Status is WithdrawalStatus.Requested or WithdrawalStatus.Processing)
             .Sum(w => w.Amount);
 
         // Portefeuille pas encore créé (aucune vente confirmée) : soldes à zéro.
         return wallet is null
             ? new SellerWalletView(query.SellerId, 0m, 0m, pendingWithdrawal, "XOF")
-            : WalletMapper.ToView(wallet, pendingWithdrawal);
+            : WalletMapper.ToSellerView(wallet, pendingWithdrawal);
     }
 }
 
@@ -128,7 +135,7 @@ internal sealed class ListWithdrawalsQueryHandler : IQueryHandler<ListWithdrawal
 
     public async Task<Result<IReadOnlyList<WithdrawalView>>> Handle(ListWithdrawalsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _withdrawals.ListBySellerAsync(query.SellerId, cancellationToken);
+        var items = await _withdrawals.ListByOwnerAsync(WalletOwnerType.Seller, query.SellerId, cancellationToken);
         IReadOnlyList<WithdrawalView> views = items.Select(WalletMapper.ToView).ToList();
         return Result.Success(views);
     }
@@ -147,15 +154,18 @@ internal sealed class ListPendingWithdrawalsQueryHandler : IQueryHandler<ListPen
 
     public async Task<Result<IReadOnlyList<PendingWithdrawalView>>> Handle(ListPendingWithdrawalsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _withdrawals.ListByStatusAsync(WithdrawalStatus.Requested, cancellationToken);
+        // Filtré sur les vendeurs : la file admin actuelle est la leur. Les retraits
+        // livreur et client auront leurs propres écrans, avec leurs propres contrôles.
+        var items = await _withdrawals.ListByStatusAsync(
+            WithdrawalStatus.Requested, WalletOwnerType.Seller, cancellationToken);
 
         var views = new List<PendingWithdrawalView>();
         foreach (var w in items)
         {
-            var seller = await _sellers.GetSellerAsync(w.SellerId, cancellationToken);
+            var seller = await _sellers.GetSellerAsync(w.OwnerId, cancellationToken);
             views.Add(new PendingWithdrawalView(
                 w.Id.Value,
-                w.SellerId,
+                w.OwnerId,
                 string.IsNullOrWhiteSpace(seller?.ShopName) ? "Vendeur" : seller!.ShopName,
                 w.Amount,
                 w.Currency,
@@ -181,15 +191,16 @@ internal sealed class ListProcessingWithdrawalsQueryHandler : IQueryHandler<List
 
     public async Task<Result<IReadOnlyList<ProcessingWithdrawalView>>> Handle(ListProcessingWithdrawalsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _withdrawals.ListByStatusAsync(WithdrawalStatus.Processing, cancellationToken);
+        var items = await _withdrawals.ListByStatusAsync(
+            WithdrawalStatus.Processing, WalletOwnerType.Seller, cancellationToken);
 
         var views = new List<ProcessingWithdrawalView>();
         foreach (var w in items)
         {
-            var seller = await _sellers.GetSellerAsync(w.SellerId, cancellationToken);
+            var seller = await _sellers.GetSellerAsync(w.OwnerId, cancellationToken);
             views.Add(new ProcessingWithdrawalView(
                 w.Id.Value,
-                w.SellerId,
+                w.OwnerId,
                 string.IsNullOrWhiteSpace(seller?.ShopName) ? "Vendeur" : seller!.ShopName,
                 w.Amount,
                 w.Currency,
@@ -207,16 +218,16 @@ internal sealed class ListProcessingWithdrawalsQueryHandler : IQueryHandler<List
 
 internal sealed class GetPlatformWalletQueryHandler : IQueryHandler<GetPlatformWalletQuery, PlatformWalletView>
 {
-    private readonly IPlatformWalletRepository _wallets;
+    private readonly IWalletRepository _wallets;
 
-    public GetPlatformWalletQueryHandler(IPlatformWalletRepository wallets) => _wallets = wallets;
+    public GetPlatformWalletQueryHandler(IWalletRepository wallets) => _wallets = wallets;
 
     public async Task<Result<PlatformWalletView>> Handle(GetPlatformWalletQuery query, CancellationToken cancellationToken)
     {
-        var wallet = await _wallets.GetAsync(cancellationToken);
+        var wallet = await _wallets.GetPlatformAsync(cancellationToken);
         return wallet is null
             ? new PlatformWalletView(0m, 0m, 0m, 0m, "XOF")
-            : WalletMapper.ToView(wallet);
+            : WalletMapper.ToPlatformView(wallet);
     }
 }
 
@@ -228,7 +239,7 @@ internal sealed class ListPlatformWalletTransactionsQueryHandler : IQueryHandler
 
     public async Task<Result<IReadOnlyList<WalletTransactionView>>> Handle(ListPlatformWalletTransactionsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _ledger.ListByOwnerAsync(PlatformWallet.SingletonId, query.Take, cancellationToken);
+        var items = await _ledger.ListByOwnerAsync(Wallet.PlatformOwnerId, query.Take, cancellationToken);
         IReadOnlyList<WalletTransactionView> views = items.Select(WalletMapper.ToView).ToList();
         return Result.Success(views);
     }

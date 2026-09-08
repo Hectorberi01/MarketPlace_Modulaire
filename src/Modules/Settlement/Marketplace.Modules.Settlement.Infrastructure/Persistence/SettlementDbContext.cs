@@ -24,8 +24,8 @@ public sealed class SettlementDbContext : ModuleDbContext, ISettlementUnitOfWork
 
     public DbSet<SellerEarning> Earnings => Set<SellerEarning>();
     public DbSet<SettlementBatch> Batches => Set<SettlementBatch>();
-    public DbSet<SellerWallet> SellerWallets => Set<SellerWallet>();
-    public DbSet<PlatformWallet> PlatformWallets => Set<PlatformWallet>();
+    public DbSet<Wallet> Wallets => Set<Wallet>();
+    public DbSet<WalletAccountBalance> WalletAccounts => Set<WalletAccountBalance>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
     public DbSet<CustomerRefund> CustomerRefunds => Set<CustomerRefund>();
     public DbSet<WalletTransaction> WalletTransactions => Set<WalletTransaction>();

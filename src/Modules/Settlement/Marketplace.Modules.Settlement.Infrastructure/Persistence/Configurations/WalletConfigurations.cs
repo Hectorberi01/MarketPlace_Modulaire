@@ -5,110 +5,105 @@ using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 
 namespace Marketplace.Modules.Settlement.Infrastructure.Persistence.Configurations;
 
-internal sealed class SellerWalletConfiguration : IEntityTypeConfiguration<SellerWallet>
+internal sealed class WalletConfiguration : IEntityTypeConfiguration<Wallet>
 {
-    public void Configure(EntityTypeBuilder<SellerWallet> builder)
+    public void Configure(EntityTypeBuilder<Wallet> builder)
     {
-
         // ═════════════════════════════════════════════════════════════════════
-        // VERROU OPTIMISTE — SANS LUI, UN VENDEUR PEUT SE FAIRE VERSER 5× SON SOLDE.
+        // VERROU OPTIMISTE — SANS LUI, UN VENDEUR PEUT SE FAIRE VERSER 5x SON SOLDE.
         //
-        // `Withdraw()` lit le solde, le vérifie, le soustrait. Cinq requêtes de retrait
-        // en parallèle lisent toutes le MÊME solde, passent toutes le contrôle, et
-        // créent CINQ demandes complètes. À l'approbation, cinq versements partent pour
-        // un seul solde. C'est de l'argent réel, et le bug est trivial à déclencher.
+        // Un retrait lit le solde, le vérifie, le soustrait. Cinq requêtes en parallèle
+        // lisent toutes le MÊME solde, passent toutes le contrôle, et créent cinq
+        // demandes complètes. À l'approbation, cinq versements partent pour un seul
+        // solde. C'est de l'argent réel, et le bug est trivial à déclencher.
         //
-        // (`UsePostgresRowVersion` — l'API Npgsql `UseXminAsConcurrencyToken` est dépréciée
-        //  et casse la build en « warnings = errors » ; notre extension fait exactement
-        //  ce qu'elle faisait. Voir ConcurrencyTokenExtensions.)
+        // Le portefeuille plateforme a la même exigence pour une autre raison : il est
+        // écrit par tous les flux à la fois (commission, frais, contre-passations), et
+        // deux écritures simultanées sans verrou s'écrasent — une commission encaissée
+        // disparaît des comptes.
+        //
+        // (`UsePostgresRowVersion` — l'API Npgsql `UseXminAsConcurrencyToken` est
+        //  dépréciée et casse la build en « warnings = errors » ; notre extension fait
+        //  exactement ce qu'elle faisait. Voir ConcurrencyTokenExtensions.)
         //
         // `xmin` est une colonne SYSTÈME de PostgreSQL : elle existe déjà sur chaque
         // ligne et porte le numéro de la transaction qui l'a écrite en dernier. On ne
-        // l'ajoute pas, on la LIT. Rien à changer dans le modèle de domaine.
+        // l'ajoute pas, on la LIT.
         //
-        // EF l'inclut désormais dans la clause WHERE de chaque UPDATE. Si une autre
-        // transaction a modifié la ligne entre-temps, l'UPDATE touche 0 ligne et EF
-        // lève `DbUpdateConcurrencyException` — traduite en 409 (voir
-        // ConcurrencyExceptionHandler).
+        // AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ. ModuleDbContext dispatche les
+        // événements de domaine AVANT base.SaveChangesAsync et draine l'outbox : rejouer
+        // la commande dans le MÊME scope dupliquerait les messages. On échoue franchement
+        // en 409, et le client rejoue avec une requête neuve.
         //
-        // ⚠️ AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
-        //
-        // ModuleDbContext dispatche les événements de domaine AVANT
-        // base.SaveChangesAsync, et draine les événements d'intégration vers l'outbox.
-        // Rejouer la commande dans le MÊME scope re-dispatcherait ces événements et
-        // dupliquerait les messages d'outbox. On échoue donc franchement en 409 ; le
-        // client rejoue avec une requête neuve (les PSP le font d'eux-mêmes sur leurs
-        // webhooks).
+        // LE VERROU PORTE SUR L'AGRÉGAT, PAS SUR LA LIGNE DE SOLDE. Deux mouvements
+        // concurrents sur deux comptes DIFFÉRENTS du même portefeuille entrent donc en
+        // conflit. C'est voulu : ces comptes se lisent ensemble (« ai-je de quoi
+        // retirer ? » regarde le disponible après libération du à-venir), et un verrou
+        // par compte laisserait passer précisément les courses que celui-ci ferme.
         // ═════════════════════════════════════════════════════════════════════
         builder.UsePostgresRowVersion();
-        builder.ToTable("seller_wallets");
+        builder.ToTable("wallets");
         builder.HasKey(w => w.Id);
+
         builder.Property(w => w.Id)
-            .HasConversion(id => id.Value, value => new SellerWalletId(value))
+            .HasConversion(id => id.Value, value => new WalletId(value))
             .ValueGeneratedNever();
 
-        builder.Property(w => w.SellerId).IsRequired();
+        builder.Property(w => w.OwnerType).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(w => w.OwnerId).IsRequired();
         builder.Property(w => w.Currency).HasMaxLength(3).IsRequired();
-        builder.Property(w => w.PendingBalance).HasColumnType("numeric(18,2)").IsRequired();
-        builder.Property(w => w.AvailableBalance).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.CreatedAtUtc).IsRequired();
         builder.Property(w => w.UpdatedAtUtc).IsRequired();
 
-        builder.HasIndex(w => w.SellerId).IsUnique();
+        // UN SEUL PORTEFEUILLE PAR COUPLE (TYPE, PROPRIÉTAIRE) — et pas par propriétaire
+        // seul : rien n'interdit qu'un même compte utilisateur soit à la fois acheteur et
+        // livreur, et ce sont alors deux portefeuilles aux règles différentes.
+        builder.HasIndex(w => new { w.OwnerType, w.OwnerId }).IsUnique();
+
+        builder.HasMany(w => w.Accounts)
+            .WithOne()
+            .HasForeignKey("WalletId")
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(w => w.Accounts).UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.Ignore(w => w.DomainEvents);
     }
 }
 
-internal sealed class PlatformWalletConfiguration : IEntityTypeConfiguration<PlatformWallet>
+internal sealed class WalletAccountBalanceConfiguration : IEntityTypeConfiguration<WalletAccountBalance>
 {
-    public void Configure(EntityTypeBuilder<PlatformWallet> builder)
+    public void Configure(EntityTypeBuilder<WalletAccountBalance> builder)
     {
+        builder.ToTable("wallet_accounts");
+        builder.HasKey(a => a.Id);
+        builder.Property(a => a.Id).ValueGeneratedNever();
 
-        // ═════════════════════════════════════════════════════════════════════
-        // VERROU OPTIMISTE — le portefeuille plateforme est écrit par tous les flux (commission,
-        // frais, contre-passations). Sans verrou, deux écritures simultanées s'écrasent :
-        // une commission encaissée disparaît des comptes.
-        //
-        // (`UsePostgresRowVersion` — l'API Npgsql `UseXminAsConcurrencyToken` est dépréciée
-        //  et casse la build en « warnings = errors » ; notre extension fait exactement
-        //  ce qu'elle faisait. Voir ConcurrencyTokenExtensions.)
-        //
-        // `xmin` est une colonne SYSTÈME de PostgreSQL : elle existe déjà sur chaque
-        // ligne et porte le numéro de la transaction qui l'a écrite en dernier. On ne
-        // l'ajoute pas, on la LIT. Rien à changer dans le modèle de domaine.
-        //
-        // EF l'inclut désormais dans la clause WHERE de chaque UPDATE. Si une autre
-        // transaction a modifié la ligne entre-temps, l'UPDATE touche 0 ligne et EF
-        // lève `DbUpdateConcurrencyException` — traduite en 409 (voir
-        // ConcurrencyExceptionHandler).
-        //
-        // ⚠️ AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
-        //
-        // ModuleDbContext dispatche les événements de domaine AVANT
-        // base.SaveChangesAsync, et draine les événements d'intégration vers l'outbox.
-        // Rejouer la commande dans le MÊME scope re-dispatcherait ces événements et
-        // dupliquerait les messages d'outbox. On échoue donc franchement en 409 ; le
-        // client rejoue avec une requête neuve (les PSP le font d'eux-mêmes sur leurs
-        // webhooks).
-        // ═════════════════════════════════════════════════════════════════════
-        builder.UsePostgresRowVersion();
-        builder.ToTable("platform_wallet");
-        builder.HasKey(w => w.Id);
-        builder.Property(w => w.Id).ValueGeneratedNever();
+        builder.Property(a => a.Account).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(a => a.Balance).HasColumnType("numeric(18,2)").IsRequired();
 
-        builder.Property(w => w.Currency).HasMaxLength(3).IsRequired();
-        builder.Property(w => w.CommissionBalance).HasColumnType("numeric(18,2)").IsRequired();
-        builder.Property(w => w.ProviderFeeBalance).HasColumnType("numeric(18,2)").IsRequired();
-        builder.Property(w => w.ShippingBalance).HasColumnType("numeric(18,2)").IsRequired();
-        // Total reversé aux clients en remboursements directs. `HasDefaultValue(0)` : les
-        // lignes existantes (une seule, le singleton) prennent 0 à l'application de la migration.
-        builder.Property(w => w.RefundsBalance).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
-        builder.Property(w => w.UpdatedAtUtc).IsRequired();
+        // LA CLÉ ÉTRANGÈRE EST DÉCLARÉE ICI, EXPLICITEMENT, ET PAS SEULEMENT DÉDUITE DE
+        // LA RELATION CÔTÉ Wallet.
+        //
+        // « WalletId » est une propriété FANTÔME : elle n'existe pas sur la classe C#, EF
+        // la fabrique à partir du HasForeignKey posé sur l'agrégat parent. Or l'index
+        // ci-dessous la référence par son nom, et ApplyConfigurationsFromAssembly
+        // n'ordonne pas les configurations : si celle-ci passe avant celle de Wallet, la
+        // propriété n'existe pas encore et EF refuse de la créer sans type
+        // (« no property type was specified »).
+        //
+        // La déclarer ici lève l'ambiguïté quel que soit l'ordre. C'est deux lignes, et
+        // c'est un démarrage qui ne dépend plus d'un hasard de réflexion.
+        builder.Property<Guid>("WalletId").IsRequired();
 
-        builder.Ignore(w => w.DomainEvents);
+        // Un seul solde par compte et par portefeuille. Sans cette contrainte, un défaut
+        // de code pourrait créer deux lignes « Available » sur le même portefeuille, et
+        // les soldes deviendraient une question d'ordre de lecture.
+        builder.HasIndex("WalletId", "Account").IsUnique();
     }
 }
+
 
 internal sealed class CustomerRefundConfiguration : IEntityTypeConfiguration<CustomerRefund>
 {
@@ -151,7 +146,16 @@ internal sealed class WithdrawalConfiguration : IEntityTypeConfiguration<Withdra
             .HasConversion(id => id.Value, value => new WithdrawalId(value))
             .ValueGeneratedNever();
 
-        builder.Property(w => w.SellerId).IsRequired();
+        builder.Property(w => w.WalletId)
+            .HasConversion(id => id.Value, value => new WalletId(value))
+            .IsRequired();
+
+        // Type et propriétaire recopiés depuis le portefeuille : la file admin filtre
+        // dessus à chaque ouverture, une jointure par ligne coûterait plus que ces deux
+        // colonnes.
+        builder.Property(w => w.OwnerType).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(w => w.OwnerId).IsRequired();
+
         builder.Property(w => w.Amount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(w => w.Currency).HasMaxLength(3).IsRequired();
         builder.Property(w => w.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
@@ -160,7 +164,7 @@ internal sealed class WithdrawalConfiguration : IEntityTypeConfiguration<Withdra
         builder.Property(w => w.CreatedAtUtc).IsRequired();
         builder.Property(w => w.CompletedAtUtc);
 
-        builder.HasIndex(w => w.SellerId);
+        builder.HasIndex(w => new { w.OwnerType, w.OwnerId });
 
         builder.Ignore(w => w.DomainEvents);
     }

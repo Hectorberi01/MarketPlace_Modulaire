@@ -24,29 +24,29 @@ public sealed record RequestWithdrawalCommand(Guid SellerId, decimal Amount) : I
 
 internal sealed class RequestWithdrawalCommandHandler : ICommandHandler<RequestWithdrawalCommand, WithdrawalView>
 {
-    private readonly ISellerWalletRepository _wallets;
+    private readonly IWalletRepository _wallets;
     private readonly IWithdrawalRepository _withdrawals;
-    private readonly IWalletTransactionRepository _ledger;
+    private readonly WalletMutations _mutations;
     private readonly ISellerModuleApi _sellers;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public RequestWithdrawalCommandHandler(
-        ISellerWalletRepository wallets,
+        IWalletRepository wallets,
         IWithdrawalRepository withdrawals,
-        IWalletTransactionRepository ledger,
+        WalletMutations mutations,
         ISellerModuleApi sellers,
         ISettlementUnitOfWork unitOfWork)
     {
         _wallets = wallets;
         _withdrawals = withdrawals;
-        _ledger = ledger;
+        _mutations = mutations;
         _sellers = sellers;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<WithdrawalView>> Handle(RequestWithdrawalCommand command, CancellationToken cancellationToken)
     {
-        var wallet = await _wallets.GetBySellerAsync(command.SellerId, cancellationToken);
+        var wallet = await _wallets.GetAsync(WalletOwnerType.Seller, command.SellerId, cancellationToken);
         if (wallet is null)
         {
             return Result.Failure<WithdrawalView>(Error.NotFound("wallet.not_found", "Aucun portefeuille pour ce vendeur."));
@@ -62,20 +62,22 @@ internal sealed class RequestWithdrawalCommandHandler : ICommandHandler<RequestW
                 "wallet.no_payout_account", "Aucun compte de versement Mobile Money configuré."));
         }
 
-        // Débite le solde principal (échoue si montant invalide / solde insuffisant).
-        var debit = wallet.Withdraw(command.Amount);
+        // Le retrait est créé AVANT le débit : son identifiant est la référence portée par
+        // l'écriture de grand livre, et c'est lui qui rend la ligne explicable.
+        var withdrawal = Withdrawal.Create(wallet, command.Amount);
+
+        // Retenue des fonds. Le solde et son écriture partent ensemble — c'est la seule
+        // API qui les lie. Un solde insuffisant remonte l'erreur du domaine telle quelle.
+        var debit = await _mutations.DebitAsync(
+            WalletOwnerType.Seller, command.SellerId, WalletAccount.Available, command.Amount,
+            wallet.Currency, "withdrawal_request", "withdrawal", withdrawal.Id.Value, cancellationToken);
+
         if (debit.IsFailure)
         {
             return Result.Failure<WithdrawalView>(debit.Error);
         }
 
-        var currency = wallet.Currency;
-        var withdrawal = Withdrawal.Create(command.SellerId, command.Amount, currency);
         await _withdrawals.AddAsync(withdrawal, cancellationToken);
-        await _ledger.AddAsync(WalletTransaction.ForSeller(
-            command.SellerId, WalletAccount.Available, WalletDirection.Debit, command.Amount, currency,
-            "withdrawal_request", "withdrawal", withdrawal.Id.Value), cancellationToken);
-
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return WalletMapper.ToView(withdrawal);
     }
@@ -89,24 +91,21 @@ public sealed record ApproveWithdrawalCommand(Guid WithdrawalId) : ICommand<With
 
 internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveWithdrawalCommand, WithdrawalView>
 {
-    private readonly ISellerWalletRepository _wallets;
     private readonly IWithdrawalRepository _withdrawals;
-    private readonly IWalletTransactionRepository _ledger;
+    private readonly WalletMutations _mutations;
     private readonly ISellerModuleApi _sellers;
     private readonly IPayoutModuleApi _payouts;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public ApproveWithdrawalCommandHandler(
-        ISellerWalletRepository wallets,
         IWithdrawalRepository withdrawals,
-        IWalletTransactionRepository ledger,
+        WalletMutations mutations,
         ISellerModuleApi sellers,
         IPayoutModuleApi payouts,
         ISettlementUnitOfWork unitOfWork)
     {
-        _wallets = wallets;
         _withdrawals = withdrawals;
-        _ledger = ledger;
+        _mutations = mutations;
         _sellers = sellers;
         _payouts = payouts;
         _unitOfWork = unitOfWork;
@@ -126,17 +125,11 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
                 "wallet.withdrawal_not_pending", "Cette demande a déjà été traitée."));
         }
 
-        var wallet = await _wallets.GetBySellerAsync(withdrawal.SellerId, cancellationToken);
-        if (wallet is null)
-        {
-            return Result.Failure<WithdrawalView>(Error.NotFound("wallet.not_found", "Aucun portefeuille pour ce vendeur."));
-        }
-
-        var seller = await _sellers.GetSellerAsync(withdrawal.SellerId, cancellationToken);
+        var seller = await _sellers.GetSellerAsync(withdrawal.OwnerId, cancellationToken);
         var account = seller?.Payout;
         if (account is null || !WalletPayout.IsMobileMoney(account.Provider) || string.IsNullOrWhiteSpace(account.AccountNumber))
         {
-            return await FailAndRefundAsync(withdrawal, wallet, "Aucun compte de versement Mobile Money configuré.", cancellationToken);
+            return await FailAndRefundAsync(withdrawal, "Aucun compte de versement Mobile Money configuré.", cancellationToken);
         }
 
         var outcome = await _payouts.SendMobileMoneyPayoutAsync(
@@ -156,7 +149,7 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
         {
             // Rejet DÉFINITIF du PSP : rien n'est parti → on peut recréditer sans risque.
             case PayoutOutcomeStatus.Failed:
-                return await FailAndRefundAsync(withdrawal, wallet, outcome.Error ?? "Échec du versement.", cancellationToken);
+                return await FailAndRefundAsync(withdrawal, outcome.Error ?? "Échec du versement.", cancellationToken);
 
             // Issue INDÉTERMINÉE (timeout, 5xx…) : le versement est peut-être parti.
             // On NE REMBOURSE PAS — sinon l'admin pourrait re-valider et déclencher un
@@ -179,13 +172,12 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
 
     // Échec du payout après retenue des fonds : marque Failed et recrédite le solde.
     private async Task<Result<WithdrawalView>> FailAndRefundAsync(
-        Withdrawal withdrawal, SellerWallet wallet, string reason, CancellationToken ct)
+        Withdrawal withdrawal, string reason, CancellationToken ct)
     {
         withdrawal.Fail(reason);
-        wallet.CreditAvailable(withdrawal.Amount);
-        await _ledger.AddAsync(WalletTransaction.ForSeller(
-            withdrawal.SellerId, WalletAccount.Available, WalletDirection.Credit, withdrawal.Amount, withdrawal.Currency,
-            "withdrawal_refund", "withdrawal", withdrawal.Id.Value), ct);
+        await _mutations.CreditAsync(
+            withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
+            withdrawal.Currency, "withdrawal_refund", "withdrawal", withdrawal.Id.Value, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
         return Result.Failure<WithdrawalView>(Error.Failure("wallet.withdrawal_failed", reason));
@@ -197,20 +189,17 @@ public sealed record RejectWithdrawalCommand(Guid WithdrawalId, string Reason) :
 
 internal sealed class RejectWithdrawalCommandHandler : ICommandHandler<RejectWithdrawalCommand, WithdrawalView>
 {
-    private readonly ISellerWalletRepository _wallets;
     private readonly IWithdrawalRepository _withdrawals;
-    private readonly IWalletTransactionRepository _ledger;
+    private readonly WalletMutations _mutations;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public RejectWithdrawalCommandHandler(
-        ISellerWalletRepository wallets,
         IWithdrawalRepository withdrawals,
-        IWalletTransactionRepository ledger,
+        WalletMutations mutations,
         ISettlementUnitOfWork unitOfWork)
     {
-        _wallets = wallets;
         _withdrawals = withdrawals;
-        _ledger = ledger;
+        _mutations = mutations;
         _unitOfWork = unitOfWork;
     }
 
@@ -228,16 +217,9 @@ internal sealed class RejectWithdrawalCommandHandler : ICommandHandler<RejectWit
                 "wallet.withdrawal_not_pending", "Cette demande a déjà été traitée."));
         }
 
-        var wallet = await _wallets.GetBySellerAsync(withdrawal.SellerId, cancellationToken);
-        if (wallet is null)
-        {
-            return Result.Failure<WithdrawalView>(Error.NotFound("wallet.not_found", "Aucun portefeuille pour ce vendeur."));
-        }
-
-        wallet.CreditAvailable(withdrawal.Amount);
-        await _ledger.AddAsync(WalletTransaction.ForSeller(
-            withdrawal.SellerId, WalletAccount.Available, WalletDirection.Credit, withdrawal.Amount, withdrawal.Currency,
-            "withdrawal_reject", "withdrawal", withdrawal.Id.Value), cancellationToken);
+        await _mutations.CreditAsync(
+            withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
+            withdrawal.Currency, "withdrawal_reject", "withdrawal", withdrawal.Id.Value, cancellationToken);
 
         var reason = string.IsNullOrWhiteSpace(command.Reason) ? "Demande refusée par l'administrateur." : command.Reason.Trim();
         withdrawal.Reject(reason);

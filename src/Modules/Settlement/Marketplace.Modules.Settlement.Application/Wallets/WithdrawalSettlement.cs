@@ -16,14 +16,9 @@ namespace Marketplace.Modules.Settlement.Application.Wallets;
 /// </summary>
 public sealed class WithdrawalSettlement
 {
-    private readonly ISellerWalletRepository _wallets;
-    private readonly IWalletTransactionRepository _ledger;
+    private readonly WalletMutations _mutations;
 
-    public WithdrawalSettlement(ISellerWalletRepository wallets, IWalletTransactionRepository ledger)
-    {
-        _wallets = wallets;
-        _ledger = ledger;
-    }
+    public WithdrawalSettlement(WalletMutations mutations) => _mutations = mutations;
 
     /// <summary>
     /// Renvoie <c>true</c> si le retrait a été tranché (clôturé ou remboursé) par cet appel.
@@ -64,17 +59,10 @@ public sealed class WithdrawalSettlement
     {
         withdrawal.Fail("Versement refusé par le prestataire (statut « failed »).");
 
-        var wallet = await _wallets.GetBySellerAsync(withdrawal.SellerId, cancellationToken);
-        if (wallet is null)
-        {
-            // Portefeuille introuvable : on garde la trace de l'échec, sans crédit fantôme.
-            return;
-        }
-
-        wallet.CreditAvailable(withdrawal.Amount);
-        await _ledger.AddAsync(WalletTransaction.ForSeller(
-            withdrawal.SellerId, WalletAccount.Available, WalletDirection.Credit,
-            withdrawal.Amount, withdrawal.Currency,
-            "withdrawal_refund", "withdrawal", withdrawal.Id.Value), cancellationToken);
+        // Le portefeuille est retrouvé par le PROPRIÉTAIRE du retrait, pas par un type
+        // codé en dur : la même clôture vaut pour un vendeur, un livreur ou un client.
+        await _mutations.CreditAsync(
+            withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
+            withdrawal.Currency, "withdrawal_refund", "withdrawal", withdrawal.Id.Value, cancellationToken);
     }
 }

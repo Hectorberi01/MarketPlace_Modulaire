@@ -3,11 +3,25 @@ using Marketplace.BuildingBlocks.Domain.Primitives;
 namespace Marketplace.Modules.Settlement.Domain.Wallets;
 
 /// <summary>
-/// Demande de retrait d'un vendeur depuis son solde principal. Créée à l'état
-/// Requested (fonds retenus) et en attente de validation par l'admin. À la
-/// validation, un payout FedaPay Mobile Money est déclenché : Completed en cas
-/// de succès (avec la référence PSP) ou Failed (avec le motif). L'admin peut
-/// aussi la refuser (Rejected), auquel cas les fonds sont recrédités.
+/// Demande de retrait depuis le solde disponible d'un portefeuille. Créée à l'état
+/// Requested (fonds retenus) et en attente de validation par l'admin. À la validation,
+/// un payout Mobile Money est déclenché : Completed en cas de succès (avec la référence
+/// PSP) ou Failed (avec le motif). L'admin peut aussi la refuser (Rejected), auquel cas
+/// les fonds sont recrédités.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// UN SEUL RETRAIT POUR TROIS ACTEURS.
+///
+/// Ce retrait ne connaissait que le vendeur. Or le livreur retire sa rémunération et le
+/// client sa cagnotte exactement de la même façon : mêmes états, même validation admin,
+/// même payout, mêmes cas de panne — un « start » accepté ne veut pas dire « reçu », et
+/// une issue indéterminée ne doit jamais donner lieu à un recrédit qui autoriserait un
+/// double versement.
+///
+/// Écrire ce cycle trois fois aurait donné trois occasions de se tromper sur le point le
+/// plus délicat du module. Le retrait porte donc un PORTEFEUILLE, pas un vendeur ; qui en
+/// est le propriétaire est une propriété du portefeuille, pas du retrait.
+/// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed class Withdrawal : AggregateRoot<WithdrawalId>
 {
@@ -15,10 +29,14 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     {
     }
 
-    private Withdrawal(WithdrawalId id, Guid sellerId, decimal amount, string currency)
+    private Withdrawal(
+        WithdrawalId id, WalletId walletId, WalletOwnerType ownerType, Guid ownerId,
+        decimal amount, string currency)
         : base(id)
     {
-        SellerId = sellerId;
+        WalletId = walletId;
+        OwnerType = ownerType;
+        OwnerId = ownerId;
         Amount = amount;
         Currency = currency;
         Status = WithdrawalStatus.Requested;
@@ -34,7 +52,18 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     /// <summary>Date de la demande de versement au PSP (sert au délai d'alerte).</summary>
     public DateTime? SentToPspAtUtc { get; private set; }
 
-    public Guid SellerId { get; private set; }
+    /// <summary>Portefeuille débité, et seule source de vérité du propriétaire.</summary>
+    public WalletId WalletId { get; private set; }
+
+    /// <summary>
+    /// Recopiés depuis le portefeuille à la création. Redondants avec lui, et assumés :
+    /// la file de validation admin et les relevés filtrent par acteur, et une jointure
+    /// sur le portefeuille à chaque ligne coûterait plus que ces deux colonnes.
+    /// </summary>
+    public WalletOwnerType OwnerType { get; private set; }
+
+    public Guid OwnerId { get; private set; }
+
     public decimal Amount { get; private set; }
     public string Currency { get; private set; } = default!;
     public WithdrawalStatus Status { get; private set; }
@@ -43,9 +72,8 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
 
-    public static Withdrawal Create(Guid sellerId, decimal amount, string currency)
-        => new(WithdrawalId.New(), sellerId, amount,
-            string.IsNullOrWhiteSpace(currency) ? "XOF" : currency.Trim().ToUpperInvariant());
+    public static Withdrawal Create(Wallet wallet, decimal amount)
+        => new(WithdrawalId.New(), wallet.Id, wallet.OwnerType, wallet.OwnerId, amount, wallet.Currency);
 
     /// <summary>
     /// Le versement a été DEMANDÉ au PSP (créé + démarré), ou son issue est indéterminée.

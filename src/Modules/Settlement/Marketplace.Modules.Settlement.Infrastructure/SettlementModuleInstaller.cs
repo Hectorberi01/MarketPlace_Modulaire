@@ -58,8 +58,7 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<ISettlementBatchRepository, SettlementBatchRepository>();
 
         // Portefeuilles (wallet) : repositories + service de mutation partagé.
-        services.AddScoped<ISellerWalletRepository, SellerWalletRepository>();
-        services.AddScoped<IPlatformWalletRepository, PlatformWalletRepository>();
+        services.AddScoped<IWalletRepository, WalletRepository>();
         services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
         services.AddScoped<ICustomerRefundRepository, CustomerRefundRepository>();
         services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();

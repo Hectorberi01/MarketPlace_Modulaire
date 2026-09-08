@@ -1,9 +1,9 @@
 namespace Marketplace.Modules.Settlement.Domain.Wallets;
 
-/// <summary>Identité forte d'un portefeuille vendeur.</summary>
-public readonly record struct SellerWalletId(Guid Value)
+/// <summary>Identité forte d'un portefeuille, quel que soit son propriétaire.</summary>
+public readonly record struct WalletId(Guid Value)
 {
-    public static SellerWalletId New() => new(Guid.NewGuid());
+    public static WalletId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString();
 }
 
@@ -36,17 +36,31 @@ public enum CustomerRefundStatus
     Failed = 2
 }
 
-/// <summary>Type de propriétaire d'une écriture au grand livre du wallet.</summary>
+/// <summary>
+/// Les quatre acteurs qui détiennent un portefeuille. Persisté en CHAÎNE (voir la
+/// configuration EF) : ajouter un acteur ne renumérote donc rien et ne demande aucune
+/// reprise de données.
+/// </summary>
 public enum WalletOwnerType
 {
     Seller = 0,
-    Platform = 1
+    Platform = 1,
+
+    /// <summary>Acheteur : cagnotte alimentée par les remboursements.</summary>
+    Customer = 2,
+
+    /// <summary>Coursier : rémunération des courses livrées.</summary>
+    Courier = 3
 }
 
 /// <summary>
-/// Sous-compte visé par une écriture. Vendeur : Pending (solde à venir) et
-/// Available (solde principal retirable). Plateforme : Commission, Provider
-/// (frais provider encaissés) et Shipping (frais de livraison encaissés).
+/// Sous-compte visé par une écriture. Quels comptes appartiennent à quel acteur est
+/// décidé par <see cref="WalletPolicy"/>, pas ici : cette énumération est le vocabulaire
+/// commun du grand livre, la politique en est la grammaire.
+///
+/// Vendeur et livreur : Pending (à venir) et Available (retirable).
+/// Client : Available (cagnotte) et Reserved (engagé sur une commande).
+/// Plateforme : Commission, Provider, Shipping et Refunds.
 /// </summary>
 public enum WalletAccount
 {
@@ -57,7 +71,18 @@ public enum WalletAccount
     Provider = 4,
 
     /// <summary>Plateforme : total reversé aux clients en remboursements directs (coût).</summary>
-    Refunds = 5
+    Refunds = 5,
+
+    /// <summary>
+    /// Client : montant engagé sur une commande en cours de paiement, sorti du
+    /// disponible mais pas encore consommé.
+    ///
+    /// Ce compte est ce qui empêche de dépenser deux fois la même cagnotte depuis deux
+    /// onglets : l'argent quitte le disponible au moment où l'acheteur l'applique, et ne
+    /// devient définitivement dépensé qu'à la confirmation du paiement. Si celui-ci
+    /// échoue, le réservé revient au disponible.
+    /// </summary>
+    Reserved = 6
 }
 
 /// <summary>Sens d'une écriture (crédit augmente le solde, débit le diminue).</summary>

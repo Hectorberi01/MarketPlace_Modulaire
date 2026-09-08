@@ -273,51 +273,10 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.ToTable("customer_refunds", "settlement");
                 });
 
-            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.PlatformWallet", b =>
+            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.Wallet", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
-
-                    b.Property<decimal>("CommissionBalance")
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<decimal>("ProviderFeeBalance")
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("RefundsBalance")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(18,2)")
-                        .HasDefaultValue(0m);
-
-                    b.Property<decimal>("ShippingBalance")
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<uint>("xmin")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("platform_wallet", "settlement");
-                });
-
-            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.SellerWallet", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("AvailableBalance")
-                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -327,11 +286,13 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
-                    b.Property<decimal>("PendingBalance")
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("SellerId")
+                    b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -344,12 +305,35 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SellerId")
+                    b.HasIndex("OwnerType", "OwnerId")
                         .IsUnique();
 
-                    b.ToTable("seller_wallets", "settlement");
+                    b.ToTable("wallets", "settlement");
                 });
 
+            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.WalletAccountBalance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Account")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<decimal>("Balance")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WalletId", "Account")
+                        .IsUnique();
+
+                    b.ToTable("wallet_accounts", "settlement");
+                });
             modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.WalletTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -435,8 +419,13 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid>("SellerId")
+                    b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<DateTime?>("SentToPspAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -446,9 +435,12 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("SellerId");
+                    b.HasIndex("OwnerType", "OwnerId");
 
                     b.ToTable("withdrawals", "settlement");
                 });
@@ -462,9 +454,23 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.WalletAccountBalance", b =>
+                {
+                    b.HasOne("Marketplace.Modules.Settlement.Domain.Wallets.Wallet", null)
+                        .WithMany("Accounts")
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Batches.SettlementBatch", b =>
                 {
                     b.Navigation("Payouts");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.Wallet", b =>
+                {
+                    b.Navigation("Accounts");
                 });
 #pragma warning restore 612, 618
         }

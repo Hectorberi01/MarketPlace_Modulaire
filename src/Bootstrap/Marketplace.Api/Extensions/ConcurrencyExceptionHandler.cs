@@ -12,7 +12,7 @@ namespace Marketplace.Api.Extensions;
 /// ═════════════════════════════════════════════════════════════════════════════
 /// SANS CE HANDLER, LE VERROU OPTIMISTE SERAIT PIRE QUE L'ABSENCE DE VERROU.
 ///
-/// Les agrégats financiers (SellerWallet, PlatformWallet, Payment, Order,
+/// Les agrégats financiers (Wallet, Payment, Order,
 /// InventoryItem) portent désormais un jeton de concurrence. Deux écritures
 /// simultanées : la première gagne, la seconde lève `DbUpdateConcurrencyException`.
 ///

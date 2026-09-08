@@ -32,15 +32,15 @@ public class RefundReversalTests
     [Fact]
     public void La_contre_passation_debite_le_solde_a_venir_en_priorite()
     {
-        var wallet = SellerWallet.Create(Guid.NewGuid(), Xof);
-        wallet.CreditPending(10_000m);
+        var wallet = Wallet.Create(WalletOwnerType.Seller, Guid.NewGuid(), Xof);
+        wallet.Credit(WalletAccount.Pending, 10_000m);
 
-        var (fromPending, fromAvailable) = wallet.DebitForRefund(1_000m);
+        var (fromPending, fromAvailable) = wallet.DebitCascade(WalletAccount.Pending, WalletAccount.Available, 1_000m);
 
         fromPending.Should().Be(1_000m, "le gain n'est pas encore libéré : le reprendre ne lèse pas le vendeur");
         fromAvailable.Should().Be(0m);
-        wallet.PendingBalance.Should().Be(9_000m);
-        wallet.AvailableBalance.Should().Be(0m);
+        wallet.Balance(WalletAccount.Pending).Should().Be(9_000m);
+        wallet.Balance(WalletAccount.Available).Should().Be(0m);
     }
 
     /// <summary>
@@ -53,16 +53,16 @@ public class RefundReversalTests
     [Fact]
     public void Le_solde_peut_devenir_negatif_si_le_vendeur_a_deja_ete_paye()
     {
-        var wallet = SellerWallet.Create(Guid.NewGuid(), Xof);
-        wallet.CreditPending(500m);
-        wallet.ReleaseToAvailable(500m);   // livré, donc retirable
-        wallet.AvailableBalance.Should().Be(500m);
+        var wallet = Wallet.Create(WalletOwnerType.Seller, Guid.NewGuid(), Xof);
+        wallet.Credit(WalletAccount.Pending, 500m);
+        wallet.Transfer(WalletAccount.Pending, WalletAccount.Available, 500m);   // livré, donc retirable
+        wallet.Balance(WalletAccount.Available).Should().Be(500m);
 
-        var (fromPending, fromAvailable) = wallet.DebitForRefund(2_000m);
+        var (fromPending, fromAvailable) = wallet.DebitCascade(WalletAccount.Pending, WalletAccount.Available, 2_000m);
 
         fromPending.Should().Be(0m, "le solde à venir est vide");
         fromAvailable.Should().Be(2_000m);
-        wallet.AvailableBalance.Should().Be(-1_500m,
+        wallet.Balance(WalletAccount.Available).Should().Be(-1_500m,
             "la dette est réelle : elle doit être visible, et se résorber sur les ventes suivantes");
     }
 
@@ -70,16 +70,16 @@ public class RefundReversalTests
     [Fact]
     public void Le_debit_deborde_du_solde_a_venir_vers_le_solde_principal()
     {
-        var wallet = SellerWallet.Create(Guid.NewGuid(), Xof);
-        wallet.CreditPending(1_000m);
-        wallet.ReleaseToAvailable(400m);   // 600 en attente, 400 disponibles
+        var wallet = Wallet.Create(WalletOwnerType.Seller, Guid.NewGuid(), Xof);
+        wallet.Credit(WalletAccount.Pending, 1_000m);
+        wallet.Transfer(WalletAccount.Pending, WalletAccount.Available, 400m);   // 600 en attente, 400 disponibles
 
-        var (fromPending, fromAvailable) = wallet.DebitForRefund(900m);
+        var (fromPending, fromAvailable) = wallet.DebitCascade(WalletAccount.Pending, WalletAccount.Available, 900m);
 
         fromPending.Should().Be(600m);
         fromAvailable.Should().Be(300m);
-        wallet.PendingBalance.Should().Be(0m);
-        wallet.AvailableBalance.Should().Be(100m);
+        wallet.Balance(WalletAccount.Pending).Should().Be(0m);
+        wallet.Balance(WalletAccount.Available).Should().Be(100m);
     }
 
     /// <summary>Un montant nul ou négatif ne doit rien mouvementer.</summary>
@@ -88,14 +88,14 @@ public class RefundReversalTests
     [InlineData(-100)]
     public void Un_montant_non_positif_ne_debite_rien(decimal amount)
     {
-        var wallet = SellerWallet.Create(Guid.NewGuid(), Xof);
-        wallet.CreditPending(1_000m);
+        var wallet = Wallet.Create(WalletOwnerType.Seller, Guid.NewGuid(), Xof);
+        wallet.Credit(WalletAccount.Pending, 1_000m);
 
-        var (fromPending, fromAvailable) = wallet.DebitForRefund(amount);
+        var (fromPending, fromAvailable) = wallet.DebitCascade(WalletAccount.Pending, WalletAccount.Available, amount);
 
         fromPending.Should().Be(0m);
         fromAvailable.Should().Be(0m);
-        wallet.PendingBalance.Should().Be(1_000m);
+        wallet.Balance(WalletAccount.Pending).Should().Be(1_000m);
     }
 
     /// <summary>
@@ -107,19 +107,19 @@ public class RefundReversalTests
     [Fact]
     public void La_plateforme_restitue_sa_commission_et_ses_frais()
     {
-        var platform = PlatformWallet.Create(Xof);
-        platform.CreditCommission(1_000m);
-        platform.CreditProviderFee(500m);
+        var platform = Wallet.CreatePlatform(Xof);
+        platform.Credit(WalletAccount.Commission, 1_000m);
+        platform.Credit(WalletAccount.Provider, 500m);
 
-        platform.DebitCommission(300m);
-        platform.DebitProviderFee(150m);
+        platform.Debit(WalletAccount.Commission, 300m);
+        platform.Debit(WalletAccount.Provider, 150m);
 
-        platform.CommissionBalance.Should().Be(700m);
-        platform.ProviderFeeBalance.Should().Be(350m);
+        platform.Balance(WalletAccount.Commission).Should().Be(700m);
+        platform.Balance(WalletAccount.Provider).Should().Be(350m);
 
         // Au-delà du solde : négatif assumé.
-        platform.DebitCommission(1_000m);
-        platform.CommissionBalance.Should().Be(-300m);
+        platform.Debit(WalletAccount.Commission, 1_000m);
+        platform.Balance(WalletAccount.Commission).Should().Be(-300m);
     }
 
     /// <summary>
