@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Persistance du service de dispatch. Base PROPRE, jamais celle de la marketplace
+    (CDC §11) : ce service écrit des positions à la seconde, la marketplace tient de
+    l'argent — les deux n'ont pas à partager un moteur.
+
+    On ne référence PAS Marketplace.BuildingBlocks.Infrastructure : elle apporte l'outbox,
+    ModuleDbContext et le découpage en schémas du monolithe, dont rien n'a de sens ici.
+    Seule l'extension de verrou optimiste est reprise, recopiée et créditée.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\HbaExpress.Dispatch.Domain\HbaExpress.Dispatch.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+</Project>

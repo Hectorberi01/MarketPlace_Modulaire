@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    POURQUOI « Dispatch » ET NON « Courier ».
+
+    Le premier nom essayé était HbaExpress.Courier — et il ne compilait pas : l'espace de
+    noms racine entrait en collision avec le type `Courier`, l'agrégat central du service.
+    Le compilateur refusait de trancher entre le namespace et la classe.
+
+    On aurait pu qualifier chaque usage. C'aurait été une taxe payée à chaque fichier, pour
+    toujours. « Dispatch » dit d'ailleurs plus précisément ce que ce service fait — offrir
+    des courses — et laisse `Courier` et `DeliveryJob` cohabiter sans ambiguïté. Il évite
+    aussi la confusion avec le module `Delivery` du monolithe, qui porte, lui, l'identité
+    de paiement du coursier.
+
+    Domaine du service coursier. Déployé séparément de la marketplace (voir
+    docs/CDC_Service_Livraison_Coursier.md), mais il RÉUTILISE les primitives DDD du
+    monolithe : Result, Entity, AggregateRoot, ValueObject, et surtout BeninGeography
+    — les 77 communes officielles, qui n'ont aucune raison d'exister en deux exemplaires.
+
+    COUPLAGE ASSUMÉ, ET À LEVER LE JOUR OÙ CE SERVICE PARTIRA DANS SON PROPRE DÉPÔT :
+    il faudra alors publier ces primitives en paquet NuGet. Les recopier aujourd'hui
+    coûterait plus cher que ce couplage — deux implémentations de Result finissent
+    toujours par diverger, et c'est le genre de divergence qu'on découvre en production.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Marketplace.BuildingBlocks.Domain\Marketplace.BuildingBlocks.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
