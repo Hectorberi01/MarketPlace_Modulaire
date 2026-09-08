@@ -44,6 +44,19 @@ internal sealed class OrderRepository : IOrderRepository
             .OrderByDescending(o => o.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    // Ni Include ni suivi : on ne remonte que des identifiants. Charger les lignes de
+    // cinquante commandes pour n'en garder que la clé serait payer une jointure pour
+    // rien, sur un balayage qui tourne en permanence.
+    public async Task<IReadOnlyList<Guid>> ListAbandonedIdsAsync(
+        DateTime cutoffUtc, int take, CancellationToken cancellationToken = default)
+        => await _dbContext.Orders
+            .AsNoTracking()
+            .Where(o => o.Status == OrderStatus.AwaitingPayment && o.CreatedAtUtc < cutoffUtc)
+            .OrderBy(o => o.CreatedAtUtc)
+            .Take(take <= 0 ? 50 : take)
+            .Select(o => o.Id.Value)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Order>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
         => await _dbContext.Orders
             .AsNoTracking()

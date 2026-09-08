@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
+using Marketplace.BuildingBlocks.Infrastructure.Hosting;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.Modules.Offers.Application.Abstractions;
 using Marketplace.Modules.Offers.Application.Offers;
@@ -69,6 +70,13 @@ public sealed class OffersModuleInstaller : IModuleInstaller
         services.AddOutboxProcessor<OffersDbContext>();
 
         // Retire automatiquement les remises échues (date de fin dépassée).
-        services.AddHostedService<DiscountExpiryService>();
+        //
+        // UN SEUL HÔTE. Les cinq hôtes composent ce module : sans cette condition, cinq
+        // services expiraient les mêmes remises en même temps — des écritures concurrentes
+        // sur les mêmes offres, et autant d'événements de changement de prix en double.
+        if (BackgroundJobs.EnabledOnThisHost)
+        {
+            services.AddHostedService<DiscountExpiryService>();
+        }
     }
 }

@@ -78,6 +78,13 @@ public sealed class WalletMutations
     public const string CheckoutSpendReferenceType = "checkout_spend";
     public const string CheckoutReleaseReferenceType = "checkout_release";
 
+    /// <summary>
+    /// Contre-passation d'une commande ANNULÉE après avoir été comptabilisée. Distincte
+    /// de celle d'un retour : une commande peut être annulée puis, plus tard, faire
+    /// l'objet d'un retour sur une autre de ses lignes.
+    /// </summary>
+    public const string OrderCancelledReferenceType = "order_cancelled";
+
     /// <summary>Une écriture existe-t-elle déjà pour cette référence ? (verrou de rejeu)</summary>
     public Task<bool> HasLedgerEntryAsync(string referenceType, Guid referenceId, CancellationToken ct)
         => _ledger.ExistsForReferenceAsync(referenceType, referenceId, ct);
@@ -189,8 +196,23 @@ public sealed class WalletMutations
     /// avant d'avoir le moindre solde. Refuser le débit ferait disparaître la dette au
     /// lieu de l'enregistrer.
     /// </summary>
-    public async Task DebitSellerForRefundAsync(
+    public Task DebitSellerForRefundAsync(
         Guid sellerId, decimal netAmount, string currency, Guid returnRequestId, CancellationToken ct)
+        => DebitSellerCascadeAsync(
+            sellerId, netAmount, currency, "refund_reversal", RefundReferenceType, returnRequestId, ct);
+
+    /// <summary>
+    /// Reprend au vendeur le gain d'une commande ANNULÉE après avoir été comptabilisée.
+    /// Même mécanique que la contre-passation d'un retour, référence distincte.
+    /// </summary>
+    public Task DebitSellerForCancellationAsync(
+        Guid sellerId, decimal netAmount, string currency, Guid orderId, CancellationToken ct)
+        => DebitSellerCascadeAsync(
+            sellerId, netAmount, currency, "order_cancelled", OrderCancelledReferenceType, orderId, ct);
+
+    private async Task DebitSellerCascadeAsync(
+        Guid sellerId, decimal netAmount, string currency,
+        string reason, string referenceType, Guid referenceId, CancellationToken ct)
     {
         if (netAmount <= 0m)
         {
@@ -205,14 +227,14 @@ public sealed class WalletMutations
         {
             await _ledger.AddAsync(WalletTransaction.For(
                 wallet, WalletAccount.Pending, WalletDirection.Debit, fromPending,
-                "refund_reversal", RefundReferenceType, returnRequestId), ct);
+                reason, referenceType, referenceId), ct);
         }
 
         if (fromAvailable > 0m)
         {
             await _ledger.AddAsync(WalletTransaction.For(
                 wallet, WalletAccount.Available, WalletDirection.Debit, fromAvailable,
-                "refund_reversal", RefundReferenceType, returnRequestId), ct);
+                reason, referenceType, referenceId), ct);
         }
     }
 
@@ -256,6 +278,20 @@ public sealed class WalletMutations
 
     public Task DebitPlatformProviderFeeAsync(decimal amount, string currency, Guid returnRequestId, CancellationToken ct)
         => DebitPlatformAsync(WalletAccount.Provider, amount, currency, "refund_reversal", RefundReferenceType, returnRequestId, ct);
+
+    /// <summary>Restitue les encaissements plateforme d'une commande annulée après comptabilisation.</summary>
+    public async Task DebitPlatformForCancellationAsync(
+        decimal commission, decimal providerFee, decimal shippingFee, string currency, Guid orderId, CancellationToken ct)
+    {
+        await DebitPlatformAsync(WalletAccount.Commission, commission, currency, "order_cancelled", OrderCancelledReferenceType, orderId, ct);
+        await DebitPlatformAsync(WalletAccount.Provider, providerFee, currency, "order_cancelled", OrderCancelledReferenceType, orderId, ct);
+
+        // LES FRAIS DE LIVRAISON AUSSI, contrairement au remboursement d'un retour.
+        // Sur un retour, la marchandise a voyagé : le transport a été rendu, il reste
+        // acquis. Une commande annulée avant paiement n'a jamais rien fait bouger — les
+        // garder serait encaisser une livraison qui n'a pas eu lieu.
+        await DebitPlatformAsync(WalletAccount.Shipping, shippingFee, currency, "order_cancelled", OrderCancelledReferenceType, orderId, ct);
+    }
 
     /// <summary>
     /// Comptabilise un remboursement DIRECT versé à un client (coût plateforme).

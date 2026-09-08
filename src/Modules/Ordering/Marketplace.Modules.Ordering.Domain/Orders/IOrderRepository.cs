@@ -23,6 +23,21 @@ public interface IOrderRepository
     /// <summary>Commandes comportant au moins une ligne vendue par ce vendeur (back-office vendeur).</summary>
     Task<IReadOnlyList<Order>> ListBySellerAsync(Guid sellerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Commandes restées EN ATTENTE DE PAIEMENT au-delà d'une date limite — les paniers
+    /// payés à moitié, ceux qu'on ferme et qu'on ne rouvre jamais.
+    ///
+    /// Elles ne sont pas inertes : chacune retient du stock réservé et, depuis que la
+    /// cagnotte se dépense au checkout, de l'argent du client bloqué dans son compte
+    /// réservé — ni dépensable, ni retirable, ni visible nulle part. Une commande
+    /// abandonnée coûte donc à deux personnes à la fois, et indéfiniment.
+    ///
+    /// Renvoie les IDENTIFIANTS seuls : l'annulation recharge chaque commande dans sa
+    /// propre unité de travail, pour qu'une commande en échec n'emporte pas le lot.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListAbandonedIdsAsync(
+        DateTime cutoffUtc, int take, CancellationToken cancellationToken = default);
+
     /// <summary>Toutes les commandes de la plateforme (back-office admin).</summary>
     Task<IReadOnlyList<Order>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default);
 

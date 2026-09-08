@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
+using Marketplace.BuildingBlocks.Infrastructure.Hosting;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Ordering.Application.Abstractions;
@@ -54,6 +55,16 @@ public sealed class OrderingModuleInstaller : IModuleInstaller
         // Étape finale du Saga : marquer la commande livrée quand toutes ses
         // expéditions le sont (déclenche escrow + payout vendeur).
         services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, MarkOrderDeliveredOnAllShipmentsDeliveredHandler>();
+
+        // Expiration des commandes jamais payées. Sans elle, chacune retient du stock
+        // invendable et une cagnotte client immobilisée, indéfiniment.
+        //
+        // UN SEUL HÔTE. Les cinq hôtes composent les mêmes modules : sans cette
+        // condition, cinq balayeurs annuleraient les mêmes commandes en même temps.
+        if (BackgroundJobs.EnabledOnThisHost)
+        {
+            services.AddHostedService<Maintenance.AbandonedOrderSweeper>();
+        }
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 

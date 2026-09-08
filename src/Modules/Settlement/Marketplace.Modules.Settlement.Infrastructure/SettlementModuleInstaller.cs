@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
+using Marketplace.BuildingBlocks.Infrastructure.Hosting;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
@@ -85,7 +86,16 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         // Réconciliation des retraits « en cours » avec le statut réel du PSP.
         // SANS ce service, un versement échoué chez FedaPay laisserait le retrait
         // marqué « payé » et le vendeur débité, sans jamais avoir reçu son argent.
-        services.AddHostedService<Reconciliation.WithdrawalReconciliationService>();
+        //
+        // UN SEUL HÔTE, désormais imposé. Le commentaire de la classe affirmait « tourne
+        // dans l'hôte API (un seul) » — rien ne l'imposait : les quatre BFF composent le
+        // même module, et interrogeaient donc FedaPay en parallèle sur les mêmes retraits.
+        // Sans dommage comptable (la clôture est idempotente), mais quatre fois trop
+        // d'appels au PSP, et quatre chances de plus de tomber sur un timeout.
+        if (BackgroundJobs.EnabledOnThisHost)
+        {
+            services.AddHostedService<Reconciliation.WithdrawalReconciliationService>();
+        }
 
         // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueEarningsOnOrderConfirmedHandler>();
@@ -98,6 +108,11 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         // publié dans le vide : le vendeur gardait son gain sur un article qui nous
         // revenait, et la plateforme payait deux fois — le client ET le vendeur.
         services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, ReverseEarningsOnReturnRefundedHandler>();
+
+        // FILET DE SÉCURITÉ : une commande annulée qui aurait déjà crédité le vendeur.
+        // Ne fait rien aujourd'hui — le domaine interdit d'annuler une commande
+        // confirmée — mais referme d'avance le trou le jour où cette règle changera.
+        services.AddScoped<IIntegrationEventHandler<OrderCancelledIntegrationEvent>, ReverseEarningsOnOrderCancelledHandler>();
 
         // Libération des gains (escrow levé) à la livraison confirmée → payables.
         services.AddScoped<IIntegrationEventHandler<OrderDeliveredIntegrationEvent>, ReleaseEarningsOnOrderDeliveredHandler>();
