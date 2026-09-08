@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Couche application du service de dispatch.
+
+    PAS DE MediatR, ET C'EST UN CHOIX. Le monolithe l'utilise parce qu'il compose
+    vingt-six modules derrière un pipeline commun (validation, journalisation,
+    transactions). Ce service a six cas d'usage et aucun pipeline : y poser un médiateur
+    ajouterait une indirection que rien ne rembourse. Des services applicatifs ordinaires
+    se lisent et se testent plus directement. À reconsidérer le jour où un besoin
+    transversal apparaîtra — pas avant.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\HbaExpress.Dispatch.Domain\HbaExpress.Dispatch.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

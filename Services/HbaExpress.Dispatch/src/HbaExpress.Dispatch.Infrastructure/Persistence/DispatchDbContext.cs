@@ -1,3 +1,4 @@
+using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,7 @@ namespace HbaExpress.Dispatch.Infrastructure.Persistence;
 /// Base du service de dispatch. PROPRE, jamais celle de la marketplace : ce service
 /// réécrit des positions à la seconde, la marketplace tient de l'argent.
 /// </summary>
-public sealed class DispatchDbContext : DbContext
+public sealed class DispatchDbContext : DbContext, IDispatchUnitOfWork
 {
     public const string SchemaName = "dispatch";
 

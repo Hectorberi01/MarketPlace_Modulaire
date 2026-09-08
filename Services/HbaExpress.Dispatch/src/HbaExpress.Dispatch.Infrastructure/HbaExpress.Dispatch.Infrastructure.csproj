@@ -11,6 +11,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\HbaExpress.Dispatch.Domain\HbaExpress.Dispatch.Domain.csproj" />
+    <ProjectReference Include="..\HbaExpress.Dispatch.Application\HbaExpress.Dispatch.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>
