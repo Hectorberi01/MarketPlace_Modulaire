@@ -6,40 +6,8 @@ using Marketplace.Modules.Sellers.Contracts;
 namespace Marketplace.Modules.Notifications.Application.Notifications.EventHandlers;
 
 /// <summary>
-/// Le remboursement est ACCEPTÉ — l'argent n'est pas encore parti.
-///
-/// ─────────────────────────────────────────────────────────────────────────────
-/// CE MESSAGE EST CELUI QUI ÉVITE LES LITIGES.
-///
-/// Entre la décision et le versement, il s'écoule des heures : un administrateur doit
-/// exécuter l'opération dans le tableau de bord FedaPay, qui n'expose aucune API de
-/// remboursement. Pendant ce délai, un client qui ne reçoit RIEN et qui ne sait RIEN
-/// suppose le pire — et il a raison de le supposer.
-///
-/// On lui dit donc explicitement que sa demande est acceptée, et que le versement est
-/// en cours. Le silence, ici, coûte plus cher qu'un remboursement.
-/// ─────────────────────────────────────────────────────────────────────────────
-/// </summary>
-public sealed class ReturnRefundApprovedNotificationHandler : IIntegrationEventHandler<ReturnRefundApprovedIntegrationEvent>
-{
-    private readonly NotificationDispatcher _dispatcher;
-
-    public ReturnRefundApprovedNotificationHandler(NotificationDispatcher dispatcher) => _dispatcher = dispatcher;
-
-    public Task HandleAsync(ReturnRefundApprovedIntegrationEvent e, CancellationToken cancellationToken = default)
-        => _dispatcher.NotifyAsync(
-            e.BuyerId,
-            "Remboursement accepté",
-            $"Votre remboursement de {e.RefundAmount:0.00} {e.Currency} est accepté. " +
-            "Le versement est en cours ; vous serez prévenu dès qu'il sera effectué.",
-            "Return",
-            e.ReturnRequestId,
-            cancellationToken,
-            alsoEmail: true);
-}
-
-/// <summary>
-/// L'argent est PARTI. On prévient l'acheteur… et le vendeur, qui vient d'être débité.
+/// L'argent est ARRIVÉ sur la cagnotte. On prévient l'acheteur… et le vendeur, qui
+/// vient d'être débité.
 /// </summary>
 public sealed class ReturnRefundedNotificationHandler : IIntegrationEventHandler<ReturnRefundedIntegrationEvent>
 {
@@ -63,8 +31,8 @@ public sealed class ReturnRefundedNotificationHandler : IIntegrationEventHandler
         await _dispatcher.NotifyAsync(
             e.BuyerId,
             "Remboursement effectué",
-            $"Votre remboursement de {e.RefundAmount:0.00} {e.Currency} a été versé. " +
-            "Selon votre opérateur, il peut apparaître sous 24 à 72 heures.",
+            $"Votre remboursement de {e.RefundAmount:0.00} {e.Currency} est disponible sur votre cagnotte. " +
+            "Utilisez-le sur une prochaine commande, ou demandez son versement sur votre Mobile Money.",
             "Return",
             e.ReturnRequestId,
             cancellationToken,

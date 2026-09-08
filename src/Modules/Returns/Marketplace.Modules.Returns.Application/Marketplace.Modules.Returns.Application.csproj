@@ -6,6 +6,8 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
     <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <!-- « Cagnotte créditée » : c'est Settlement qui rembourse, Returns qui clôt. -->
+    <ProjectReference Include="..\..\Settlement\Marketplace.Modules.Settlement.Contracts\Marketplace.Modules.Settlement.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

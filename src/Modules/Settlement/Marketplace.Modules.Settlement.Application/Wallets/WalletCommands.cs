@@ -93,20 +93,20 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
 {
     private readonly IWithdrawalRepository _withdrawals;
     private readonly WalletMutations _mutations;
-    private readonly ISellerModuleApi _sellers;
+    private readonly WithdrawalPayoutResolver _payoutAccounts;
     private readonly IPayoutModuleApi _payouts;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public ApproveWithdrawalCommandHandler(
         IWithdrawalRepository withdrawals,
         WalletMutations mutations,
-        ISellerModuleApi sellers,
+        WithdrawalPayoutResolver payoutAccounts,
         IPayoutModuleApi payouts,
         ISettlementUnitOfWork unitOfWork)
     {
         _withdrawals = withdrawals;
         _mutations = mutations;
-        _sellers = sellers;
+        _payoutAccounts = payoutAccounts;
         _payouts = payouts;
         _unitOfWork = unitOfWork;
     }
@@ -125,9 +125,13 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
                 "wallet.withdrawal_not_pending", "Cette demande a déjà été traitée."));
         }
 
-        var seller = await _sellers.GetSellerAsync(withdrawal.OwnerId, cancellationToken);
-        var account = seller?.Payout;
-        if (account is null || !WalletPayout.IsMobileMoney(account.Provider) || string.IsNullOrWhiteSpace(account.AccountNumber))
+        // OÙ VERSER DÉPEND DE QUI RETIRE, ET DE RIEN D'AUTRE. Le vendeur a déclaré son
+        // compte à l'inscription, le client l'a enregistré comme moyen de paiement — la
+        // suite du handler ne fait aucune différence entre les deux.
+        var account = await _payoutAccounts.ResolveAsync(
+            withdrawal.OwnerType, withdrawal.OwnerId, cancellationToken);
+
+        if (account is null)
         {
             return await FailAndRefundAsync(withdrawal, "Aucun compte de versement Mobile Money configuré.", cancellationToken);
         }
@@ -136,9 +140,9 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
             new PayoutInstructionContract(
                 Amount: withdrawal.Amount,
                 Currency: withdrawal.Currency,
-                BeneficiaryName: string.IsNullOrWhiteSpace(account.AccountName) ? seller!.ShopName : account.AccountName,
+                BeneficiaryName: account.BeneficiaryName,
                 Msisdn: account.AccountNumber,
-                // L'opérateur du vendeur détermine à lui seul le routage PSP (mode ET
+                // L'opérateur DE L'ACTEUR détermine à lui seul le routage PSP (mode ET
                 // pays). On ne passe plus de code pays « en dur » : c'était le bug qui
                 // expédiait tous les numéros vers le Bénin.
                 Provider: account.Provider,

@@ -95,7 +95,18 @@ internal sealed class WalletAccountBalanceConfiguration : IEntityTypeConfigurati
         //
         // La déclarer ici lève l'ambiguïté quel que soit l'ordre. C'est deux lignes, et
         // c'est un démarrage qui ne dépend plus d'un hasard de réflexion.
-        builder.Property<Guid>("WalletId").IsRequired();
+        //
+        // SON TYPE EST « WalletId », PAS « Guid ». Une clé étrangère doit avoir le type
+        // de la clé qu'elle vise, et la clé de Wallet est le type fort WalletId — c'est
+        // une conversion de valeur qui la range en uuid dans la table, pas un Guid nu.
+        // Déclarée en Guid, EF valide le modèle puis refuse la relation : « cannot
+        // target the primary key {'Id' : WalletId} because it is not compatible ».
+        //
+        // La conversion est reprise à l'identique de celle du parent : la propriété
+        // fantôme n'hérite de rien, elle a besoin de la sienne.
+        builder.Property<WalletId>("WalletId")
+            .HasConversion(id => id.Value, value => new WalletId(value))
+            .IsRequired();
 
         // Un seul solde par compte et par portefeuille. Sans cette contrainte, un défaut
         // de code pourrait créer deux lignes « Available » sur le même portefeuille, et

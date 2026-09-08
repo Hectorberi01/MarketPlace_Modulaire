@@ -102,6 +102,156 @@ public class WalletLedgerInvariantTests
         AssertLedgerMatchesBalances(wallets, ledger);
     }
 
+    [Fact]
+    public async Task Un_remboursement_de_retour_credite_la_cagnotte_ET_reprend_le_gain_du_vendeur()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var sellerId = Guid.NewGuid();
+        var buyerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+        var returnId = Guid.NewGuid();
+
+        // Vente : 10 000 nets au vendeur, 1 000 de commission, 500 de frais.
+        await mutations.CreditSellerPendingAsync(sellerId, 10_000m, Xof, orderId, default);
+        await mutations.CreditPlatformCommissionAsync(1_000m, Xof, orderId, default);
+        await mutations.CreditPlatformProviderFeeAsync(500m, Xof, orderId, default);
+        await mutations.ReleaseSellerAsync(sellerId, 10_000m, Xof, orderId, default);
+
+        // Retour : le client est remboursé du BRUT (11 500), le vendeur perd son net,
+        // la plateforme restitue commission et frais.
+        await mutations.CreditCustomerRefundAsync(buyerId, 11_500m, Xof, returnId, default);
+        await mutations.DebitSellerForRefundAsync(sellerId, 10_000m, Xof, returnId, default);
+        await mutations.DebitPlatformCommissionAsync(1_000m, Xof, returnId, default);
+        await mutations.DebitPlatformProviderFeeAsync(500m, Xof, returnId, default);
+
+        AssertLedgerMatchesBalances(wallets, ledger);
+
+        var customer = wallets.Get(WalletOwnerType.Customer, buyerId)!;
+        customer.Balance(WalletAccount.Available).Should().Be(11_500m);
+
+        // Ce que la plateforme a repris finance exactement ce qu'elle a crédité : le
+        // remboursement ne coûte rien de plus que la vente n'avait rapporté.
+        var seller = wallets.Get(WalletOwnerType.Seller, sellerId)!;
+        seller.Balance(WalletAccount.Available).Should().Be(0m);
+
+        var platform = wallets.Get(WalletOwnerType.Platform, Wallet.PlatformOwnerId)!;
+        platform.Balance(WalletAccount.Commission).Should().Be(0m);
+        platform.Balance(WalletAccount.Provider).Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task Le_credit_de_cagnotte_et_la_contre_passation_ont_des_verrous_INDEPENDANTS()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var returnId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(Guid.NewGuid(), 5_000m, Xof, returnId, default);
+
+        // LE PIÈGE QU'ON ÉVITE ICI : si les deux mouvements portaient la même
+        // référence, créditer le client marquerait le retour « déjà traité » et le
+        // vendeur ne serait JAMAIS débité — la plateforme paierait le remboursement de
+        // sa poche, silencieusement.
+        (await mutations.CustomerAlreadyRefundedAsync(returnId, default)).Should().BeTrue();
+        (await mutations.RefundAlreadyReversedAsync(returnId, default)).Should().BeFalse();
+
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
+    [Fact]
+    public async Task Un_client_ne_peut_pas_retirer_plus_que_sa_cagnotte()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var buyerId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(buyerId, 3_000m, Xof, Guid.NewGuid(), default);
+
+        var debit = await mutations.DebitAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, 3_001m, Xof,
+            "withdrawal_request", "withdrawal", Guid.NewGuid(), default);
+
+        // La cagnotte est de l'argent que la plateforme DOIT au client. La laisser
+        // passer sous zéro ouvrirait un découvert que personne n'a consenti.
+        debit.IsFailure.Should().BeTrue();
+        wallets.Get(WalletOwnerType.Customer, buyerId)!.Balance(WalletAccount.Available).Should().Be(3_000m);
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
+    [Fact]
+    public async Task Le_controle_de_reconciliation_ne_signale_rien_quand_tout_concorde()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var sellerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        await mutations.CreditSellerPendingAsync(sellerId, 10_000m, Xof, orderId, default);
+        await mutations.ReleaseSellerAsync(sellerId, 10_000m, Xof, orderId, default);
+        await mutations.CreditPlatformCommissionAsync(1_000m, Xof, orderId, default);
+
+        var report = await Reconcile(wallets, ledger);
+
+        report.IsBalanced.Should().BeTrue();
+        report.Drifts.Should().BeEmpty();
+        report.TotalAbsoluteDrift.Should().Be(0m);
+        report.WalletsChecked.Should().Be(2, "le vendeur et la plateforme");
+    }
+
+    [Fact]
+    public async Task Le_controle_de_reconciliation_voit_un_solde_modifie_sans_ecriture()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var sellerId = Guid.NewGuid();
+
+        await mutations.CreditSellerPendingAsync(sellerId, 10_000m, Xof, Guid.NewGuid(), default);
+
+        // LA PANNE QU'ON CHERCHE À DÉTECTER : un solde bougé directement sur l'agrégat,
+        // sans la ligne de grand livre qui le justifie. C'est exactement la forme qu'avait
+        // le bug de la libération des gains.
+        wallets.Get(WalletOwnerType.Seller, sellerId)!.Credit(WalletAccount.Available, 750m);
+
+        var report = await Reconcile(wallets, ledger);
+
+        report.IsBalanced.Should().BeFalse();
+        report.TotalAbsoluteDrift.Should().Be(750m);
+        report.Drifts.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new
+            {
+                OwnerId = sellerId,
+                Account = nameof(WalletAccount.Available),
+                WalletBalance = 750m,
+                LedgerBalance = 0m,
+                Drift = 750m
+            });
+    }
+
+    [Fact]
+    public async Task Le_controle_de_reconciliation_voit_une_ecriture_orpheline()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        await mutations.CreditSellerPendingAsync(Guid.NewGuid(), 10_000m, Xof, Guid.NewGuid(), default);
+
+        // Une écriture pour un propriétaire dont aucun portefeuille n'existe : un parcours
+        // des seuls portefeuilles ne la verrait jamais, et l'argent resterait invisible.
+        var fantome = Guid.NewGuid();
+        await ledger.AddAsync(WalletTransaction.ForOwner(
+            WalletOwnerType.Courier, fantome, WalletAccount.Available,
+            WalletDirection.Credit, 4_200m, Xof, "orphelin", "test", Guid.NewGuid()));
+
+        var report = await Reconcile(wallets, ledger);
+
+        report.IsBalanced.Should().BeFalse();
+        report.Drifts.Should().ContainSingle(d => d.OwnerId == fantome && d.WalletId == Guid.Empty)
+            .Which.LedgerBalance.Should().Be(4_200m);
+    }
+
+    private static async Task<Marketplace.Modules.Settlement.Contracts.WalletReconciliationView> Reconcile(
+        FakeWalletRepository wallets, FakeLedger ledger)
+    {
+        var handler = new ReconcileWalletsQueryHandler(wallets, ledger);
+        var result = await handler.Handle(new ReconcileWalletsQuery(), default);
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
     /// <summary>
     /// Le contrôle lui-même : pour chaque compte de chaque portefeuille, la somme signée
     /// des écritures doit rendre le solde. C'est la version en mémoire du contrôle de
@@ -155,6 +305,9 @@ public class WalletLedgerInvariantTests
             _wallets.Add(wallet);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<Wallet>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Wallet>>(_wallets);
     }
 
     private sealed class FakeLedger : IWalletTransactionRepository
@@ -179,5 +332,13 @@ public class WalletLedgerInvariantTests
             => Task.FromResult(Lines
                 .Where(l => l.OwnerId == ownerId && l.OwnerType == ownerType && l.Account == account)
                 .Sum(l => l.Direction == WalletDirection.Credit ? l.Amount : -l.Amount));
+
+        public Task<IReadOnlyList<LedgerAccountSum>> SumAllAccountsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LedgerAccountSum>>(Lines
+                .GroupBy(l => new { l.OwnerId, l.OwnerType, l.Account })
+                .Select(g => new LedgerAccountSum(
+                    g.Key.OwnerId, g.Key.OwnerType, g.Key.Account,
+                    g.Sum(l => l.Direction == WalletDirection.Credit ? l.Amount : -l.Amount)))
+                .ToList());
     }
 }

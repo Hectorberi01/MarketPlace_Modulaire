@@ -173,12 +173,16 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         services.AddScoped<IIntegrationEventHandler<ShipmentShippedIntegrationEvent>, ShipmentShippedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, ShipmentDeliveredNotificationHandler>();
 
-        // REMBOURSEMENTS. Deux moments, deux messages :
-        //  - accepté : rassure l'acheteur pendant que l'admin exécute le versement
-        //              chez FedaPay (qui n'a pas d'API de remboursement) ;
-        //  - versé   : l'argent est parti — on prévient l'acheteur ET le vendeur,
-        //              qui vient d'être débité.
-        services.AddScoped<IIntegrationEventHandler<ReturnRefundApprovedIntegrationEvent>, ReturnRefundApprovedNotificationHandler>();
+        // REMBOURSEMENTS. UN SEUL MESSAGE, ENVOYÉ QUAND L'ARGENT EST LÀ.
+        //
+        // Il y en avait deux : « accepté » rassurait l'acheteur pendant que l'admin
+        // exécutait le versement à la main chez FedaPay, puis « versé » annonçait
+        // l'arrivée. Le premier existait pour meubler une attente de plusieurs heures.
+        //
+        // Le remboursement crédite désormais la cagnotte en quelques secondes : cette
+        // attente n'existe plus, et les deux notifications arrivaient coup sur coup. Deux
+        // alertes pour un même fait, c'est ce qui apprend aux gens à ne plus les lire —
+        // y compris celles qui comptent.
         services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, ReturnRefundedNotificationHandler>();
 
         // BOUTIQUE VALIDÉE. L'admin active le vendeur → e-mail de bienvenue + push/in-app :

@@ -52,6 +52,17 @@ public sealed class WalletMutations
     /// </summary>
     public const string RefundReferenceType = "refund";
 
+    /// <summary>
+    /// Référence du CRÉDIT de cagnotte, distincte de celle de la contre-passation.
+    ///
+    /// Un même retour produit deux mouvements de sens opposé : le client est crédité,
+    /// le vendeur est débité. Les faire porter la même référence rendrait le verrou
+    /// d'idempotence de l'un sensible aux rejeux de l'autre — le premier arrivé
+    /// bloquerait le second, et l'un des deux côtés du remboursement n'aurait jamais
+    /// lieu.
+    /// </summary>
+    public const string ReturnRefundReferenceType = "return_refund";
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Primitives génériques. Tout le reste du fichier n'en est qu'un habillage nommé.
     // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +196,28 @@ public sealed class WalletMutations
                 "refund_reversal", RefundReferenceType, returnRequestId), ct);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Client
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Crédite la cagnotte d'un client du montant d'un remboursement de retour.
+    ///
+    /// Le portefeuille est créé à la volée : un client n'en a aucun avant son premier
+    /// remboursement, et c'est le cas NORMAL, pas une anomalie.
+    /// </summary>
+    public Task CreditCustomerRefundAsync(
+        Guid customerId, decimal amount, string currency, Guid returnRequestId, CancellationToken ct)
+        => CreditAsync(WalletOwnerType.Customer, customerId, WalletAccount.Available, amount, currency,
+            "return_refund", ReturnRefundReferenceType, returnRequestId, ct);
+
+    /// <summary>
+    /// La cagnotte a-t-elle DÉJÀ été créditée pour ce retour ? Verrou d'idempotence du
+    /// crédit client, symétrique de celui de la contre-passation vendeur.
+    /// </summary>
+    public Task<bool> CustomerAlreadyRefundedAsync(Guid returnRequestId, CancellationToken ct)
+        => _ledger.ExistsForReferenceAsync(ReturnRefundReferenceType, returnRequestId, ct);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Plateforme

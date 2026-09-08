@@ -7,12 +7,14 @@ using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Domain.Events;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
+using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Returns.Application.Abstractions;
 using Marketplace.Modules.Returns.Application.Returns;
 using Marketplace.Modules.Returns.Application.Returns.EventHandlers;
 using Marketplace.Modules.Returns.Domain.Returns;
 using Marketplace.Modules.Returns.Domain.Returns.Events;
 using Marketplace.Modules.Returns.Infrastructure.Persistence;
+using Marketplace.Modules.Settlement.Contracts.IntegrationEvents;
 
 namespace Marketplace.Modules.Returns.Infrastructure;
 
@@ -41,6 +43,10 @@ public sealed class ReturnsModuleInstaller : IModuleInstaller
         // FedaPay à l'appui). Seul le second engage la comptabilité.
         services.AddScoped<IDomainEventHandler<ReturnRefundApprovedDomainEvent>, ReturnRefundApprovedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ReturnRefundedDomainEvent>, ReturnRefundedDomainEventHandler>();
+
+        // La cagnotte du client a été créditée : la demande de retour se clôt d'elle-même.
+        // C'est le retour de boucle qui remplace la confirmation manuelle chez FedaPay.
+        services.AddScoped<IIntegrationEventHandler<CustomerRefundCreditedIntegrationEvent>, ConfirmRefundOnCustomerWalletCreditedHandler>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 

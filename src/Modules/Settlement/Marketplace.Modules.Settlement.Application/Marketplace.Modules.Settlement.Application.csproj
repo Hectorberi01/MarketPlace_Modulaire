@@ -13,6 +13,9 @@
     <ProjectReference Include="..\..\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />
     <ProjectReference Include="..\..\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
     <ProjectReference Include="..\..\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
+    <!-- Coordonnées de versement du CLIENT : le retrait de cagnotte se paie sur le
+         moyen Mobile Money qu'il a déjà enregistré, pas sur un second à saisir. -->
+    <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -16,6 +16,15 @@ public interface IWalletRepository
     Task<Wallet?> GetPlatformAsync(CancellationToken cancellationToken = default);
 
     Task AddAsync(Wallet wallet, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tous les portefeuilles, soldes compris, EN LECTURE SEULE.
+    ///
+    /// Réservé au contrôle de réconciliation : c'est le seul cas où l'on veut voir
+    /// l'ensemble des portefeuilles d'un coup. Aucun écran ne doit s'en servir — la
+    /// table grossit avec les utilisateurs, pas avec l'activité.
+    /// </summary>
+    Task<IReadOnlyList<Wallet>> ListAllAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Accès aux demandes de retrait, tous acteurs confondus.</summary>
@@ -87,4 +96,23 @@ public interface IWalletTransactionRepository
     /// </summary>
     Task<decimal> SumForAccountAsync(
         Guid ownerId, WalletOwnerType ownerType, WalletAccount account, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// La même somme, mais pour TOUS les comptes de TOUS les portefeuilles, en une
+    /// requête agrégée.
+    ///
+    /// Le contrôle de réconciliation compare des milliers de couples (portefeuille,
+    /// compte) : les obtenir un par un via <see cref="SumForAccountAsync"/> ferait
+    /// autant d'allers-retours SQL, et le contrôle deviendrait trop coûteux pour être
+    /// exécuté — donc ne serait jamais exécuté. Un contrôle qu'on n'ose pas lancer ne
+    /// protège de rien.
+    /// </summary>
+    Task<IReadOnlyList<LedgerAccountSum>> SumAllAccountsAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Solde d'un compte tel que le GRAND LIVRE le raconte : crédits moins débits, pour un
+/// couple (propriétaire, compte). À confronter au solde porté par le portefeuille.
+/// </summary>
+public sealed record LedgerAccountSum(
+    Guid OwnerId, WalletOwnerType OwnerType, WalletAccount Account, decimal Sum);

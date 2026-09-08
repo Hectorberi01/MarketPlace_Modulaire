@@ -64,6 +64,11 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();
         services.AddScoped<WalletMutations>();
 
+        // Coordonnées de versement selon l'acteur : vendeur (Sellers) ou client
+        // (Identity). Isolé ici pour que l'arrivée du livreur ne rouvre pas le handler
+        // qui décide qu'un versement part.
+        services.AddScoped<WithdrawalPayoutResolver>();
+
         // Règle de clôture d'un retrait (sent → payé, failed → remboursé), partagée par
         // le webhook et la réconciliation : une seule et même logique, donc pas de risque
         // qu'un double verdict produise un double remboursement.
@@ -78,6 +83,10 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
 
         // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueEarningsOnOrderConfirmedHandler>();
+
+        // REMBOURSEMENT SUR CAGNOTTE : « remboursement validé » crédite désormais le
+        // client immédiatement, au lieu d'attendre un versement manuel chez FedaPay.
+        services.AddScoped<IIntegrationEventHandler<ReturnRefundApprovedIntegrationEvent>, CreditCustomerWalletOnReturnRefundApprovedHandler>();
 
         // CONTRE-PASSATION. Sans ce handler, l'événement « retour remboursé » était
         // publié dans le vide : le vendeur gardait son gain sur un article qui nous

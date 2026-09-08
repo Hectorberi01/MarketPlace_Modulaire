@@ -53,6 +53,15 @@ internal static class WalletMapper
     public static WalletTransactionView ToView(WalletTransaction t)
         => new(t.Id, t.Account.ToString(), t.Direction.ToString(), t.Amount, t.Currency, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAtUtc);
 
+    /// <summary>
+    /// Vue client d'un retrait. La référence PSP n'en fait PAS partie : elle n'a de
+    /// sens que pour l'administrateur qui réconcilie, et l'afficher au client
+    /// n'apporterait qu'une chaîne opaque de plus à recopier au support.
+    /// </summary>
+    public static CustomerWithdrawalView ToCustomerView(Withdrawal w)
+        => new(w.Id.Value, w.OwnerId, w.Amount, w.Currency, w.Status.ToString(),
+               PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);
+
     public static WithdrawalView ToView(Withdrawal w)
         => new(w.Id.Value, w.OwnerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef,
                PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);

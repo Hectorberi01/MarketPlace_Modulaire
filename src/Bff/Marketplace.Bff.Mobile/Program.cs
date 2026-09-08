@@ -239,6 +239,7 @@ app.MapMobileCartEndpoints();
 app.MapMobileCheckoutEndpoints();
 app.MapMobileOrderEndpoints();
 app.MapMobileAccountEndpoints();
+app.MapMobileWalletEndpoints();
 app.MapMobileMessagingEndpoints();
 app.MapMobileContentEndpoints();
 app.MapMobileEngagementEndpoints();

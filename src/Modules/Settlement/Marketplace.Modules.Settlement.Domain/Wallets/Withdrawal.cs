@@ -29,10 +29,7 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     {
     }
 
-    private Withdrawal(
-        WithdrawalId id, WalletId walletId, WalletOwnerType ownerType, Guid ownerId,
-        decimal amount, string currency)
-        : base(id)
+    private Withdrawal(WithdrawalId id, WalletId walletId, WalletOwnerType ownerType, Guid ownerId, decimal amount, string currency) : base(id)
     {
         WalletId = walletId;
         OwnerType = ownerType;

@@ -29,6 +29,18 @@ internal sealed class WalletRepository : IWalletRepository
 
     public async Task AddAsync(Wallet wallet, CancellationToken cancellationToken = default)
         => await _dbContext.Wallets.AddAsync(wallet, cancellationToken);
+
+    // SANS SUIVI, exception à la règle du dessus : c'est la seule lecture de
+    // portefeuilles qui ne débouche pas sur une écriture. Le contrôle de réconciliation
+    // regarde, il ne touche à rien — et charger des milliers d'agrégats dans le change
+    // tracker ferait payer très cher un simple constat.
+    public async Task<IReadOnlyList<Wallet>> ListAllAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.Wallets
+            .AsNoTracking()
+            .Include(w => w.Accounts)
+            .OrderBy(w => w.OwnerType)
+            .ThenBy(w => w.OwnerId)
+            .ToListAsync(cancellationToken);
 }
 
 internal sealed class WithdrawalRepository : IWithdrawalRepository
@@ -158,5 +170,33 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
             .SumAsync(t => (decimal?)t.Amount, cancellationToken) ?? 0m;
 
         return credits - debits;
+    }
+
+    /// <summary>
+    /// Tous les soldes du grand livre en UNE requête : un GROUP BY sur (propriétaire,
+    /// type, compte), le débit comptant en négatif.
+    ///
+    /// La somme signée est obtenue par un CASE dans l'agrégat plutôt que par deux
+    /// passes crédits/débits : une seule lecture de l'index, et surtout un résultat
+    /// complet — un compte qui n'aurait que des débits sort quand même, ce qu'une
+    /// jointure entre deux agrégats aurait laissé filer.
+    /// </summary>
+    public async Task<IReadOnlyList<LedgerAccountSum>> SumAllAccountsAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await _dbContext.WalletTransactions
+            .AsNoTracking()
+            .GroupBy(t => new { t.OwnerId, t.OwnerType, t.Account })
+            .Select(g => new
+            {
+                g.Key.OwnerId,
+                g.Key.OwnerType,
+                g.Key.Account,
+                Sum = g.Sum(t => t.Direction == WalletDirection.Credit ? t.Amount : -t.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(r => new LedgerAccountSum(r.OwnerId, r.OwnerType, r.Account, r.Sum))
+            .ToList();
     }
 }

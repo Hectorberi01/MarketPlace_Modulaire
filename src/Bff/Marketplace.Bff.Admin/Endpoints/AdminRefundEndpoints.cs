@@ -8,22 +8,25 @@ namespace Marketplace.Bff.Admin.Endpoints;
 public sealed record ConfirmRefundRequest(string ProviderReference);
 
 /// <summary>
-/// BFF Admin — la FILE DES VERSEMENTS À EXÉCUTER.
+/// BFF Admin — LE FILET DE SÉCURITÉ DES REMBOURSEMENTS.
 ///
-/// ─────────────────────────────────────────────────────────────────────────────
-/// POURQUOI CETTE FILE EXISTE, ET POURQUOI ELLE EST MANUELLE
+/// ═════════════════════════════════════════════════════════════════════════════
+/// CETTE FILE N'EST PLUS LE CHEMIN NORMAL, ET C'EST VOULU.
 ///
-/// FedaPay n'expose AUCUN endpoint de remboursement. Leur documentation est
-/// formelle : l'opération se fait depuis leur tableau de bord, et uniquement en MTN
-/// Mobile Money. Aucune quantité de code ne changera cela.
+/// FedaPay n'expose aucun endpoint de remboursement : l'opération se fait depuis
+/// leur tableau de bord, à la main. Le remboursement était donc, par nécessité, un
+/// geste humain — et chaque geste oublié laissait un client sans son argent.
 ///
-/// Le versement est donc, par nécessité, un geste humain. Le rôle du logiciel n'est
-/// pas de le simuler — c'était précisément le bug — mais de le RENDRE VISIBLE, de
-/// n'en oublier aucun, et d'exiger une preuve quand il est fait.
+/// Depuis que le remboursement crédite la CAGNOTTE du client, ce geste a disparu du
+/// chemin normal : Settlement crédite dès la validation du montant, et la demande se
+/// clôt d'elle-même. Une ligne qui apparaît ici signale donc soit une demande
+/// antérieure à ce changement, soit un crédit de cagnotte qui n'est jamais arrivé —
+/// c'est-à-dire une PANNE, pas une tâche quotidienne.
 ///
-/// Cette liste devrait être VIDE en fin de journée. Chaque ligne qui y traîne est un
-/// client à qui l'on a promis son argent et qui ne l'a pas reçu.
-/// ─────────────────────────────────────────────────────────────────────────────
+/// La route de confirmation manuelle reste ouverte pour ces cas-là. Elle ne devrait
+/// pratiquement jamais servir ; si elle sert souvent, c'est la chorégraphie qu'il
+/// faut aller regarder, pas la file qu'il faut vider plus vite.
+/// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public static class AdminRefundEndpoints
 {
@@ -46,14 +49,15 @@ public static class AdminRefundEndpoints
         => (await sender.Send(new ListPendingRefundsQuery(), ct)).Match(r => Results.Ok(r));
 
     /// <summary>
-    /// Confirme qu'un versement a RÉELLEMENT été effectué, référence FedaPay à l'appui.
+    /// Confirme qu'un versement a RÉELLEMENT été effectué HORS CAGNOTTE, référence
+    /// FedaPay à l'appui. Voie de secours : le chemin normal est le crédit automatique
+    /// de la cagnotte, qui confirme la demande sans intervention.
     ///
-    /// ⚠️ C'est la seule porte vers le statut « Remboursé », et elle exige une preuve.
-    ///
-    /// Cet appel déclenche, en aval, la contre-passation comptable : le gain du vendeur
-    /// est repris, la commission de la plateforme restituée. Le faire avant que l'argent
-    /// ne soit parti débiterait un vendeur pour un versement qui peut encore échouer —
-    /// et personne, dans les comptes, ne saurait dire que c'est arrivé.
+    /// Cette route exige une preuve, et c'est toujours le point essentiel. L'appel
+    /// déclenche en aval la contre-passation comptable : le gain du vendeur est repris,
+    /// la commission de la plateforme restituée. Le faire avant que l'argent ne soit
+    /// parti débiterait un vendeur pour un versement qui peut encore échouer — et
+    /// personne, dans les comptes, ne saurait dire que c'est arrivé.
     ///
     /// Autrement dit : ne cliquez ici QU'APRÈS avoir vu l'opération passer chez FedaPay.
     /// </summary>

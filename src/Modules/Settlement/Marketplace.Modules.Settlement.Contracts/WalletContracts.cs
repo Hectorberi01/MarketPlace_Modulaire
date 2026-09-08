@@ -90,3 +90,101 @@ public sealed record WithdrawalView(
     string? FailureReason,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc);
+
+/// <summary>
+/// Un écart constaté entre le solde porté par un portefeuille et ce que le grand livre
+/// raconte pour le même compte.
+///
+/// <paramref name="Drift"/> est signé : positif, le portefeuille affiche PLUS que ce
+/// que les écritures justifient (de l'argent apparu de nulle part) ; négatif, il
+/// affiche moins (de l'argent débité sans écriture, ou une écriture en trop).
+/// </summary>
+public sealed record WalletDriftView(
+    Guid WalletId,
+    string OwnerType,
+    Guid OwnerId,
+    string Account,
+    decimal WalletBalance,
+    decimal LedgerBalance,
+    decimal Drift);
+
+/// <summary>
+/// Le résultat du contrôle de réconciliation : le grand livre et les soldes
+/// disent-ils la même chose ?
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// POURQUOI CE CONTRÔLE EXISTE.
+///
+/// Un solde est une COLONNE, une valeur que du code met à jour. Le grand livre est
+/// une SUITE D'ÉCRITURES, que du code ajoute. Ce sont deux chemins distincts, et
+/// rien dans la base ne garantit qu'ils racontent la même histoire : il a suffi
+/// d'une libération de fonds qui écrivait le crédit sans écrire le débit
+/// correspondant pour que l'écart grandisse à chaque livraison, sans qu'aucun test
+/// ni aucun écran ne s'en aperçoive.
+///
+/// L'invariant est vérifié en test unitaire sur les chemins connus. Ce contrôle-ci
+/// le vérifie sur les DONNÉES RÉELLES, y compris celles écrites par du code qu'on
+/// n'a pas encore écrit. <paramref name="IsBalanced"/> à faux est une anomalie
+/// comptable : rien ne se répare tout seul, il faut aller lire les écritures.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record WalletReconciliationView(
+    int WalletsChecked,
+    int AccountsChecked,
+    decimal TotalAbsoluteDrift,
+    IReadOnlyList<WalletDriftView> Drifts,
+    DateTime CheckedAtUtc)
+{
+    public bool IsBalanced => Drifts.Count == 0;
+}
+
+/// <summary>
+/// La cagnotte d'un client : ce qu'il peut dépenser ou retirer, et ce qui est engagé
+/// sur une commande en cours.
+/// </summary>
+public sealed record CustomerWalletView(
+    Guid CustomerId,
+    // Disponible : dépensable au paiement, retirable sur Mobile Money.
+    decimal AvailableBalance,
+    // Engagé sur une commande en cours de paiement, sorti du disponible.
+    decimal ReservedBalance,
+    // Retraits demandés ou en cours de versement : déjà sortis du disponible.
+    decimal PendingWithdrawal,
+    string Currency);
+
+/// <summary>
+/// Demande de retrait de cagnotte en attente de validation (vue admin).
+///
+/// Distincte de <see cref="PendingWithdrawalView"/> : un vendeur s'identifie par sa
+/// boutique et son compte de versement professionnel, un client par son nom et le
+/// moyen Mobile Money qu'il a enregistré pour payer. Les fusionner obligerait à
+/// inventer un « nom d'acteur » qui ne veut rien dire pour l'admin qui valide.
+/// </summary>
+public sealed record PendingCustomerWithdrawalView(
+    Guid Id,
+    Guid CustomerId,
+    string CustomerName,
+    decimal Amount,
+    string Currency,
+    string? PayoutProvider,
+    string? PayoutAccountNumber,
+    DateTime CreatedAtUtc);
+
+/// <summary>
+/// Une demande de retrait de cagnotte, vue par le client.
+///
+/// Jumelle de <see cref="WithdrawalView"/>, dont le champ s'appelle « SellerId » : ce
+/// nom est devenu faux le jour où le retrait a cessé d'être réservé aux vendeurs. Le
+/// renommer casserait l'application vendeur déjà déployée pour un bénéfice nul de son
+/// côté ; exposer « sellerId » à l'acheteur ferait payer la même confusion au
+/// développeur mobile. Deux vues, un seul agrégat, aucune ambiguïté chez l'appelant.
+/// </summary>
+public sealed record CustomerWithdrawalView(
+    Guid Id,
+    Guid CustomerId,
+    decimal Amount,
+    string Currency,
+    string Status,
+    string? FailureReason,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
