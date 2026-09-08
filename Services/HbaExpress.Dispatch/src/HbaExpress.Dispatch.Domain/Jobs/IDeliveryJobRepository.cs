@@ -14,8 +14,19 @@ public interface IDeliveryJobRepository
     Task<DeliveryJob?> GetByOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Courses offertes dont la vague en cours est arrivée à échéance : à ré-offrir plus
-    /// large, ou à faire expirer si le délai global est dépassé.
+    /// Courses qui attendent une (nouvelle) vague d'offres.
+    ///
+    /// DEUX CAS, ET LE SECOND MANQUAIT.
+    ///
+    ///  • OFFERED dont la vague en cours est arrivée à échéance : personne n'a répondu,
+    ///    il faut élargir le rayon.
+    ///  • CREATED : la course n'a JAMAIS été offerte, faute de coursier éligible au
+    ///    moment de sa création. Elle ne figurait pas dans cette requête — donc rien ne
+    ///    la reprenait, jamais. Une commande créée un dimanche matin, quand personne
+    ///    n'est en ligne, restait sans livreur pour toujours, en silence.
+    ///
+    /// C'est exactement la panne qui ne se voit pas : aucune erreur, aucun journal, une
+    /// ligne en base et un acheteur qui attend.
     /// </summary>
     Task<IReadOnlyList<DeliveryJob>> ListAwaitingRedispatchAsync(
         DateTime nowUtc, int take, CancellationToken cancellationToken = default);

@@ -78,7 +78,10 @@ internal sealed class DeliveryJobRepository : IDeliveryJobRepository
         => await _dbContext.DeliveryJobs
             .Include(j => j.Offers)
             .Include(j => j.Pickups)
-            .Where(j => j.Status == DeliveryJobStatus.Offered
+            // « Created » AUTANT QUE « Offered » : une course qui n'a jamais trouvé de
+            // coursier n'a pas d'offre en cours, et resterait donc invisible d'une
+            // requête qui ne regarde que les courses offertes.
+            .Where(j => (j.Status == DeliveryJobStatus.Created || j.Status == DeliveryJobStatus.Offered)
                         && !j.Offers.Any(o => o.Status == DispatchOfferStatus.Pending && o.ExpiresAtUtc > nowUtc))
             .OrderBy(j => j.CreatedAtUtc)
             .Take(take <= 0 ? 50 : take)

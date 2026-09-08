@@ -227,6 +227,13 @@ public sealed class DeliveryJobService
         return Result.Success();
     }
 
+    /// <summary>
+    /// Persiste les modifications en cours. Exposé pour le balayage de redispatch, qui
+    /// mute une course (expiration) sans passer par les méthodes ci-dessus.
+    /// </summary>
+    public Task PersistAsync(CancellationToken cancellationToken = default)
+        => _unitOfWork.SaveChangesAsync(cancellationToken);
+
     private static PickupDraft ToDraft(PickupBrief brief)
         => new(
             brief.ShipmentId, brief.SellerId, brief.SellerName, brief.SellerPhone,
