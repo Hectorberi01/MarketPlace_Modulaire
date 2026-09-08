@@ -14,7 +14,7 @@ using Xunit;
 namespace Saga.IntegrationTests;
 
 /// <summary>
-/// Test de composition de bout en bout : monte le graphe DI des 25 modules
+/// Test de composition de bout en bout : monte le graphe DI de TOUS les modules
 /// (via ModuleRegistry, source unique de vérité du Bootstrap), applique TOUTES
 /// les migrations sur un vrai PostgreSQL, et résout des APIs inter-modules.
 ///
@@ -43,7 +43,7 @@ public sealed class FullCompositionTests : IAsyncLifetime
 
                 // Le module Identity REFUSE de s'installer sans clé de signature —
                 // c'est voulu : une clé absente en production signifierait des jetons
-                // signés avec un secret vide. Ce test compose les 25 modules, donc il
+                // signés avec un secret vide. Ce test compose tous les modules, donc il
                 // doit fournir la clé comme le ferait un vrai hôte.
                 //
                 // Clé de test, jamais déployée. La longueur compte : HMAC-SHA256 exige
@@ -89,8 +89,25 @@ public sealed class FullCompositionTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Les_25_modules_exposent_chacun_leur_DbContext()
-        => _dbContextTypes.Should().HaveCount(25);
+    public void Chaque_module_enregistre_expose_EXACTEMENT_un_DbContext()
+    {
+        // ═════════════════════════════════════════════════════════════════════════
+        // ON COMPARE AU REGISTRE, PLUS À UN NOMBRE ÉCRIT EN DUR.
+        //
+        // L'assertion valait « 25 », et le nom du test le répétait. Ajouter un module
+        // faisait donc échouer un test dont le message ne disait rien du problème réel —
+        // il fallait comprendre que « 26 au lieu de 25 » était le résultat ATTENDU, puis
+        // aller corriger deux endroits.
+        //
+        // Ce que ce test veut vraiment vérifier n'a jamais été « il y a 25 modules » mais
+        // « chaque module composé apporte sa persistance ». Comparé au registre, il
+        // continue d'attraper le vrai défaut — un installer qui oublie son DbContext, ou
+        // qui en enregistre deux — et se tait quand on ajoute légitimement un module.
+        // ═════════════════════════════════════════════════════════════════════════
+        _dbContextTypes.Should().HaveCount(
+            ModuleRegistry.Installers.Count,
+            "chaque module composé doit apporter son propre DbContext, ni zéro ni deux");
+    }
 
     [Fact]
     public async Task Toutes_les_migrations_sappliquent_sans_erreur()

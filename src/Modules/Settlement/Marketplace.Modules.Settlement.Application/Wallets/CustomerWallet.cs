@@ -205,7 +205,13 @@ internal sealed class RequestCustomerWithdrawalCommandHandler
                 "Aucun compte Mobile Money enregistré. Ajoutez-en un dans vos moyens de paiement."));
         }
 
-        var withdrawal = Withdrawal.Create(wallet, command.Amount);
+        var requested = Withdrawal.Create(wallet, command.Amount);
+        if (requested.IsFailure)
+        {
+            return Result.Failure<CustomerWithdrawalView>(requested.Error);
+        }
+
+        var withdrawal = requested.Value;
 
         // La cagnotte n'a PAS le droit de passer sous zéro (voir WalletPolicy) : un
         // solde insuffisant fait échouer le débit, et rien n'est écrit.

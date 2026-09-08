@@ -1,10 +1,67 @@
 # Cahier des charges — Service de livraison par coursiers (« 2ᵉ mode »)
 
-> **Statut** : spécification (v1, 22 juillet 2026).
+> **Statut** : spécification (v1, 22 juillet 2026) — **amendée le 8 septembre 2026**, voir §0.
 > **Nature** : projet **autonome**, hébergé et déployé **séparément** de la plateforme
 > HBA Express, pour ne pas alourdir le backend marketplace. Il communique avec la
 > plateforme uniquement par des **contrats d'intégration** (événements + API), jamais
 > par accès direct à ses bases.
+
+---
+
+## 0. Amendement du 8 septembre 2026 — où vit l'argent du coursier
+
+La question laissée ouverte au §12 — *« Rémunération coursier : réutiliser
+Wallet/Settlement plateforme **ou** portefeuille propre au service ? »* — est **tranchée :
+le portefeuille du coursier reste dans Settlement**, avec ceux du vendeur, du client et
+de la plateforme.
+
+**Pourquoi.** Les raisons qui justifient un service séparé — dispatch temps réel,
+géolocalisation continue, montée en charge indépendante — ne s'appliquent pas à l'argent.
+Un portefeuille propre au service supposerait un second grand livre, une seconde
+réconciliation comptable, un second cycle de retrait et une seconde intégration FedaPay.
+La marketplace en possède déjà un, conçu dès l'origine pour quatre acteurs
+(`WalletOwnerType.Courier` existe depuis le premier jour du chantier portefeuille).
+
+**Ce que cela change concrètement.** Un module `Delivery` **mince** existe désormais dans
+le monolithe. Il porte l'identité du coursier **côté marketplace** — de quoi le payer et
+de quoi refuser de le payer :
+
+| Dans le monolithe (`Delivery` + `Settlement`) | Dans le service coursier (ce document) |
+|---|---|
+| Compte utilisateur, nom, téléphone | Véhicule, KYC, zone, disponibilité |
+| Compte de versement Mobile Money | Position, itinéraires, temps réel |
+| Statut : Pending / Active / Suspended | Note, taux d'acceptation, taux d'annulation |
+| Portefeuille, retraits, grand livre | Courses, offres, dispatch, cascade 3PL |
+
+La frontière est tenue par un test d'architecture
+(`DeliveryBoundaryTests.Le_module_reste_MINCE_le_dispatch_n_entre_pas_ici`) qui échoue si
+un type nommé `DeliveryJob`, `DispatchOffer`, `PickupPoint`, `CourierPosition` ou
+`CourierZone` apparaît dans le domaine du module. **Le reste du document reste valide** :
+le service coursier demeure autonome, avec sa base, son temps réel et son app.
+
+**Contrats effectivement en place**
+
+*Entrant (service → marketplace)* — `POST /api/delivery/courses/completed`, signé
+HMAC-SHA256 sur le corps brut (`X-Delivery-Signature`, secret `Delivery:WebhookSecret`),
+**fermé par défaut** : hors développement, pas de secret configuré = appel rejeté.
+Corps : `{ courierId, orderId, deliveryJobId, amount, currency }`. `deliveryJobId` est la
+clé d'idempotence — un rejeu ne paie pas deux fois.
+
+*Sortant (marketplace → service)* — `CourierActivatedIntegrationEvent`,
+`CourierSuspendedIntegrationEvent` (module Delivery) et
+`CourierEarningCreditedIntegrationEvent` (module Settlement). Ils sont publiés dans
+l'outbox ; **leur acheminement vers le service coursier reste à construire**.
+
+**Ce qui n'est toujours pas décidé et qui bloque la mise en production**
+
+- **Aucun plafond** sur la rémunération d'une course : l'appelant de l'endpoint décide
+  combien sort du portefeuille de la plateforme. La signature protège d'un inconnu, pas
+  d'un service compromis ni d'un bug de tarification chez lui.
+- **Qui fixe le prix de la course** (§12, toujours ouvert) : le montant vient aujourd'hui
+  du service, la marketplace ne le recalcule pas. Payer un coursier **débite le compte
+  « frais de livraison » de la plateforme** ; si ce compte passe en négatif, c'est le
+  signal que les forfaits facturés aux acheteurs ne couvrent pas les courses.
+- **Le transport des événements sortants** vers le service (bus, webhooks signés ?).
 
 ---
 
@@ -292,6 +349,10 @@ Techniquement : Flutter (comme les autres apps), géoloc en arrière-plan, push,
 
 - **Service autonome** (API + base propre) — pas d'accès aux schémas marketplace.
 - **Domaine** : agrégats `Courier`, `DeliveryJob` (+ `PickupPoint`, `DispatchOffer`).
+  Le `Courier` du service porte l'opérationnel (véhicule, position, zone, disponibilité,
+  note) ; son identité de BÉNÉFICIAIRE (nom, téléphone, compte de versement, droit d'être
+  payé) vit dans le module `Delivery` du monolithe — voir §0. Les deux sont reliés par
+  `Courier.ExternalRef`.
 - **Temps réel** : hub WebSocket/SignalR pour offres, états, positions.
 - **Intégration** : bus de messages (ou webhooks signés) + **inbox/outbox** idempotents ;
   couche anti-corruption traduisant les contrats plateforme ↔ domaine coursier.
@@ -307,8 +368,9 @@ Techniquement : Flutter (comme les autres apps), géoloc en arrière-plan, push,
 
 - **Qui fixe le prix de la course ?** Plateforme au checkout (figé) **ou** service (dynamique
   à la distance) ? → impacte le contrat `OrderReadyForDelivery`.
-- **Rémunération coursier** : réutiliser Wallet/Settlement plateforme **ou** portefeuille
-  propre au service ?
+- ~~**Rémunération coursier** : réutiliser Wallet/Settlement plateforme **ou** portefeuille
+  propre au service ?~~ → **TRANCHÉ le 08/09/2026 : Wallet/Settlement de la plateforme.**
+  Voir §0.
 - **Zones cibles** du MVP (quelle(s) ville(s) ?) et **densité de coursiers** minimale.
 - **Preuve de livraison** : photo, code à 4 chiffres, ou signature ?
 - **FBS vs coursier** : critère de bascule (par zone ? au choix de l'acheteur ? automatique

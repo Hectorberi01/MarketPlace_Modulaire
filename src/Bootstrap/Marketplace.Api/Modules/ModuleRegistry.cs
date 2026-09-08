@@ -21,6 +21,7 @@ using Marketplace.Modules.Reviews.Infrastructure;
 using Marketplace.Modules.Search.Infrastructure;
 using Marketplace.Modules.Sellers.Infrastructure;
 using Marketplace.Modules.Settlement.Infrastructure;
+using Marketplace.Modules.Delivery.Infrastructure;
 using Marketplace.Modules.Shipping.Infrastructure;
 using Marketplace.Modules.Tax.Infrastructure;
 using Marketplace.Modules.Wishlist.Infrastructure;
@@ -46,6 +47,9 @@ public static class ModuleRegistry
         new OrderingModuleInstaller(),
         new PaymentsModuleInstaller(),
         new ShippingModuleInstaller(),
+        // Identité du coursier côté marketplace (paiement). Le dispatch et la géo
+        // vivent dans le service autonome — voir docs/CDC_Service_Livraison_Coursier.md.
+        new DeliveryModuleInstaller(),
         new ReviewsModuleInstaller(),
         new SearchModuleInstaller(),
         new NotificationsModuleInstaller(),

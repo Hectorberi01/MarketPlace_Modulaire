@@ -8,7 +8,7 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Outbox;
 /// <summary>
 /// Déclare qu'un DbContext porte une table d'outbox. Enregistré sur TOUS les hôtes, même
 /// ceux qui ne drainent pas — c'est ce qui permet à la console d'administration (BFF Admin,
-/// où <c>OUTBOX_ENABLED=false</c>) de LIRE les lettres mortes des 25 modules sans jamais
+/// où <c>OUTBOX_ENABLED=false</c>) de LIRE les lettres mortes de tous les modules sans jamais
 /// les traiter.
 /// </summary>
 public sealed record OutboxContextRegistration(Type DbContextType, string ModuleName);
@@ -42,7 +42,7 @@ public static class OutboxRegistration
     public static IServiceCollection AddOutboxProcessor<TDbContext>(this IServiceCollection services)
         where TDbContext : DbContext, IOutboxDbContext
     {
-        // Politique de réessai PARTAGÉE par les 25 modules : un seul endroit où régler le
+        // Politique de réessai PARTAGÉE par tous les modules : un seul endroit où régler le
         // plafond de tentatives et le backoff, plutôt que vingt-cinq.
         //
         // TryAddSingleton, et non AddSingleton : cette méthode est appelée UNE FOIS PAR

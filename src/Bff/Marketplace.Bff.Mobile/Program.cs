@@ -240,6 +240,7 @@ app.MapMobileCheckoutEndpoints();
 app.MapMobileOrderEndpoints();
 app.MapMobileAccountEndpoints();
 app.MapMobileWalletEndpoints();
+app.MapMobileCourierEndpoints();
 app.MapMobileMessagingEndpoints();
 app.MapMobileContentEndpoints();
 app.MapMobileEngagementEndpoints();

@@ -68,7 +68,7 @@ public static class ObservabilityExtensions
         //     « Payments + Business seulement là où la logique métier tourne (API). »
         //
         // C'est une prémisse FAUSSE, et elle a coûté cher. Dans ce monolithe modulaire,
-        // chaque BFF compose les 25 modules EN PROCESSUS (ModuleRegistry.Installers) et
+        // chaque BFF compose TOUS les modules EN PROCESSUS (ModuleRegistry.Installers) et
         // exécute exactement les mêmes handlers MediatR. La logique métier tourne donc
         // dans les BFF autant que dans l'API — c'est même tout l'intérêt du montage.
         //

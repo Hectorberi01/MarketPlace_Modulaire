@@ -15,6 +15,7 @@ using Marketplace.Modules.Pricing.Infrastructure.Persistence;
 using Marketplace.Modules.Cart.Infrastructure.Persistence;
 using Marketplace.Modules.Ordering.Infrastructure.Persistence;
 using Marketplace.Modules.Payments.Infrastructure.Persistence;
+using Marketplace.Modules.Delivery.Infrastructure.Persistence;
 using Marketplace.Modules.Shipping.Infrastructure.Persistence;
 using Marketplace.Modules.Reviews.Infrastructure.Persistence;
 using Marketplace.Modules.Search.Infrastructure.Persistence;
@@ -207,6 +208,12 @@ app.UseProxyForwardedHeaders();
 Marketplace.Modules.Payments.Infrastructure.Gateways.GatewayWebhook.AllowUnsignedWhenSecretMissing
     = app.Environment.IsDevelopment();
 
+// Service coursier : même règle, secret distinct. La route qu'il protège fait SORTIR de
+// l'argent du portefeuille de la plateforme — hors développement, pas de secret, pas
+// d'appel.
+Marketplace.BuildingBlocks.Infrastructure.Security.PartnerServiceSignature.AllowUnsignedWhenSecretMissing
+    = app.Environment.IsDevelopment();
+
 // Migrations + seed au démarrage : pratique en dev, désactivé par défaut.
 if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
 {
@@ -327,6 +334,9 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     var shippingDb = scope.ServiceProvider.GetRequiredService<ShippingDbContext>();
     await shippingDb.Database.MigrateAsync();
 
+    var deliveryDb = scope.ServiceProvider.GetRequiredService<DeliveryDbContext>();
+    await deliveryDb.Database.MigrateAsync();
+
     var reviewsDb = scope.ServiceProvider.GetRequiredService<ReviewsDbContext>();
     await reviewsDb.Database.MigrateAsync();
 
@@ -412,6 +422,7 @@ app.MapCartEndpoints();
 app.MapOrderingEndpoints();
 app.MapPaymentsEndpoints();
 app.MapShippingEndpoints();
+app.MapDeliveryEndpoints();
 app.MapReviewsEndpoints();
 app.MapSearchEndpoints();
 app.MapNotificationsEndpoints();

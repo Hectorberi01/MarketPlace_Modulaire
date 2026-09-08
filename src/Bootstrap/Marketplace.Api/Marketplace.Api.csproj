@@ -15,6 +15,7 @@
     <ProjectReference Include="..\..\Modules\Ordering\Marketplace.Modules.Ordering.Infrastructure\Marketplace.Modules.Ordering.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Payments\Marketplace.Modules.Payments.Infrastructure\Marketplace.Modules.Payments.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Shipping\Marketplace.Modules.Shipping.Infrastructure\Marketplace.Modules.Shipping.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Delivery\Marketplace.Modules.Delivery.Infrastructure\Marketplace.Modules.Delivery.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Reviews\Marketplace.Modules.Reviews.Infrastructure\Marketplace.Modules.Reviews.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Search\Marketplace.Modules.Search.Infrastructure\Marketplace.Modules.Search.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Notifications\Marketplace.Modules.Notifications.Infrastructure\Marketplace.Modules.Notifications.Infrastructure.csproj" />

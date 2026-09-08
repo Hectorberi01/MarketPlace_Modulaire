@@ -1,4 +1,5 @@
 using Marketplace.BuildingBlocks.Domain.Primitives;
+using Marketplace.BuildingBlocks.Domain.Results;
 
 namespace Marketplace.Modules.Settlement.Domain.Wallets;
 
@@ -69,8 +70,49 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
 
-    public static Withdrawal Create(Wallet wallet, decimal amount)
-        => new(WithdrawalId.New(), wallet.Id, wallet.OwnerType, wallet.OwnerId, amount, wallet.Currency);
+    /// <summary>
+    /// Crée une demande de retrait, PLAFONNÉE AU SOLDE DISPONIBLE.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI CE CONTRÔLE EST ICI, ET PAS LAISSÉ AU DÉBIT.
+    ///
+    /// Le débit d'un portefeuille refuse de passer sous zéro… sauf là où la politique de
+    /// l'acteur l'autorise — et elle l'autorise pour le vendeur et le livreur, sur le
+    /// compte disponible, précisément celui d'où l'on retire.
+    ///
+    /// Ce droit au négatif existe pour les CONTRE-PASSATIONS : reprendre son gain à un
+    /// vendeur déjà payé pour une vente remboursée doit pouvoir le mettre en dette, sans
+    /// quoi la perte resterait à la charge de la plateforme. Mais il n'a jamais été pensé
+    /// pour un retrait VOLONTAIRE.
+    ///
+    /// Résultat, avant ce garde-fou : un vendeur ayant 5 000 au disponible pouvait
+    /// demander 500 000. Le débit passait — négatif autorisé — la demande était créée,
+    /// et à la validation admin le versement partait pour de bon. Le solde négatif était
+    /// la seule trace, découverte après coup, et il n'y a aucun moyen de reprendre de
+    /// l'argent versé sur un Mobile Money.
+    ///
+    /// Le contrôle est donc posé sur la CRÉATION DE LA DEMANDE — l'endroit qui distingue
+    /// « on me reprend ce que je dois » de « je demande à sortir de l'argent » — et il
+    /// vaut d'un coup pour le vendeur, le client et le livreur.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static Result<Withdrawal> Create(Wallet wallet, decimal amount)
+    {
+        if (amount <= 0m)
+        {
+            return Error.Validation("wallet.withdrawal_amount_invalid", "Le montant du retrait doit être positif.");
+        }
+
+        var available = wallet.Balance(WalletAccount.Available);
+        if (amount > available)
+        {
+            return Error.Validation(
+                "wallet.insufficient_funds",
+                $"Solde insuffisant : {available} {wallet.Currency} disponible, {amount} demandé.");
+        }
+
+        return new Withdrawal(WithdrawalId.New(), wallet.Id, wallet.OwnerType, wallet.OwnerId, amount, wallet.Currency);
+    }
 
     /// <summary>
     /// Le versement a été DEMANDÉ au PSP (créé + démarré), ou son issue est indéterminée.

@@ -36,6 +36,9 @@
     <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Domain\Marketplace.Modules.Ordering.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Application\Marketplace.Modules.Ordering.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\Marketplace.Modules.Delivery.Domain\Marketplace.Modules.Delivery.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\Marketplace.Modules.Delivery.Application\Marketplace.Modules.Delivery.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Delivery\Marketplace.Modules.Delivery.Contracts\Marketplace.Modules.Delivery.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Domain\Marketplace.Modules.Payments.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Application\Marketplace.Modules.Payments.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />

@@ -52,3 +52,27 @@ public sealed record CustomerRefundCreditedIntegrationEvent : IntegrationEvent
     /// </summary>
     public required string LedgerReference { get; init; }
 }
+
+/// <summary>
+/// Une course a été livrée et le coursier a été crédité de sa rémunération.
+///
+/// Émis APRÈS l'écriture au portefeuille, pas avant : c'est la confirmation que
+/// l'argent est bien passé, et le service de dispatch peut s'en servir pour clore la
+/// course de son côté.
+///
+/// DÉCLARÉ ICI ET PAS DANS Delivery.Contracts, bien qu'il parle d'un coursier : un
+/// module déclare les événements qu'il PUBLIE, et c'est Settlement qui crédite. Le
+/// ranger ailleurs enverrait chercher le publieur dans le mauvais module.
+/// </summary>
+public sealed record CourierEarningCreditedIntegrationEvent : IntegrationEvent
+{
+    public required Guid CourierId { get; init; }
+    public required Guid OrderId { get; init; }
+    /// <summary>
+    /// Identifiant de la course dans le service de dispatch. C'est LA CLÉ
+    /// D'IDEMPOTENCE du crédit : deux annonces de la même course ne paient qu'une fois.
+    /// </summary>
+    public required Guid DeliveryJobId { get; init; }
+    public required decimal Amount { get; init; }
+    public required string Currency { get; init; }
+}

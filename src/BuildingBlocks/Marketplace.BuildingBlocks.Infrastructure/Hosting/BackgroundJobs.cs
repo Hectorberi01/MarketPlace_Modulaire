@@ -6,7 +6,7 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Hosting;
 /// ═════════════════════════════════════════════════════════════════════════════
 /// LE PIÈGE, ET IL A DÉJÀ COÛTÉ UNE FOIS.
 ///
-/// Les 25 modules sont composés IN-PROCESSUS par cinq hôtes : l'API et les quatre BFF.
+/// Tous les modules sont composés IN-PROCESSUS par cinq hôtes : l'API et les quatre BFF.
 /// Un `AddHostedService` posé dans l'installeur d'un module démarre donc CINQ fois, dans
 /// cinq processus qui ne savent rien les uns des autres.
 ///

@@ -188,3 +188,31 @@ public sealed record CustomerWithdrawalView(
     string? FailureReason,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc);
+
+/// <summary>
+/// Soldes du portefeuille d'un coursier. Même forme que celui d'un vendeur : mêmes
+/// comptes, même cycle, même retrait — c'est ce qui a permis de n'écrire le retrait
+/// qu'une seule fois.
+/// </summary>
+public sealed record CourierWalletView(
+    Guid CourierId,
+    // Réservé à un futur séquestre (livraison contestée). Vaut zéro aujourd'hui : une
+    // course livrée est payée au disponible, faute de déclencheur pour l'en sortir.
+    decimal PendingBalance,
+    decimal AvailableBalance,
+    decimal PendingWithdrawal,
+    string Currency);
+
+/// <summary>Demande de retrait d'un coursier en attente de validation (vue admin).</summary>
+public sealed record PendingCourierWithdrawalView(
+    Guid Id,
+    Guid CourierId,
+    string CourierName,
+    // Affiché pour éclairer la décision, pas pour la bloquer : un coursier suspendu
+    // conserve le droit de retirer ce qu'il a déjà gagné.
+    string CourierStatus,
+    decimal Amount,
+    string Currency,
+    string? PayoutProvider,
+    string? PayoutAccountNumber,
+    DateTime CreatedAtUtc);

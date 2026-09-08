@@ -6,16 +6,37 @@ using Marketplace.Modules.Shipping.Application.Shipments.Queries;
 namespace Marketplace.Api.Endpoints;
 
 /// <summary>
-/// Endpoints HTTP du module Shipping : suivi et transitions des expéditions. Les
-/// expéditions sont créées automatiquement à la confirmation d'une commande (une
-/// par vendeur / lieu d'expédition) ; ici le vendeur les fait avancer.
+/// Endpoints HTTP du module Shipping : suivi et transitions des expéditions, RÉSERVÉS
+/// AU BACK-OFFICE. Les expéditions sont créées automatiquement à la confirmation d'une
+/// commande (une par vendeur / lieu d'expédition).
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// CE GROUPE ÉTAIT OUVERT À TOUT COMPTE AUTHENTIFIÉ, ET C'ÉTAIT UNE VOIE D'ESCALADE.
+///
+/// `RequireAuthorization()` seul dit QUI parle, pas ce qu'il a le droit de toucher.
+/// Or aucun de ces handlers ne vérifiait la propriété : ils prennent un identifiant
+/// d'expédition et agissent dessus. N'importe quel compte — un acheteur inscrit ce
+/// matin — pouvait donc appeler `/deliver` sur l'expédition de n'importe quel vendeur.
+///
+/// Ce n'était pas qu'un changement de statut. « Expédition livrée » déclenche en aval
+/// la LIBÉRATION DU SÉQUESTRE : le gain du vendeur passe du solde à venir au solde
+/// retirable, et devient versable sur son Mobile Money. Un tiers pouvait donc forcer le
+/// paiement d'une commande jamais reçue, puis ouvrir un litige — la marchandise ET
+/// l'argent. Les routes `/ship` et `/cancel` avaient le même défaut, et les lectures
+/// exposaient les expéditions de tous les vendeurs.
+///
+/// Les vendeurs passent par le BFF Vendeur, qui exige le rôle ET vérifie la propriété
+/// de l'expédition (SellerBff.OwnsShipmentAsync). L'API monolithe n'a aucune raison de
+/// leur être ouverte — c'est très exactement ce que dit la règle posée dans
+/// ApiAuthorization, et que ce groupe était le seul à enfreindre.
+/// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public static class ShippingEndpoints
 {
-    /// <summary>Enregistre les routes des expéditions (vendeur / admin authentifié).</summary>
+    /// <summary>Enregistre les routes des expéditions (back-office uniquement).</summary>
     public static IEndpointRouteBuilder MapShippingEndpoints(this IEndpointRouteBuilder app)
     {
-        var shipments = app.MapGroup("/api/shipments").WithTags("Shipping").RequireAuthorization();
+        var shipments = app.MapAdminGroup("/api/shipments").WithTags("Shipping");
 
         shipments.MapGet("/{id:guid}", GetAsync).WithName("GetShipment");
         shipments.MapGet("/order/{orderId:guid}", ListByOrderAsync).WithName("ListShipmentsByOrder");
@@ -63,7 +84,13 @@ public static class ShippingEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Marque l'expédition « livrée ».</summary>
+    /// <summary>
+    /// Marque l'expédition « livrée ».
+    ///
+    /// LIBÈRE LE SÉQUESTRE DU VENDEUR en aval : son gain devient retirable. C'est la
+    /// route la plus lourde de conséquences du groupe, et la raison pour laquelle il est
+    /// désormais réservé au back-office.
+    /// </summary>
     private static async Task<IResult> DeliverAsync(Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new MarkShipmentDeliveredCommand(id), ct);

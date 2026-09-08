@@ -64,7 +64,13 @@ internal sealed class RequestWithdrawalCommandHandler : ICommandHandler<RequestW
 
         // Le retrait est créé AVANT le débit : son identifiant est la référence portée par
         // l'écriture de grand livre, et c'est lui qui rend la ligne explicable.
-        var withdrawal = Withdrawal.Create(wallet, command.Amount);
+        var requested = Withdrawal.Create(wallet, command.Amount);
+        if (requested.IsFailure)
+        {
+            return Result.Failure<WithdrawalView>(requested.Error);
+        }
+
+        var withdrawal = requested.Value;
 
         // Retenue des fonds. Le solde et son écriture partent ensemble — c'est la seule
         // API qui les lie. Un solde insuffisant remonte l'erreur du domaine telle quelle.
