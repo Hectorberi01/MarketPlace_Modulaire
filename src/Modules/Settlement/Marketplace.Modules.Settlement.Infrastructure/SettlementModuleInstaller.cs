@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,23 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<ICustomerRefundRepository, CustomerRefundRepository>();
         services.AddScoped<IWalletTransactionRepository, WalletTransactionRepository>();
         services.AddScoped<WalletMutations>();
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PLAFOND DE RÉMUNÉRATION DES COURSES. Voir CourierPayLimits : le plafond
+        // RELATIF (jamais plus que les frais de livraison encaissés) s'applique toujours ;
+        // celui-ci n'est que le filet absolu, facultatif.
+        // ─────────────────────────────────────────────────────────────────────────
+        // Lecture en CULTURE INVARIANTE, et non celle du serveur : « 50000.00 » doit se
+        // lire pareil quel que soit l'hôte. Une virgule décimale interprétée comme un
+        // séparateur de milliers transformerait un plafond en son millier.
+        services.AddSingleton(
+            decimal.TryParse(
+                configuration[CourierPayLimits.MaxAmountKey],
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var courierPayCap) && courierPayCap > 0m
+                ? new CourierPayLimits(courierPayCap)
+                : CourierPayLimits.RelativeOnly);
 
         // Coordonnées de versement selon l'acteur : vendeur (Sellers) ou client
         // (Identity). Isolé ici pour que l'arrivée du livreur ne rouvre pas le handler

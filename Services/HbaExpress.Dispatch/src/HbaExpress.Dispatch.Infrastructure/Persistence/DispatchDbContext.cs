@@ -1,6 +1,7 @@
 using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
+using HbaExpress.Dispatch.Domain.Outbound;
 using Microsoft.EntityFrameworkCore;
 
 namespace HbaExpress.Dispatch.Infrastructure.Persistence;
@@ -19,6 +20,7 @@ public sealed class DispatchDbContext : DbContext, IDispatchUnitOfWork
 
     public DbSet<Courier> Couriers => Set<Courier>();
     public DbSet<DeliveryJob> DeliveryJobs => Set<DeliveryJob>();
+    public DbSet<OutboundMessage> OutboundMessages => Set<OutboundMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,8 +1,10 @@
 using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
+using HbaExpress.Dispatch.Domain.Outbound;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace HbaExpress.Dispatch.Application.Jobs;
 
@@ -26,8 +28,12 @@ namespace HbaExpress.Dispatch.Application.Jobs;
 /// </summary>
 public sealed class JobProgressService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IDeliveryJobRepository _jobs;
     private readonly ICourierRepository _couriers;
+    private readonly IOutboundMessageRepository _outbound;
+    private readonly CourierPayRule _pay;
     private readonly IDispatchUnitOfWork _unitOfWork;
     private readonly ILogger<JobProgressService> _logger;
     private readonly TimeProvider _clock;
@@ -35,12 +41,16 @@ public sealed class JobProgressService
     public JobProgressService(
         IDeliveryJobRepository jobs,
         ICourierRepository couriers,
+        IOutboundMessageRepository outbound,
+        CourierPayRule pay,
         IDispatchUnitOfWork unitOfWork,
         ILogger<JobProgressService> logger,
         TimeProvider? clock = null)
     {
         _jobs = jobs;
         _couriers = couriers;
+        _outbound = outbound;
+        _pay = pay;
         _unitOfWork = unitOfWork;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
@@ -67,41 +77,64 @@ public sealed class JobProgressService
         => MutateAsync(jobId, courierId, job => job.StartTransit(), cancellationToken);
 
     /// <summary>
-    /// Course livrée : la course se ferme et le coursier redevient disponible.
+    /// Course livrée : la course se ferme, le coursier redevient disponible, et la
+    /// rémunération part en file vers la marketplace.
     ///
     /// ═════════════════════════════════════════════════════════════════════════
-    /// LE COURSIER N'EST PAS ENCORE PAYÉ PAR CE CHEMIN. C'EST LE TROU CONNU.
+    /// LES TROIS TIENNENT DANS UNE SEULE TRANSACTION, ET C'EST TOUT L'ENJEU.
     ///
-    /// La marketplace expose POST /api/delivery/courses/completed, signé et idempotent
-    /// sur l'identifiant de course : c'est lui qui crédite le portefeuille du coursier.
-    /// Ce service ne l'appelle pas encore.
+    /// La fermeture de la course et le message qui la fera payer sont écrits par le même
+    /// SaveChanges. Ils existent ensemble ou aucun des deux n'existe. C'est la seule
+    /// façon d'exclure le cas qui coûte cher : une course marquée livrée dont l'annonce
+    /// s'est perdue, donc un coursier qui a travaillé et que rien ne paiera — sans erreur,
+    /// sans trace, sans rien à réessayer.
     ///
-    /// L'appel ne peut pas être un simple POST en ligne : si le réseau tombe entre la
-    /// fermeture de la course et l'annonce, la course est livrée et personne n'est payé,
-    /// sans que rien ne le signale. Il lui faut une file persistée, drainée jusqu'à
-    /// acquittement — l'outbox du monolithe, en plus petit.
-    ///
-    /// D'ici là, ce niveau AVERTISSEMENT est le seul filet : une course livrée est une
-    /// somme due qui n'a pas été versée, et cela doit se voir dans les journaux plutôt
-    /// que se découvrir par la réclamation d'un coursier.
+    /// L'ENVOI, LUI, EST FAIT PLUS TARD PAR LE DRAIN, autant de fois qu'il le faut. La
+    /// marketplace est idempotente sur l'identifiant de course : un doublon ne paie pas
+    /// deux fois. Un appel HTTP en ligne ici aurait l'air plus simple et rouvrirait
+    /// exactement le trou que cette file referme.
     /// ═════════════════════════════════════════════════════════════════════════
     /// </summary>
     public async Task<Result> MarkDeliveredAsync(
         DeliveryJobId jobId, CourierId courierId, CancellationToken cancellationToken = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
-        var result = await MutateAsync(jobId, courierId, job => job.MarkDelivered(now), cancellationToken, release: true);
 
-        if (result.IsSuccess)
-        {
-            _logger.LogWarning(
-                "Course {JobId} LIVRÉE par le coursier {CourierId} : rémunération NON VERSÉE. " +
-                "L'annonce à la marketplace (POST /api/delivery/courses/completed) n'est pas encore branchée — " +
-                "à régler à la main tant que la file sortante n'existe pas.",
-                jobId, courierId);
-        }
+        return await MutateAsync(
+            jobId, courierId,
+            job => job.MarkDelivered(now),
+            cancellationToken,
+            release: true,
+            beforeSave: async job =>
+            {
+                var amount = _pay.AmountFor(job);
 
-        return result;
+                if (amount <= 0m)
+                {
+                    // Course à frais de livraison nuls : rien à verser, et surtout pas un
+                    // message que la marketplace rejetterait (elle exige un montant
+                    // strictement positif) et qui finirait en abandon.
+                    _logger.LogWarning(
+                        "Course {JobId} livrée avec une rémunération nulle (frais de livraison {Fee}) — "
+                        + "aucune annonce de paiement.",
+                        job.Id, job.ShippingFee);
+                    return;
+                }
+
+                var payload = new CourierDeliveryCompletedPayload(
+                    courierId.Value, job.OrderId, job.Id.Value, amount, job.Currency);
+
+                await _outbound.AddAsync(
+                    OutboundMessage.Create(
+                        OutboundMessage.CourierDeliveryCompletedType,
+                        JsonSerializer.Serialize(payload, JsonOptions),
+                        now),
+                    cancellationToken);
+
+                _logger.LogInformation(
+                    "Course {JobId} livrée : {Amount} {Currency} en file pour le coursier {CourierId}.",
+                    job.Id, amount, job.Currency, courierId);
+            });
     }
 
     public Task<Result> FailAsync(
@@ -150,12 +183,17 @@ public sealed class JobProgressService
         return Result.Success();
     }
 
+    /// <param name="beforeSave">
+    /// Exécuté APRÈS la mutation et AVANT l'enregistrement — donc dans la même
+    /// transaction. C'est par là que la livraison met son message de paiement en file.
+    /// </param>
     private async Task<Result> MutateAsync(
         DeliveryJobId jobId,
         CourierId courierId,
         Func<DeliveryJob, Result> mutate,
         CancellationToken cancellationToken,
-        bool release = false)
+        bool release = false,
+        Func<DeliveryJob, Task>? beforeSave = null)
     {
         var job = await _jobs.GetByIdAsync(jobId, cancellationToken);
         if (job is null)
@@ -178,6 +216,11 @@ public sealed class JobProgressService
         if (release)
         {
             await ReleaseCourierAsync(courierId, cancellationToken);
+        }
+
+        if (beforeSave is not null)
+        {
+            await beforeSave(job);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

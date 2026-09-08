@@ -245,6 +245,53 @@ namespace HbaExpress.Dispatch.Infrastructure.Migrations
                     b.ToTable("delivery_job_pickups", "dispatch");
                 });
 
+            modelBuilder.Entity("HbaExpress.Dispatch.Domain.Outbound.OutboundMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeadLetteredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeadLetteredAtUtc")
+                        .HasDatabaseName("ix_outbound_messages_dead_lettered")
+                        .HasFilter("\"DeadLetteredAtUtc\" IS NOT NULL");
+
+                    b.HasIndex("NextAttemptAtUtc")
+                        .HasDatabaseName("ix_outbound_messages_pending")
+                        .HasFilter("\"SentAtUtc\" IS NULL AND \"DeadLetteredAtUtc\" IS NULL");
+
+                    b.ToTable("outbound_messages", "dispatch");
+                });
+
             modelBuilder.Entity("HbaExpress.Dispatch.Domain.Couriers.Courier", b =>
                 {
                     b.OwnsOne("HbaExpress.Dispatch.Domain.Couriers.GeoPoint", "LastPosition", b1 =>

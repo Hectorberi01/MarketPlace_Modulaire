@@ -2,7 +2,9 @@ using System.Text;
 using HbaExpress.Dispatch.Api.BackgroundJobs;
 using HbaExpress.Dispatch.Api.Endpoints;
 using HbaExpress.Dispatch.Api.Extensions;
+using HbaExpress.Dispatch.Api.Outbound;
 using HbaExpress.Dispatch.Api.Security;
+using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Application;
 using HbaExpress.Dispatch.Infrastructure;
 using HbaExpress.Dispatch.Infrastructure.Persistence;
@@ -18,6 +20,24 @@ var builder = WebApplication.CreateBuilder(args);
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddDispatchApplication();
 builder.Services.AddDispatchInfrastructure(builder.Configuration);
+
+// Ce que vaut une course. Lu au démarrage, et le démarrage ÉCHOUE si la part n'est pas
+// renseignée : un service qui ne sait pas ce qu'il doit payer ne doit pas tourner.
+builder.Services.AddSingleton(CourierPayGuard.Resolve(builder.Configuration));
+
+// Canal SORTANT vers la marketplace — c'est lui qui fait payer les courses livrées.
+var marketplaceBaseUrl = builder.Configuration[MarketplaceClient.BaseUrlKey];
+builder.Services.AddHttpClient<IMarketplaceClient, MarketplaceClient>(client =>
+{
+    if (!string.IsNullOrWhiteSpace(marketplaceBaseUrl))
+    {
+        client.BaseAddress = new Uri(marketplaceBaseUrl, UriKind.Absolute);
+    }
+
+    // Court : le drain traite les messages en série, une longue attente sur un service
+    // injoignable bloquerait la file derrière elle.
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. AUTHENTIFICATION DE L'APPLICATION COURSIER.
@@ -118,12 +138,16 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddHealthChecks()
     .AddNpgSql(
         DispatchInfrastructureServices.ResolveConnectionString(builder.Configuration),
-        name: "dispatch-db");
+        name: "dispatch-db")
+    // Les abandons de la file sortante : des courses livrées que personne n'a payées.
+    // Dégradé plutôt qu'en panne — voir OutboundHealthCheck.
+    .AddCheck<OutboundHealthCheck>("dispatch-outbound");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. TÂCHES DE FOND.
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddHostedService<RedispatchBackgroundService>();
+builder.Services.AddHostedService<OutboundDrainService>();
 
 var app = builder.Build();
 

@@ -1,6 +1,7 @@
 using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
+using HbaExpress.Dispatch.Domain.Outbound;
 using HbaExpress.Dispatch.Infrastructure.Notifications;
 using HbaExpress.Dispatch.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ public static class DispatchInfrastructureServices
 
         services.AddScoped<ICourierRepository, CourierRepository>();
         services.AddScoped<IDeliveryJobRepository, DeliveryJobRepository>();
+        services.AddScoped<IOutboundMessageRepository, OutboundMessageRepository>();
 
         // TryAdd : l'hôte qui branchera SignalR enregistrera le sien AVANT d'appeler
         // cette méthode, et gardera la main.

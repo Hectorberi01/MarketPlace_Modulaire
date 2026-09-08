@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Delivery.Contracts;
+using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Settlement.Application.Abstractions;
 using Marketplace.Modules.Settlement.Contracts.IntegrationEvents;
 
@@ -20,10 +21,10 @@ namespace Marketplace.Modules.Settlement.Application.Wallets;
 /// décider de la rémunération d'un coursier.
 ///
 /// Ce choix a un prix, assumé : QUI APPELLE CETTE COMMANDE DÉCIDE COMBIEN SORT DU
-/// PORTEFEUILLE DE LA PLATEFORME. L'endpoint qui l'expose doit donc être authentifié
-/// comme un service, pas comme un utilisateur, et le montant doit être plafonné le jour
-/// où la règle de tarification sera arrêtée. En attendant, la trace est complète :
-/// chaque paiement porte l'identifiant de la course et se relit au grand livre.
+/// PORTEFEUILLE DE LA PLATEFORME. L'endpoint qui l'expose est donc authentifié comme un
+/// SERVICE — signature HMAC, fermée par défaut — et le montant est désormais PLAFONNÉ :
+/// voir <see cref="CourierPayLimits"/>. La signature dit qui appelle ; elle ne dit rien
+/// de combien, et c'est le plafond qui répond à cette seconde question.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed record CreditCourierDeliveryCommand(
@@ -42,17 +43,23 @@ public sealed class CreditCourierDeliveryCommandValidator : AbstractValidator<Cr
 internal sealed class CreditCourierDeliveryCommandHandler : ICommandHandler<CreditCourierDeliveryCommand>
 {
     private readonly IDeliveryModuleApi _couriers;
+    private readonly IOrderingModuleApi _orders;
+    private readonly CourierPayLimits _limits;
     private readonly WalletMutations _wallets;
     private readonly IIntegrationEventPublisher _publisher;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public CreditCourierDeliveryCommandHandler(
         IDeliveryModuleApi couriers,
+        IOrderingModuleApi orders,
+        CourierPayLimits limits,
         WalletMutations wallets,
         IIntegrationEventPublisher publisher,
         ISettlementUnitOfWork unitOfWork)
     {
         _couriers = couriers;
+        _orders = orders;
+        _limits = limits;
         _wallets = wallets;
         _publisher = publisher;
         _unitOfWork = unitOfWork;
@@ -84,6 +91,40 @@ internal sealed class CreditCourierDeliveryCommandHandler : ICommandHandler<Cred
                 WalletMutations.CourierDeliveryReferenceType, command.DeliveryJobId, cancellationToken))
         {
             return Result.Success();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PLAFONDS — APRÈS le verrou de rejeu, AVANT le paiement.
+        //
+        // Après, parce qu'un rejeu d'une course déjà payée doit rester un succès muet :
+        // le refuser sur un plafond entre-temps resserré ferait réessayer sans fin un
+        // message qui a pourtant abouti.
+        // ─────────────────────────────────────────────────────────────────────────
+        var order = await _orders.GetOrderAsync(command.OrderId, cancellationToken);
+        if (order is null)
+        {
+            // ON REFUSE PLUTÔT QUE DE PAYER SANS VÉRIFIER. Sans la commande, le plafond
+            // relatif est impossible à évaluer, et le laisser passer reviendrait à
+            // désactiver le contrôle exactement dans le cas le plus douteux : une course
+            // livrée pour une commande que la marketplace ne connaît pas.
+            return Result.Failure(Error.NotFound(
+                "settlement.courier_pay_order_not_found",
+                "Commande introuvable : la rémunération de course ne peut pas être vérifiée."));
+        }
+
+        if (command.Amount > order.ShippingFee)
+        {
+            return Result.Failure(Error.Validation(
+                "settlement.courier_pay_exceeds_shipping",
+                $"Rémunération de course ({command.Amount:0.##}) supérieure aux frais de livraison "
+                + $"encaissés sur la commande ({order.ShippingFee:0.##})."));
+        }
+
+        if (_limits.MaxAmount is { } max && command.Amount > max)
+        {
+            return Result.Failure(Error.Validation(
+                "settlement.courier_pay_exceeds_cap",
+                $"Rémunération de course ({command.Amount:0.##}) supérieure au plafond configuré ({max:0.##})."));
         }
 
         await _wallets.PayCourierForDeliveryAsync(

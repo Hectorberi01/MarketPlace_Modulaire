@@ -1,5 +1,6 @@
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
+using HbaExpress.Dispatch.Domain.Outbound;
 using Microsoft.EntityFrameworkCore;
 
 namespace HbaExpress.Dispatch.Infrastructure.Persistence;
@@ -119,4 +120,31 @@ internal sealed class DeliveryJobRepository : IDeliveryJobRepository
                             || j.Status == DeliveryJobStatus.InTransit))
             .OrderByDescending(j => j.AcceptedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
+}
+
+internal sealed class OutboundMessageRepository : IOutboundMessageRepository
+{
+    private readonly DispatchDbContext _dbContext;
+
+    public OutboundMessageRepository(DispatchDbContext dbContext) => _dbContext = dbContext;
+
+    public async Task AddAsync(OutboundMessage message, CancellationToken cancellationToken = default)
+        => await _dbContext.OutboundMessages.AddAsync(message, cancellationToken);
+
+    // SUIVI ACTIVÉ : le drain marque ces messages envoyés ou en échec. Sans suivi, EF
+    // n'émettrait aucun UPDATE et chaque message serait renvoyé à chaque passage.
+    public async Task<IReadOnlyList<OutboundMessage>> ListPendingAsync(
+        DateTime nowUtc, int take, CancellationToken cancellationToken = default)
+        => await _dbContext.OutboundMessages
+            .Where(m => m.SentAtUtc == null
+                        && m.DeadLetteredAtUtc == null
+                        && m.NextAttemptAtUtc <= nowUtc)
+            .OrderBy(m => m.CreatedAtUtc)
+            .Take(take <= 0 ? 50 : take)
+            .ToListAsync(cancellationToken);
+
+    public async Task<int> CountDeadLetteredAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.OutboundMessages
+            .AsNoTracking()
+            .CountAsync(m => m.DeadLetteredAtUtc != null, cancellationToken);
 }
