@@ -16,6 +16,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Abstractions SEULEMENT : cette couche décrit ce qu'elle enregistre, elle ne
+         construit aucun conteneur. C'est l'hôte qui le fait. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 
 </Project>

@@ -6,6 +6,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HbaExpress.Dispatch.Applica
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HbaExpress.Dispatch.Infrastructure", "src\HbaExpress.Dispatch.Infrastructure\HbaExpress.Dispatch.Infrastructure.csproj", "{C0000000-0000-0000-0000-000000000004}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HbaExpress.Dispatch.Api", "src\HbaExpress.Dispatch.Api\HbaExpress.Dispatch.Api.csproj", "{C0000000-0000-0000-0000-000000000007}"
+EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HbaExpress.Dispatch.UnitTests", "tests\HbaExpress.Dispatch.UnitTests\HbaExpress.Dispatch.UnitTests.csproj", "{C0000000-0000-0000-0000-000000000002}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HbaExpress.Dispatch.IntegrationTests", "tests\HbaExpress.Dispatch.IntegrationTests\HbaExpress.Dispatch.IntegrationTests.csproj", "{C0000000-0000-0000-0000-000000000005}"
@@ -42,5 +44,9 @@ Global
 		{C0000000-0000-0000-0000-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C0000000-0000-0000-0000-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C0000000-0000-0000-0000-000000000003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0000000-0000-0000-0000-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0000000-0000-0000-0000-000000000007}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0000000-0000-0000-0000-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0000000-0000-0000-0000-000000000007}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

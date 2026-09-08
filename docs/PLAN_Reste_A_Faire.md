@@ -1,16 +1,20 @@
 # Plan — ce qu'il reste à faire
 
 > Établi le 8 septembre 2026, à la fin des lots 1 à 4 du chantier portefeuille et du
-> socle du service de dispatch. Deux bases de code : le monolithe `marketPlace` et le
-> service `Services/HbaExpress.Dispatch`.
+> socle du service de dispatch. **Révisé le même jour**, après le merge dans
+> `develop_staging` et la construction de l'hôte du service de dispatch.
+> Deux bases de code : le monolithe `marketPlace` et le service
+> `Services/HbaExpress.Dispatch`.
 
 ---
 
 ## 0. L'état réel, sans arrondi
 
-**Branche `wallet` : 9 commits au-dessus de `develop`, rien de mergé.** C'est le premier
-risque du projet, avant tout problème technique : plus la branche vieillit, plus la
-réintégration devient un événement à part entière plutôt qu'une formalité.
+**`wallet` est mergé dans `develop_staging`** — les deux branches pointent sur le même
+commit. `develop`, en revanche, reste **10 commits en arrière** : les trois correctifs
+d'argent (plafond de remboursement, `Withdrawal.Create` sans contrôle de solde,
+`/api/shipments/{id}/deliver` ouvert à tout compte authentifié) ne sont pas encore sur la
+branche d'intégration.
 
 | Chantier | État |
 |---|---|
@@ -19,24 +23,35 @@ réintégration devient un événement à part entière plutôt qu'une formalit�
 | Lot 3 — dépense au checkout | fini, testé |
 | Lot 4 — coursier (identité + paiement) | fini côté marketplace |
 | Service dispatch — domaine + persistance | fini, testé (verrou de concurrence prouvé) |
-| Service dispatch — couche application | faite ; **son entrée HTTP n'existe pas** |
-| Service dispatch — balayage de redispatch | écrit ; **aucun hôte pour l'exécuter** |
+| Service dispatch — couche application | finie |
+| Service dispatch — hôte HTTP + routes | **écrit, pas encore compilé** |
+| Service dispatch — balayage de redispatch | branché sur l'hôte |
+| Service dispatch — annonce de livraison à la marketplace | **manquante** |
+| Marketplace → dispatch : livraison des événements | **manquante** |
 | Service dispatch — hub temps réel | pas commencé |
 
-**Le service de dispatch ne peut pas démarrer.** Il n'a ni `Program.cs`, ni injection de
-dépendances, ni port HTTP. Il compile, il se teste, il ne tourne pas. Tant que c'est vrai,
-tout le reste du service est du code mort — y compris l'événement `OrderReadyForDelivery`
-que la marketplace publie déjà et que personne ne consomme.
+**Le service démarre désormais** — enfin, il le devrait : le code de l'hôte est écrit et
+n'a pas encore passé un `dotnet build`. C'est la première chose à vérifier.
+
+**Il reste deux ruptures dans la chaîne, et ce sont les deux mêmes : du silence.**
+
+1. **La marketplace n'envoie rien.** `OrderReadyForDeliveryIntegrationEvent` part bien dans
+   l'outbox, qui le draine et le dispatche en mémoire — vers **zéro handler**. Le message
+   est alors marqué traité. Pas d'erreur, pas de lettre morte, pas de journal : une
+   commande prête à livrer disparaît sans laisser de trace, et le dispatch tourne à vide.
+2. **La livraison ne paie personne.** `POST /jobs/{id}/delivered` ferme la course et libère
+   le coursier ; l'appel à `POST /api/delivery/courses/completed` n'existe pas. Un
+   avertissement est journalisé à chaque livraison — c'est un pansement, pas une solution.
 
 ---
 
-## 1. Merger `wallet` — avant d'écrire une ligne de plus
+## 1. Vérifier ce qui vient d'être écrit, et rattraper `develop`
 
-Neuf commits, deux mois de décisions, quatre lots. Chaque jour de retard ajoute du conflit
-potentiel et éloigne le moment où ce travail sert à quelqu'un.
-
-- Rebaser ou merger sur `develop`, lancer la suite complète.
-- Déployer en staging (Hetzner) et laisser tourner quelques jours avec du trafic réel.
+- `dotnet build` et `dotnet test` sur `Services/HbaExpress.Dispatch/HbaExpress.Dispatch.sln`.
+- Lancer le service en développement, ouvrir Swagger, appeler `/health`.
+- **Reporter `develop_staging` sur `develop`.** Tant que les correctifs d'argent ne sont
+  que sur staging, toute branche partant de `develop` repart avec les trous.
+- Déployer en staging et laisser tourner quelques jours avec du trafic réel.
 - **Vérifier `GET /admin/wallet/reconciliation`** : il doit répondre 200. Un 409 en staging
   signifie qu'un chemin d'écriture bouge un solde sans écrire au grand livre — à corriger
   avant la production, jamais après.
@@ -45,60 +60,62 @@ potentiel et éloigne le moment où ce travail sert à quelqu'un.
 
 ---
 
-## 2. Rendre le service de dispatch exécutable
+## 2. Refermer la chaîne
 
-C'est le seul bloc qui transforme du code en système. Rien d'autre ne devrait passer devant.
+Le service écoute ; personne ne lui parle, et il ne répond à personne. Ces deux morceaux
+sont ce qui sépare « un service qui démarre » de « des courses livrées ».
 
-### 2.1 L'hôte (`HbaExpress.Dispatch.Api`)
+### 2.1 L'hôte — **fait**
 
-Projet ASP.NET minimal : `Program.cs`, DI (`DispatchDbContext`, repositories, services),
-application des migrations au démarrage, endpoint de santé.
+`HbaExpress.Dispatch.Api` : `Program.cs`, DI, JWT (clé partagée avec la marketplace),
+politique d'autorisation par repli, `ProblemDetails`, migrations au démarrage, `/health`,
+Swagger en développement.
 
-### 2.2 L'entrée venant de la marketplace
+### 2.2 L'entrée venant de la marketplace — **fait**
 
-Webhook signé HMAC, fermé par défaut — même schéma que `PartnerServiceSignature` côté
-marketplace, secret distinct.
+Signature HMAC du corps brut, fermée par défaut, secret distinct de celui du sens inverse.
 
-- `POST /events/order-ready-for-delivery` → crée la course et lance la première vague.
-- `POST /events/order-cancelled` → annule la course si elle n'est pas livrée.
-- `POST /events/courier-standing-changed` → recopie le droit de travailler (activation,
-  suspension). **Sans lui, aucun coursier n'existe côté dispatch** : c'est par là qu'ils
-  entrent dans le service.
+- `POST /internal/orders/ready-for-delivery` → crée la course et lance la première vague.
+- `POST /internal/orders/cancelled` → annule la course et libère le coursier.
+- `POST /internal/couriers/standing-changed` → recopie le droit de travailler. C'est par là
+  qu'un coursier entre dans le service ; il n'y a pas d'inscription séparée.
 
-### 2.3 Les routes coursier
+### 2.3 Les routes coursier — **fait**
 
-`POST /me/online`, `/me/offline`, `PUT /me/position`, `PUT /me/service-area`,
-`GET /me/offers`, `POST /jobs/{id}/accept`, `POST /jobs/{id}/decline`, et la progression
-(`/pickup`, `/transit`, `/delivered`, `/failed`).
+`/api/courier` : en ligne, hors ligne, position, zone, offres, course en cours,
+accepter, refuser, ramassages, incident, transit, livraison, échec.
 
-**Point de vigilance** : traduire `DbUpdateConcurrencyException` en réponse 409 « course
-déjà prise ». Sans cette traduction, le coursier perdant reçoit une erreur 500 sur le
-chemin le plus fréquent du service.
+Deux règles tenues : **l'identifiant du coursier vient du jeton, jamais du corps**, et
+chaque route de progression vérifie que l'appelant est bien le coursier assigné.
+`DbUpdateConcurrencyException` est traduit en **409**, le même code que la règle métier
+`job.already_taken` — une seule branche à écrire côté application mobile.
 
-### 2.4 Le balayage en tâche de fond
+### 2.4 Le balayage en tâche de fond — **fait**
 
-`BackgroundService` appelant `RedispatchService.SweepAsync` toutes les 15 secondes.
+`RedispatchBackgroundService`, toutes les 10 secondes (la fenêtre d'offre est de 25 s ;
+balayer plus lentement laisserait une course inerte plus longtemps qu'elle n'a été
+offerte). Interrupteur `Dispatch:Redispatch:Enabled` : **un seul hôte doit l'exécuter**,
+la requête n'utilisant pas `SKIP LOCKED`.
 
-**Un seul hôte doit l'exécuter.** Le monolithe a payé cette leçon trois fois (outbox,
-réconciliation des retraits, expiration des remises) : poser la même condition dès le
-départ ici.
+### 2.5 Le transport marketplace → dispatch — **manquant, priorité 1**
 
-### 2.5 Le transport marketplace → dispatch
+Un `IIntegrationEventHandler<OrderReadyForDeliveryIntegrationEvent>` côté marketplace qui
+POSTe vers `/internal/orders/ready-for-delivery`, signé. L'outbox porte déjà la persistance
+et le réessai : il n'y a pas de bus à construire, seulement un appel à écrire.
 
-Les événements sont dans l'outbox de la marketplace et **rien ne les livre**. Sans ce
-morceau, tout ce qui précède reste inerte.
+Ajouter dans la foulée les deux autres émetteurs : commande annulée, et statut coursier
+(depuis le module `Delivery`).
 
-Le plus simple qui marche : un `IIntegrationEventHandler` côté marketplace qui appelle le
-webhook du service en HTTP signé. Ce n'est pas un bus, mais l'outbox garantit déjà la
-persistance et le réessai — l'essentiel est là.
+**Sans ce morceau, tout le reste du service est inerte** — et le reste silencieusement.
 
-### 2.6 Les événements sortants du dispatch
+### 2.6 L'annonce de livraison — **manquant, priorité 2**
 
-`DeliveryAccepted`, `DeliveryPickedUp`, `DeliveryInTransit`, `DeliveryDelivered`,
-`DeliveryFailed`, `DeliveryExpired` → vers la marketplace, avec outbox côté dispatch.
+`DeliveryDelivered` → `POST /api/delivery/courses/completed`, déjà en place et signé côté
+marketplace, idempotent sur l'identifiant de course.
 
-C'est ce qui referme la boucle : `DeliveryDelivered` doit finir par créditer le coursier
-via `POST /api/delivery/courses/completed`, déjà en place et signé.
+Cela demande une **file persistée côté dispatch** (une petite outbox, avec sa migration) :
+un POST en ligne perdrait le paiement si le réseau tombait entre la fermeture de la course
+et l'annonce — course livrée, personne payé, rien qui le signale.
 
 **À ce stade, la chaîne complète fonctionne** : commande prête → course → offre →
 acceptation → livraison → coursier payé.
@@ -202,18 +219,19 @@ défaut — mais c'est un choix qui n'a pas été arbitré.
 
 ## 6. Ordre proposé
 
-| # | Bloc | Pourquoi maintenant |
-|---|---|---|
-| 1 | Merger `wallet`, déployer en staging | Neuf commits qui vieillissent |
-| 2 | Instruire le point BCEAO (§5.1) | Peut invalider le lot 2 — à lancer en parallèle, ça prend du temps hors code |
-| 3 | Hôte du dispatch (§2.1 → 2.4) | Rien ne tourne sans |
-| 4 | Transport et boucle de retour (§2.5, 2.6) | Referme la chaîne de bout en bout |
-| 5 | `SKIP LOCKED` (§4.1) | Plafond dur, à lever avant la charge |
-| 6 | Audit des routes (§4.2) | Même motif qu'une escalade déjà trouvée |
-| 7 | Hub temps réel (§3) | Accélère ce qui marche déjà |
-| 8 | Repli en cascade / 3PL | Le plus gros bloc restant du CDC |
+| # | Bloc | Pourquoi maintenant | État |
+|---|---|---|---|
+| 1 | Merger `wallet` | | fait dans `develop_staging` ; reste `develop` |
+| 2 | Hôte du dispatch (§2.1 → 2.4) | Rien ne tourne sans | écrit, à compiler |
+| 3 | Instruire le point BCEAO (§5.1) | Peut invalider le lot 2 — hors code, ça prend du temps | à lancer |
+| 4 | Transport marketplace → dispatch (§2.5) | Sans lui le service tourne à vide, en silence | à faire |
+| 5 | Annonce de livraison (§2.6) | Sans elle, une course livrée ne paie personne | à faire |
+| 6 | `SKIP LOCKED` (§4.1) | Plafond dur, à lever avant la charge | à faire |
+| 7 | Audit des routes (§4.2) | Même motif qu'une escalade déjà trouvée | à faire |
+| 8 | Hub temps réel (§3) | Accélère ce qui marche déjà | à faire |
+| 9 | Repli en cascade / 3PL | Le plus gros bloc restant du CDC | à faire |
 
-Les points 1 et 2 se mènent en parallèle : l'un est du code, l'autre des démarches.
+Les points 2 et 3 se mènent en parallèle : l'un est du code, l'autre des démarches.
 
 ---
 

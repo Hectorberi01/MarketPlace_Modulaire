@@ -86,4 +86,37 @@ internal sealed class DeliveryJobRepository : IDeliveryJobRepository
             .OrderBy(j => j.CreatedAtUtc)
             .Take(take <= 0 ? 50 : take)
             .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// LECTURE SEULE, SANS SUIVI EF. L'application coursier interroge cette route à
+    /// chaque ouverture d'écran : suivre les entités renvoyées remplirait le
+    /// ChangeTracker pour rien, et rien ici n'est muté.
+    /// </summary>
+    public async Task<IReadOnlyList<DeliveryJob>> ListOfferedToAsync(
+        CourierId courierId, DateTime nowUtc, CancellationToken cancellationToken = default)
+        => await _dbContext.DeliveryJobs
+            .AsNoTracking()
+            .Include(j => j.Offers)
+            .Include(j => j.Pickups)
+            .ThenInclude(p => p.Parcels)
+            .Where(j => j.Status == DeliveryJobStatus.Offered
+                        && j.Offers.Any(o => o.CourierId == courierId
+                                             && o.Status == DispatchOfferStatus.Pending
+                                             && o.ExpiresAtUtc > nowUtc))
+            .OrderBy(j => j.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<DeliveryJob?> GetActiveForCourierAsync(
+        CourierId courierId, CancellationToken cancellationToken = default)
+        => await _dbContext.DeliveryJobs
+            .AsNoTracking()
+            .Include(j => j.Offers)
+            .Include(j => j.Pickups)
+            .ThenInclude(p => p.Parcels)
+            .Where(j => j.AssignedCourierId == courierId
+                        && (j.Status == DeliveryJobStatus.Accepted
+                            || j.Status == DeliveryJobStatus.PickingUp
+                            || j.Status == DeliveryJobStatus.InTransit))
+            .OrderByDescending(j => j.AcceptedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
 }

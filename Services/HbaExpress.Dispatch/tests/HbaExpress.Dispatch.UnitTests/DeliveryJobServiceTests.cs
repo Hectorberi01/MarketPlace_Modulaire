@@ -192,6 +192,15 @@ public class DeliveryJobServiceTests
             DateTime nowUtc, int take, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DeliveryJob>>(
                 Jobs.Where(j => j.Status == DeliveryJobStatus.Offered).ToList());
+
+        public Task<IReadOnlyList<DeliveryJob>> ListOfferedToAsync(
+            CourierId courierId, DateTime nowUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DeliveryJob>>(
+                Jobs.Where(j => j.Offers.Any(o => o.CourierId == courierId && o.IsLive(nowUtc))).ToList());
+
+        public Task<DeliveryJob?> GetActiveForCourierAsync(
+            CourierId courierId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Jobs.FirstOrDefault(j => j.AssignedCourierId == courierId));
     }
 
     private sealed class FakeCourierRepository : ICourierRepository

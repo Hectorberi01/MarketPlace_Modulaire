@@ -1,3 +1,5 @@
+using HbaExpress.Dispatch.Domain.Couriers;
+
 namespace HbaExpress.Dispatch.Domain.Jobs;
 
 public interface IDeliveryJobRepository
@@ -30,4 +32,25 @@ public interface IDeliveryJobRepository
     /// </summary>
     Task<IReadOnlyList<DeliveryJob>> ListAwaitingRedispatchAsync(
         DateTime nowUtc, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Les offres EN COURS pour ce coursier — ce que son application affiche à l'écran.
+    ///
+    /// Sans cette lecture, une offre poussée puis perdue (téléphone en veille, réseau
+    /// coupé, application relancée) serait invisible jusqu'à son expiration. Le port
+    /// temps réel est BEST-EFFORT par construction : il lui faut une lecture de rattrapage,
+    /// sinon « best-effort » veut dire « perdue ».
+    /// </summary>
+    Task<IReadOnlyList<DeliveryJob>> ListOfferedToAsync(
+        CourierId courierId, DateTime nowUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// La course que ce coursier est en train de faire, s'il y en a une.
+    ///
+    /// UNE SEULE PEUT L'ÊTRE : accepter passe le coursier en <c>OnDelivery</c>, statut
+    /// qui l'exclut des offres suivantes. Si cette requête en rend deux, l'invariant est
+    /// rompu quelque part en amont — pas ici.
+    /// </summary>
+    Task<DeliveryJob?> GetActiveForCourierAsync(
+        CourierId courierId, CancellationToken cancellationToken = default);
 }
