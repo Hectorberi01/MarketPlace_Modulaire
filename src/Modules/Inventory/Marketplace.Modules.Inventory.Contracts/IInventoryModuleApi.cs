@@ -18,4 +18,14 @@ public interface IInventoryModuleApi
 
     /// <summary>Confirme la vente : décrémente le stock physique et solde la réservation.</summary>
     Task<bool> ConfirmReservationAsync(string sku, Guid locationId, Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adresse d'un lieu d'expédition — OÙ LE COLIS SE RAMASSE.
+    ///
+    /// Ajouté pour la livraison par coursier : une expédition porte l'identifiant du lieu
+    /// d'où elle part, mais rien ne permettait d'en obtenir l'adresse hors du module. Le
+    /// coursier a besoin de la commune et surtout du POINT DE REPÈRE, sans quoi il ne
+    /// trouve pas la boutique — au Bénin, la rue est souvent inexistante.
+    /// </summary>
+    Task<FulfillmentLocationSummary?> GetLocationAsync(Guid locationId, CancellationToken cancellationToken = default);
 }

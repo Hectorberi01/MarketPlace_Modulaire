@@ -46,6 +46,10 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
         services.AddScoped<IDomainEventHandler<ShipmentShippedDomainEvent>, ShipmentShippedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ShipmentDeliveredDomainEvent>, ShipmentDeliveredDomainEventHandler>();
 
+        // DÉCLENCHEUR DE LA LIVRAISON PAR COURSIER : la commande devient ramassable
+        // quand la DERNIÈRE part vendeur passe en préparation.
+        services.AddScoped<IDomainEventHandler<ShipmentPreparingDomainEvent>, PublishOrderReadyForDeliveryHandler>();
+
         // Chorégraphie : création des expéditions à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, CreateShipmentsOnOrderConfirmedHandler>();
 

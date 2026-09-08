@@ -6,6 +6,12 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Application\Marketplace.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
     <ProjectReference Include="..\..\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
+    <!-- Composition du brief de livraison envoye au service coursier : adresse de
+         l'acheteur (Ordering), contact vendeur (Sellers + Identity), adresse du lieu
+         de ramassage (Inventory). Uniquement des Contracts. -->
+    <ProjectReference Include="..\..\Sellers\Marketplace.Modules.Sellers.Contracts\Marketplace.Modules.Sellers.Contracts.csproj" />
+    <ProjectReference Include="..\..\Inventory\Marketplace.Modules.Inventory.Contracts\Marketplace.Modules.Inventory.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -79,6 +79,7 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         }
 
         Status = ShipmentStatus.Preparing;
+        Raise(new ShipmentPreparingDomainEvent(Id.Value, OrderId, SellerId));
         return Result.Success();
     }
 

@@ -1,7 +1,9 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Marketplace.Modules.Inventory.Application.Stock.Commands;
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.Modules.Inventory.Contracts;
+using Marketplace.Modules.Inventory.Domain.Locations;
 using Marketplace.Modules.Inventory.Domain.Common;
 using Marketplace.Modules.Inventory.Infrastructure.Persistence;
 
@@ -17,6 +19,34 @@ internal sealed class InventoryModuleApi : IInventoryModuleApi
     {
         _dbContext = dbContext;
         _sender = sender;
+    }
+
+    public async Task<FulfillmentLocationSummary?> GetLocationAsync(
+        Guid locationId, CancellationToken cancellationToken = default)
+    {
+        var id = new FulfillmentLocationId(locationId);
+        var location = await _dbContext.FulfillmentLocations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
+
+        if (location is null)
+        {
+            return null;
+        }
+
+        var address = location.Address;
+        return new FulfillmentLocationSummary(
+            location.Id.Value,
+            location.Type.ToString(),
+            location.OwnerId,
+            address.CommuneCode,
+            BeninGeography.CommuneName(address.CommuneCode),
+            address.Quartier,
+            address.Landmark,
+            address.Line,
+            address.CountryCode,
+            address.Latitude,
+            address.Longitude);
     }
 
     public async Task<AvailabilitySummary> GetAvailabilityAsync(string sku, CancellationToken cancellationToken = default)

@@ -33,4 +33,10 @@ public sealed class FakeInventoryModuleApi : IInventoryModuleApi
         Confirmed.Add((sku, orderId));
         return Task.FromResult(true);
     }
+
+    /// <summary>Lieu fictif : adresse plausible de Cotonou, avec le point de repère qui compte.</summary>
+    public Task<FulfillmentLocationSummary?> GetLocationAsync(Guid locationId, CancellationToken cancellationToken = default)
+        => Task.FromResult<FulfillmentLocationSummary?>(new FulfillmentLocationSummary(
+            locationId, "Warehouse", null,
+            "cotonou", "Cotonou", "Gbedjromede", "En face de la pharmacie", null, "BJ", null, null));
 }
