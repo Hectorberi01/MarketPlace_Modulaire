@@ -4,6 +4,7 @@ using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Inventory.Contracts;
 using Marketplace.Modules.Ordering.Application.Abstractions;
 using Marketplace.Modules.Ordering.Domain.Orders;
+using Marketplace.Modules.Settlement.Contracts;
 
 namespace Marketplace.Modules.Ordering.Application.Orders.Commands.PlaceOrder;
 
@@ -17,17 +18,20 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 {
     private readonly ICartModuleApi _cartModuleApi;
     private readonly IInventoryModuleApi _inventoryModuleApi;
+    private readonly ISettlementModuleApi _settlementModuleApi;
     private readonly IOrderRepository _orderRepository;
     private readonly IOrderingUnitOfWork _unitOfWork;
 
     public PlaceOrderCommandHandler(
         ICartModuleApi cartModuleApi,
         IInventoryModuleApi inventoryModuleApi,
+        ISettlementModuleApi settlementModuleApi,
         IOrderRepository orderRepository,
         IOrderingUnitOfWork unitOfWork)
     {
         _cartModuleApi = cartModuleApi;
         _inventoryModuleApi = inventoryModuleApi;
+        _settlementModuleApi = settlementModuleApi;
         _orderRepository = orderRepository;
         _unitOfWork = unitOfWork;
     }
@@ -119,9 +123,83 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
             return Result.Failure<Guid>(Error.Conflict("ordering.out_of_stock", $"Stock insuffisant pour {line.Sku}."));
         }
 
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Étape Saga : engagement de la CAGNOTTE, après le stock et avant le paiement.
+        //
+        // Cet ordre n'est pas indifférent. Engager la cagnotte avant le stock obligerait
+        // à la rendre dès qu'un article manque — une écriture de plus, pour rien, sur le
+        // cas d'échec le plus fréquent du checkout. Le stock tranche en premier ; l'argent
+        // ne bouge que pour une commande qui a une chance d'exister.
+        //
+        // Le montant réservé peut être INFÉRIEUR au montant demandé : entre l'affichage du
+        // panier et la validation, la même cagnotte a pu être engagée depuis un autre
+        // appareil. C'est ce qui est réellement réservé qui est imputé à la commande, et
+        // le client paiera la différence au prestataire.
+        // ─────────────────────────────────────────────────────────────────────────────
+        if (command.WalletAmount > 0m)
+        {
+            var reservedCredit = await _settlementModuleApi.TryReserveCreditAsync(
+                command.BuyerId, order.Id.Value, Math.Min(command.WalletAmount, order.GrandTotal),
+                order.Currency, cancellationToken);
+
+            order.ApplyWalletCredit(reservedCredit);
+        }
+
         order.MarkAwaitingPayment();
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // LA CAGNOTTE COUVRE TOUT : IL N'Y A RIEN À ENCAISSER, DONC PAS DE PAIEMENT.
+        //
+        // C'est le seul chemin par lequel une commande se confirme sans qu'un prestataire
+        // n'ait jamais été appelé. Il est ici, dans le Saga, et non derrière une commande
+        // publique : une commande « confirmer sans payer » exposée au BFF serait une porte
+        // ouverte pour confirmer n'importe quelle commande sans la régler.
+        //
+        // Le garde-fou est celui du domaine — IsFullyCoveredByWallet ne peut être vrai que
+        // si la cagnotte a réellement été engagée à hauteur du total, ce qui vient d'une
+        // écriture au grand livre et pas d'un paramètre d'appel.
+        // ─────────────────────────────────────────────────────────────────────────────
+        if (order.IsFullyCoveredByWallet)
+        {
+            var settled = await SettleWithWalletOnlyAsync(order, cancellationToken);
+            if (settled.IsFailure)
+            {
+                return Result.Failure<Guid>(settled.Error);
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return order.Id.Value;
+    }
+
+    /// <summary>
+    /// Solde une commande intégralement réglée par la cagnotte : consommation de la
+    /// réservation, décrément du stock, puis paiement et confirmation.
+    ///
+    /// Reprend pas à pas ce que fait <c>ConfirmOrderPaymentCommandHandler</c> à la
+    /// réception d'un paiement encaissé. La duplication est assumée : factoriser
+    /// obligerait à extraire un service partagé qui appelle la persistance de deux
+    /// modules, et rendrait moins lisible le seul endroit où une commande se confirme
+    /// sans argent extérieur.
+    /// </summary>
+    private async Task<Result> SettleWithWalletOnlyAsync(Order order, CancellationToken cancellationToken)
+    {
+        await _settlementModuleApi.ConfirmCreditAsync(
+            order.BuyerId, order.Id.Value, order.WalletApplied, order.Currency, cancellationToken);
+
+        foreach (var line in order.Lines)
+        {
+            await _inventoryModuleApi.ConfirmReservationAsync(
+                line.Sku, line.ShipFromLocationId, order.Id.Value, cancellationToken);
+        }
+
+        var paid = order.MarkPaid();
+        if (paid.IsFailure)
+        {
+            return paid;
+        }
+
+        return order.Confirm();
     }
 }

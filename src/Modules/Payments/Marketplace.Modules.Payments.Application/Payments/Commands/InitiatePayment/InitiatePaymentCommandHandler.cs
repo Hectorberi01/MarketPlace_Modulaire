@@ -105,7 +105,28 @@ internal sealed class InitiatePaymentCommandHandler : ICommandHandler<InitiatePa
             return Result.Failure<InitiatePaymentResult>(Error.Conflict("payments.already_exists", "Un paiement est déjà en cours pour cette commande."));
         }
 
-        var amountResult = Money.Create(order.GrandTotal, order.Currency);
+        // ═════════════════════════════════════════════════════════════════════════
+        // ON ENCAISSE LE MONTANT DÛ, PAS LA VALEUR DE LA COMMANDE.
+        //
+        // C'était GrandTotal, et cela suffisait tant qu'un seul moyen réglait la
+        // commande. Depuis que l'acheteur peut en couvrir une part avec sa cagnotte,
+        // les deux chiffres diffèrent — et charger GrandTotal ferait payer DEUX FOIS
+        // la part déjà réglée : une fois sur son portefeuille, une fois sur son
+        // Mobile Money.
+        //
+        // AmountDue vaut zéro quand la cagnotte couvre tout ; on ne devrait alors même
+        // pas arriver ici, la commande étant déjà confirmée par le Saga. Si on y
+        // arrive quand même, on refuse plutôt que de créer un paiement à zéro que le
+        // prestataire rejettera de toute façon.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (order.AmountDue <= 0m)
+        {
+            return Result.Failure<InitiatePaymentResult>(Error.Conflict(
+                "payments.nothing_due",
+                "Cette commande est intégralement réglée par la cagnotte : il n'y a rien à encaisser."));
+        }
+
+        var amountResult = Money.Create(order.AmountDue, order.Currency);
         if (amountResult.IsFailure)
         {
             return Result.Failure<InitiatePaymentResult>(amountResult.Error);

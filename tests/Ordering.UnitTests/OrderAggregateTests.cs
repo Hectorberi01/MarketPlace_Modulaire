@@ -100,4 +100,64 @@ public class OrderAggregateTests
         order.Cancel("changed mind").IsSuccess.Should().BeTrue();
         order.Status.Should().Be(OrderStatus.Cancelled);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════
+    // CAGNOTTE : la commande distingue ce qu'elle VAUT de ce qu'il reste À ENCAISSER.
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void La_cagnotte_reduit_le_montant_du_sans_toucher_a_la_valeur_de_la_commande()
+    {
+        var order = NewOrder(Line(2, 7000m, 1400m, 500m, 5100m));
+        order.SetShippingFee(1500m);
+
+        order.ApplyWalletCredit(4000m).IsSuccess.Should().BeTrue();
+
+        // Le vendeur est payé sur la valeur, la commission se calcule sur la valeur :
+        // GrandTotal ne doit pas bouger d'un franc.
+        order.GrandTotal.Should().Be(11700m);
+        order.WalletApplied.Should().Be(4000m);
+        order.AmountDue.Should().Be(7700m);
+        order.IsFullyCoveredByWallet.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Une_cagnotte_superieure_au_total_est_plafonnee_et_ne_cree_pas_de_monnaie()
+    {
+        var order = NewOrder(Line(1, 5000m, 0m, 0m, 5000m));
+
+        order.ApplyWalletCredit(9_999m).IsSuccess.Should().BeTrue();
+
+        order.WalletApplied.Should().Be(5000m);
+        order.AmountDue.Should().Be(0m);
+        order.IsFullyCoveredByWallet.Should().BeTrue();
+    }
+
+    [Fact]
+    public void La_cagnotte_ne_s_applique_plus_une_fois_la_commande_engagee_au_paiement()
+    {
+        var order = NewOrder(Line(1, 5000m, 0m, 0m, 5000m));
+        order.MarkAwaitingPayment();
+
+        // LE MONTANT ANNONCÉ AU PRESTATAIRE NE BOUGE PLUS. Sans ce garde-fou, un second
+        // appel pourrait réduire le dû après qu'un paiement a été initié pour le montant
+        // plein — le client serait débité de la totalité ET verrait sa cagnotte entamée.
+        var applied = order.ApplyWalletCredit(1000m);
+
+        applied.IsFailure.Should().BeTrue();
+        applied.Error.Code.Should().Be("ordering.wallet_credit_too_late");
+        order.WalletApplied.Should().Be(0m);
+        order.AmountDue.Should().Be(5000m);
+    }
+
+    [Fact]
+    public void Sans_cagnotte_le_montant_du_reste_le_total_de_la_commande()
+    {
+        var order = NewOrder(Line(1, 5000m, 0m, 0m, 5000m));
+        order.SetShippingFee(1500m);
+
+        order.WalletApplied.Should().Be(0m);
+        order.AmountDue.Should().Be(order.GrandTotal);
+        order.IsFullyCoveredByWallet.Should().BeFalse("une commande sans cagnotte n'est jamais « couverte »");
+    }
 }

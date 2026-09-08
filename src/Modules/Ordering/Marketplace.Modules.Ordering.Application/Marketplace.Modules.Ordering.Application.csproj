@@ -7,6 +7,9 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.IntegrationEvents\Marketplace.BuildingBlocks.IntegrationEvents.csproj" />
     <ProjectReference Include="..\..\Cart\Marketplace.Modules.Cart.Contracts\Marketplace.Modules.Cart.Contracts.csproj" />
     <ProjectReference Include="..\..\Inventory\Marketplace.Modules.Inventory.Contracts\Marketplace.Modules.Inventory.Contracts.csproj" />
+    <!-- Cagnotte client : engagement, consommation et compensation au checkout,
+         sur le meme modele que la reservation de stock. -->
+    <ProjectReference Include="..\..\Settlement\Marketplace.Modules.Settlement.Contracts\Marketplace.Modules.Settlement.Contracts.csproj" />
     <ProjectReference Include="..\..\Pricing\Marketplace.Modules.Pricing.Contracts\Marketplace.Modules.Pricing.Contracts.csproj" />
     <ProjectReference Include="..\..\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
     <ProjectReference Include="..\..\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />

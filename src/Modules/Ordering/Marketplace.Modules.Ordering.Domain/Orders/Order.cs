@@ -55,7 +55,38 @@ public sealed class Order : AggregateRoot<OrderId>
     /// <summary>Frais de livraison encaissés par la plateforme (forfait choisi au checkout).</summary>
     public decimal ShippingFee { get; private set; }
 
+    /// <summary>
+    /// VALEUR DE LA COMMANDE. Ce n'est PAS le montant à encaisser — voir
+    /// <see cref="AmountDue"/>.
+    /// </summary>
     public decimal GrandTotal { get; private set; }
+
+    /// <summary>
+    /// Part de la commande réglée par la CAGNOTTE de l'acheteur, figée au checkout.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI CE MONTANT VIT SUR LA COMMANDE, ET PAS SUR LE PAIEMENT.
+    ///
+    /// La cagnotte réduit ce qu'on encaisse, pas ce que la commande vaut : le vendeur
+    /// est payé son prix, la commission est calculée sur le prix, et le client a bien
+    /// acheté pour GrandTotal. Un seul chiffre ne peut donc pas dire les deux à la fois.
+    ///
+    /// Le ranger sur le PAIEMENT aurait paru plus simple — c'est lui qui encaisse — mais
+    /// une commande peut n'avoir aucun paiement (cagnotte couvrant tout), et un retour
+    /// survient des semaines plus tard, quand il faut savoir quelle part rendre en
+    /// espèces et quelle part en cagnotte. Cette information appartient à la commande.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal WalletApplied { get; private set; }
+
+    /// <summary>
+    /// MONTANT À ENCAISSER auprès du prestataire de paiement. Zéro quand la cagnotte
+    /// couvre tout — auquel cas aucun paiement n'est créé.
+    /// </summary>
+    public decimal AmountDue => GrandTotal - WalletApplied;
+
+    /// <summary>La cagnotte couvre-t-elle l'intégralité de la commande ?</summary>
+    public bool IsFullyCoveredByWallet => WalletApplied > 0m && AmountDue <= 0m;
 
     public string? CancellationReason { get; private set; }
 
@@ -190,6 +221,36 @@ public sealed class Order : AggregateRoot<OrderId>
         TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount * l.Quantity);
         TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount * l.Quantity);
         GrandTotal = _lines.Sum(l => l.LineTotal) + ShippingFee;
+    }
+
+    /// <summary>
+    /// Impute à la commande la part réglée par la cagnotte.
+    ///
+    /// Appelée APRÈS <see cref="SetShippingFee"/> : le plafond est le total livraison
+    /// comprise, et l'inverser laisserait passer une cagnotte supérieure au montant dû.
+    /// Le montant est plafonné plutôt que refusé — l'appelant a déjà réservé les fonds
+    /// côté portefeuille, et échouer ici obligerait à défaire une écriture pour un
+    /// arrondi.
+    ///
+    /// N'est possible qu'AVANT la mise en attente de paiement : une fois le montant
+    /// annoncé au prestataire, il ne bouge plus.
+    /// </summary>
+    public Result ApplyWalletCredit(decimal amount)
+    {
+        if (Status != OrderStatus.Pending)
+        {
+            return Result.Failure(Error.Conflict(
+                "ordering.wallet_credit_too_late",
+                "La cagnotte ne peut plus être appliquée une fois la commande engagée au paiement."));
+        }
+
+        if (amount <= 0m)
+        {
+            return Result.Success();
+        }
+
+        WalletApplied = amount > GrandTotal ? GrandTotal : amount;
+        return Result.Success();
     }
 
     /// <summary>Stock réservé : la commande attend le paiement. Émet OrderPlaced.</summary>

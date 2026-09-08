@@ -60,6 +60,11 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.TotalPlatformDiscount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.ShippingFee).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(o => o.GrandTotal).HasColumnType("numeric(18,2)").IsRequired();
+
+        // Part réglée par la cagnotte. Valeur par défaut 0 : toutes les commandes
+        // existantes ont été payées intégralement au prestataire, et c'est ce que
+        // zéro raconte exactement — pas une donnée manquante.
+        builder.Property(o => o.WalletApplied).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(o => o.CancellationReason).HasMaxLength(500);
 
         // Adresse de livraison figée (snapshot, toutes colonnes nullables).

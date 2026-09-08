@@ -52,4 +52,15 @@ public sealed record OrderSummary(
     decimal GrandTotal,
     IReadOnlyList<OrderLineSummary> Lines,
     OrderShippingAddressSummary? ShippingAddress = null,
-    decimal ShippingFee = 0m);
+    decimal ShippingFee = 0m,
+    // Part réglée par la cagnotte de l'acheteur. GrandTotal reste la VALEUR de la
+    // commande ; c'est AmountDue qui est encaissé auprès du prestataire.
+    decimal WalletApplied = 0m)
+{
+    /// <summary>
+    /// Montant restant à encaisser. Calculé plutôt que transporté : deux champs qui
+    /// doivent s'accorder finissent toujours par diverger, et c'est le genre d'écart
+    /// qui se solde par un client débité du mauvais montant.
+    /// </summary>
+    public decimal AmountDue => GrandTotal - WalletApplied;
+}

@@ -16,6 +16,7 @@ using Marketplace.Modules.Settlement.Application.Batches;
 using Marketplace.Modules.Settlement.Application.Batches.EventHandlers;
 using Marketplace.Modules.Settlement.Application.Earnings;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Settlement.Contracts;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Batches.Events;
 using Marketplace.Modules.Settlement.Domain.Earnings;
@@ -68,6 +69,11 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         // (Identity). Isolé ici pour que l'arrivée du livreur ne rouvre pas le handler
         // qui décide qu'un versement part.
         services.AddScoped<WithdrawalPayoutResolver>();
+
+        // PREMIÈRE API PUBLIQUE DE SETTLEMENT. Le Saga de commande s'en sert pour
+        // engager, consommer ou rendre la cagnotte du client, exactement comme il le
+        // fait avec le stock.
+        services.AddScoped<ISettlementModuleApi, Public.SettlementModuleApi>();
 
         // Règle de clôture d'un retrait (sent → payé, failed → remboursé), partagée par
         // le webhook et la réconciliation : une seule et même logique, donc pas de risque

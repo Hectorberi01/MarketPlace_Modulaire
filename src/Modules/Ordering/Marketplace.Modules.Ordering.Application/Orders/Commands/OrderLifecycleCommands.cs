@@ -3,6 +3,7 @@ using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Inventory.Contracts;
 using Marketplace.Modules.Ordering.Application.Abstractions;
 using Marketplace.Modules.Ordering.Domain.Orders;
+using Marketplace.Modules.Settlement.Contracts;
 
 namespace Marketplace.Modules.Ordering.Application.Orders.Commands;
 
@@ -49,13 +50,18 @@ internal sealed class ConfirmOrderPaymentCommandHandler : ICommandHandler<Confir
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IInventoryModuleApi _inventoryModuleApi;
+    private readonly ISettlementModuleApi _settlementModuleApi;
     private readonly IOrderingUnitOfWork _unitOfWork;
 
     public ConfirmOrderPaymentCommandHandler(
-        IOrderRepository orderRepository, IInventoryModuleApi inventoryModuleApi, IOrderingUnitOfWork unitOfWork)
+        IOrderRepository orderRepository,
+        IInventoryModuleApi inventoryModuleApi,
+        ISettlementModuleApi settlementModuleApi,
+        IOrderingUnitOfWork unitOfWork)
     {
         _orderRepository = orderRepository;
         _inventoryModuleApi = inventoryModuleApi;
+        _settlementModuleApi = settlementModuleApi;
         _unitOfWork = unitOfWork;
     }
 
@@ -71,6 +77,15 @@ internal sealed class ConfirmOrderPaymentCommandHandler : ICommandHandler<Confir
         if (paid.IsFailure)
         {
             return paid;
+        }
+
+        // La part réglée par la cagnotte est CONSOMMÉE : elle quitte le réservé pour de
+        // bon. Avant le stock, parce que c'est le seul des deux qui peut encore refuser —
+        // et qu'il vaut mieux le découvrir avant d'avoir décrémenté l'inventaire.
+        if (order.WalletApplied > 0m)
+        {
+            await _settlementModuleApi.ConfirmCreditAsync(
+                order.BuyerId, order.Id.Value, order.WalletApplied, order.Currency, cancellationToken);
         }
 
         // Solde des réservations -> décrément du stock physique.
@@ -94,13 +109,18 @@ internal sealed class CancelOrderCommandHandler : ICommandHandler<CancelOrderCom
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IInventoryModuleApi _inventoryModuleApi;
+    private readonly ISettlementModuleApi _settlementModuleApi;
     private readonly IOrderingUnitOfWork _unitOfWork;
 
     public CancelOrderCommandHandler(
-        IOrderRepository orderRepository, IInventoryModuleApi inventoryModuleApi, IOrderingUnitOfWork unitOfWork)
+        IOrderRepository orderRepository,
+        IInventoryModuleApi inventoryModuleApi,
+        ISettlementModuleApi settlementModuleApi,
+        IOrderingUnitOfWork unitOfWork)
     {
         _orderRepository = orderRepository;
         _inventoryModuleApi = inventoryModuleApi;
+        _settlementModuleApi = settlementModuleApi;
         _unitOfWork = unitOfWork;
     }
 
@@ -122,6 +142,15 @@ internal sealed class CancelOrderCommandHandler : ICommandHandler<CancelOrderCom
         foreach (var line in order.Lines)
         {
             await _inventoryModuleApi.ReleaseReservationAsync(line.Sku, line.ShipFromLocationId, order.Id.Value, cancellationToken);
+        }
+
+        // Et de la cagnotte engagée. Sans cette ligne, l'argent d'un client dont le
+        // paiement a échoué resterait bloqué dans le réservé : ni dépensable, ni
+        // retirable, ni visible — et aucun écran ne saurait lui dire où il est passé.
+        if (order.WalletApplied > 0m)
+        {
+            await _settlementModuleApi.ReleaseCreditAsync(
+                order.BuyerId, order.Id.Value, order.WalletApplied, order.Currency, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

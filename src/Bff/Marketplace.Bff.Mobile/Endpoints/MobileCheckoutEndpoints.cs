@@ -12,6 +12,7 @@ using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Payments.Application.Payments.Commands;
 using Marketplace.Modules.Payments.Application.Payments.Commands.InitiatePayment;
 using Marketplace.Modules.Payments.Application.Payments.Queries;
+using Marketplace.Modules.Settlement.Contracts;
 
 namespace Marketplace.Bff.Mobile.Endpoints;
 
@@ -237,13 +238,45 @@ public static class MobileCheckoutEndpoints
         var rate = Array.Find(_rates, r => r.Code == shippingCode);
         var shippingFee = rate.Code is null ? _rates[0].Amount : rate.Amount;
 
-        var placed = await sender.Send(new PlaceOrderCommand(buyerId, shipTo, shippingFee), ct);
+        var placed = await sender.Send(
+            new PlaceOrderCommand(buyerId, shipTo, shippingFee, request.WalletAmount), ct);
         if (placed.IsFailure)
         {
             return placed.Match(_ => Results.Ok()); // mappe l'erreur (panier vide, stock…)
         }
 
         var orderId = placed.Value;
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // LA CAGNOTTE A TOUT COUVERT : PAS DE PAIEMENT À INITIER.
+        //
+        // Le Saga a déjà confirmé la commande — c'est lui qui décide, pas le BFF, et
+        // c'est pour cela qu'on RELIT la commande plutôt que de déduire l'issue du
+        // montant demandé. Entre-temps la cagnotte a pu être partiellement engagée
+        // ailleurs, et la commande garder un reste à payer.
+        //
+        // La réponse conserve la même forme, `payment` valant null : le client mobile
+        // teste ce champ pour savoir s'il doit ouvrir une page de paiement.
+        // ─────────────────────────────────────────────────────────────────────────────
+        var placedOrder = await sender.Send(new GetOrderQuery(orderId), ct);
+        if (placedOrder.IsSuccess && placedOrder.Value.AmountDue <= 0m)
+        {
+            var settledBody = JsonSerializer.Serialize(
+                new { orderId, payment = (object?)null, walletApplied = placedOrder.Value.WalletApplied },
+                WebJson);
+
+            if (idempotencyCacheKey is not null)
+            {
+                await cache.SetStringAsync(
+                    idempotencyCacheKey,
+                    settledBody,
+                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24) },
+                    ct);
+            }
+
+            return Results.Content(settledBody, "application/json");
+        }
+
         var payment = await sender.Send(
             new InitiatePaymentCommand(
                 orderId, request.Method, request.Provider,
@@ -257,7 +290,17 @@ public static class MobileCheckoutEndpoints
             return payment.Match(result => Results.Ok(new { orderId, payment = result }));
         }
 
-        var body = JsonSerializer.Serialize(new { orderId, payment = payment.Value }, WebJson);
+        var body = JsonSerializer.Serialize(
+            new
+            {
+                orderId,
+                payment = payment.Value,
+                // Ce qui a été réglé par la cagnotte : le client doit pouvoir expliquer
+                // l'écart entre le total de sa commande et le montant que le prestataire
+                // lui demande.
+                walletApplied = placedOrder.IsSuccess ? placedOrder.Value.WalletApplied : 0m,
+            },
+            WebJson);
 
         if (idempotencyCacheKey is not null)
         {
@@ -324,7 +367,8 @@ public static class MobileCheckoutEndpoints
         => Results.Ok(_rates.Select(r => new { code = r.Code, label = r.Label, eta = r.Eta, amount = r.Amount, currency = "XOF" }));
 
     /// <summary>Devis : sous-total du panier + livraison choisie = total à payer.</summary>
-    private static async Task<IResult> QuoteAsync(ClaimsPrincipal user, string? shipping, ISender sender, CancellationToken ct)
+    private static async Task<IResult> QuoteAsync(
+        ClaimsPrincipal user, string? shipping, ISender sender, ISettlementModuleApi settlement, CancellationToken ct)
     {
         if (MobileBff.CurrentUserId(user) is not { } buyerId)
         {
@@ -345,14 +389,29 @@ public static class MobileCheckoutEndpoints
             rate = _rates[0];
         }
 
+        var total = cart.GrandTotal + rate.Amount;
+
+        // Solde DISPONIBLE, hors montants déjà engagés sur une autre commande en cours :
+        // afficher un montant que l'acheteur ne peut pas utiliser garantit une déception
+        // au moment de payer.
+        var walletAvailable = await settlement.GetSpendableCreditAsync(buyerId, ct);
+
         return Results.Ok(new
         {
             subtotal = cart.Subtotal,
             discount = cart.TotalSellerDiscount + cart.TotalPlatformDiscount,
             shipping = new { code = rate.Code, label = rate.Label, eta = rate.Eta, amount = rate.Amount },
             shippingOptions = _rates.Select(r => new { code = r.Code, label = r.Label, eta = r.Eta, amount = r.Amount }),
-            total = cart.GrandTotal + rate.Amount,
+            total,
             currency = cart.Currency,
+            wallet = new
+            {
+                available = walletAvailable,
+                // Ce que l'acheteur peut au plus appliquer sur CETTE commande. Le calcul
+                // est fait ici et pas dans l'application mobile : deux implémentations du
+                // même plafond finiraient par diverger, et l'écart se réglerait en argent.
+                applicable = Math.Min(walletAvailable, total),
+            },
         });
     }
 
@@ -408,7 +467,11 @@ public static class MobileCheckoutEndpoints
 
     public sealed record PayRequest(
         string Method, string Provider, string? Flow, string? ReturnUrl, string? CancelUrl, string? PayerPhone,
-        Guid? AddressId = null, string? ShippingCode = null);
+        Guid? AddressId = null, string? ShippingCode = null,
+        // Part que l'acheteur choisit de régler avec sa cagnotte. Zéro par défaut : elle
+        // ne se dépense jamais sans qu'il l'ait demandé. Le serveur la plafonne au solde
+        // réellement disponible et au total de la commande.
+        decimal WalletAmount = 0m);
 
     /// <summary>
     /// Reprise de paiement sur une commande existante. Volontairement dépourvu

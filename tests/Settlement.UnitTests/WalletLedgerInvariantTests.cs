@@ -176,6 +176,114 @@ public class WalletLedgerInvariantTests
         AssertLedgerMatchesBalances(wallets, ledger);
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════
+    // DÉPENSE DE LA CAGNOTTE AU CHECKOUT : engager, consommer, ou rendre.
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Engager_puis_consommer_la_cagnotte_vide_le_reserve_et_pas_le_disponible()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var buyerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(buyerId, 10_000m, Xof, Guid.NewGuid(), default);
+
+        var reserved = await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, WalletAccount.Reserved,
+            4_000m, Xof, "checkout_reserve", WalletMutations.CheckoutReserveReferenceType, orderId, default);
+
+        reserved.Should().Be(4_000m);
+
+        var wallet = wallets.Get(WalletOwnerType.Customer, buyerId)!;
+        wallet.Balance(WalletAccount.Available).Should().Be(6_000m);
+        wallet.Balance(WalletAccount.Reserved).Should().Be(4_000m);
+
+        var spent = await mutations.DebitAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Reserved, 4_000m, Xof,
+            "checkout_spend", WalletMutations.CheckoutSpendReferenceType, orderId, default);
+
+        spent.IsSuccess.Should().BeTrue();
+        wallet.Balance(WalletAccount.Reserved).Should().Be(0m);
+        wallet.Balance(WalletAccount.Available).Should().Be(6_000m, "consommer n'entame pas le disponible");
+
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
+    [Fact]
+    public async Task Deux_commandes_simultanees_ne_peuvent_pas_engager_deux_fois_la_meme_cagnotte()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var buyerId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(buyerId, 5_000m, Xof, Guid.NewGuid(), default);
+
+        // C'EST LE SCÉNARIO DES DEUX ONGLETS. Les deux commandes croient disposer de
+        // 5 000 : sans le compte réservé, les deux passeraient et l'une des deux serait
+        // payée avec de l'argent qui n'existe plus.
+        var first = await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, WalletAccount.Reserved,
+            5_000m, Xof, "checkout_reserve", WalletMutations.CheckoutReserveReferenceType, Guid.NewGuid(), default);
+
+        var second = await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, WalletAccount.Reserved,
+            5_000m, Xof, "checkout_reserve", WalletMutations.CheckoutReserveReferenceType, Guid.NewGuid(), default);
+
+        first.Should().Be(5_000m);
+        second.Should().Be(0m, "le disponible est vide : la seconde commande n'engage rien");
+
+        wallets.Get(WalletOwnerType.Customer, buyerId)!.Balance(WalletAccount.Reserved).Should().Be(5_000m);
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
+    [Fact]
+    public async Task Un_paiement_echoue_rend_la_cagnotte_engagee_au_disponible()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var buyerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(buyerId, 8_000m, Xof, Guid.NewGuid(), default);
+        await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, WalletAccount.Reserved,
+            3_000m, Xof, "checkout_reserve", WalletMutations.CheckoutReserveReferenceType, orderId, default);
+
+        await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Reserved, WalletAccount.Available,
+            3_000m, Xof, "checkout_release", WalletMutations.CheckoutReleaseReferenceType, orderId, default);
+
+        var wallet = wallets.Get(WalletOwnerType.Customer, buyerId)!;
+        wallet.Balance(WalletAccount.Available).Should().Be(8_000m, "le client retrouve exactement sa cagnotte");
+        wallet.Balance(WalletAccount.Reserved).Should().Be(0m);
+
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
+    [Fact]
+    public async Task Engagement_consommation_et_liberation_ont_des_verrous_INDEPENDANTS()
+    {
+        var (mutations, ledger, wallets) = Harness();
+        var buyerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        await mutations.CreditCustomerRefundAsync(buyerId, 2_000m, Xof, Guid.NewGuid(), default);
+        await mutations.TransferAsync(
+            WalletOwnerType.Customer, buyerId, WalletAccount.Available, WalletAccount.Reserved,
+            2_000m, Xof, "checkout_reserve", WalletMutations.CheckoutReserveReferenceType, orderId, default);
+
+        // LE PIÈGE : une référence commune ferait que l'engagement marque la commande
+        // « déjà traitée », et la consommation n'aurait jamais lieu — le client garderait
+        // une cagnotte bloquée pour une commande qu'il a bel et bien reçue.
+        (await mutations.HasLedgerEntryAsync(WalletMutations.CheckoutReserveReferenceType, orderId, default))
+            .Should().BeTrue();
+        (await mutations.HasLedgerEntryAsync(WalletMutations.CheckoutSpendReferenceType, orderId, default))
+            .Should().BeFalse();
+        (await mutations.HasLedgerEntryAsync(WalletMutations.CheckoutReleaseReferenceType, orderId, default))
+            .Should().BeFalse();
+
+        AssertLedgerMatchesBalances(wallets, ledger);
+    }
+
     [Fact]
     public async Task Le_controle_de_reconciliation_ne_signale_rien_quand_tout_concorde()
     {

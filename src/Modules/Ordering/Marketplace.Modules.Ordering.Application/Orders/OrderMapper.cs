@@ -29,5 +29,6 @@ internal static class OrderMapper
                 order.ShipToLatitude, order.ShipToLongitude,
                 order.ShipToPhone)
             : null,
-        order.ShippingFee);
+        order.ShippingFee,
+        order.WalletApplied);
 }

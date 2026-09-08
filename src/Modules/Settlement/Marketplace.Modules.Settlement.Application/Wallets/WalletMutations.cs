@@ -64,6 +64,25 @@ public sealed class WalletMutations
     public const string ReturnRefundReferenceType = "return_refund";
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // TROIS RÉFÉRENCES DISTINCTES POUR UN MÊME IDENTIFIANT DE COMMANDE.
+    //
+    // Engager la cagnotte, la dépenser, la rendre : trois mouvements sur la même
+    // commande. Leur donner une référence commune ferait que le premier arrivé
+    // marquerait la commande « déjà traitée » et bloquerait les deux autres — le client
+    // verrait son argent engagé et jamais débité, ou libéré deux fois.
+    //
+    // C'est la leçon du remboursement de retour, où crédit client et contre-passation
+    // vendeur partageaient la même référence.
+    // ─────────────────────────────────────────────────────────────────────────────
+    public const string CheckoutReserveReferenceType = "checkout_reserve";
+    public const string CheckoutSpendReferenceType = "checkout_spend";
+    public const string CheckoutReleaseReferenceType = "checkout_release";
+
+    /// <summary>Une écriture existe-t-elle déjà pour cette référence ? (verrou de rejeu)</summary>
+    public Task<bool> HasLedgerEntryAsync(string referenceType, Guid referenceId, CancellationToken ct)
+        => _ledger.ExistsForReferenceAsync(referenceType, referenceId, ct);
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // Primitives génériques. Tout le reste du fichier n'en est qu'un habillage nommé.
     // ─────────────────────────────────────────────────────────────────────────────
 

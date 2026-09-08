@@ -83,11 +83,24 @@ internal sealed class InitiateCustomerRefundCommandHandler : ICommandHandler<Ini
                 "settlement.provider_unsupported", "Opérateur Mobile Money non pris en charge (mtnmomo, moovmoney, celtis)."));
         }
 
-        // Plafond : total payé (commande + livraison) moins les remboursements DIRECTS
-        // déjà effectués sur cette commande.
-        // ⚠️ Ne nette PAS encore les remboursements issus du flux « retour ». À suivre si
-        // les deux flux doivent partager un plafond commun.
-        var paidTotal = order.GrandTotal + order.ShippingFee;
+        // ═════════════════════════════════════════════════════════════════════════
+        // PLAFOND : LE TOTAL DE LA COMMANDE, LIVRAISON COMPRISE.
+        //
+        // C'était « GrandTotal + ShippingFee » — et les frais de livraison étaient donc
+        // comptés DEUX FOIS, puisque GrandTotal les inclut déjà (Order.RecomputeTotals).
+        // Le plafond dépassait le montant réellement encaissé, exactement du montant de
+        // la livraison : sur une commande à 10 000 livrée à 1 500, l'admin pouvait
+        // rembourser 13 000. Personne ne s'en apercevait tant que les remboursements
+        // restaient inférieurs au total.
+        //
+        // GrandTotal reste la bonne borne même depuis la cagnotte : ce que le client a
+        // réglé, c'est AmountDue au prestataire PLUS WalletApplied sur son portefeuille,
+        // et leur somme fait GrandTotal.
+        //
+        // NE NETTE PAS les remboursements issus du flux « retour ». À suivre si les deux
+        // flux doivent partager un plafond commun.
+        // ═════════════════════════════════════════════════════════════════════════
+        var paidTotal = order.GrandTotal;
         var alreadyRefunded = await _refunds.SumActiveForOrderAsync(command.OrderId, cancellationToken);
         var remaining = paidTotal - alreadyRefunded;
         if (command.Amount > remaining)
