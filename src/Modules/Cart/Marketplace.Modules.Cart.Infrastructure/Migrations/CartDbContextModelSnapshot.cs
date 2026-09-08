@@ -111,6 +111,9 @@ namespace Marketplace.Modules.Cart.Infrastructure.Migrations
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("CommissionRate")
+                        .HasColumnType("numeric(6,4)");
+
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -121,6 +124,9 @@ namespace Marketplace.Modules.Cart.Infrastructure.Migrations
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("ProviderFeeRate")
+                        .HasColumnType("numeric(6,4)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");

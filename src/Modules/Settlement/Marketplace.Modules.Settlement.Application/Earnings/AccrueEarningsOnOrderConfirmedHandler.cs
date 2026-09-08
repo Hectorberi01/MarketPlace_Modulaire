@@ -2,7 +2,6 @@ using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Settlement.Application.Abstractions;
-using Marketplace.Modules.Settlement.Application.Pricing;
 using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Settlement.Domain.Earnings;
 
@@ -26,20 +25,17 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
     private readonly ISellerEarningRepository _earningRepository;
     private readonly IOrderingModuleApi _orderingModuleApi;
     private readonly WalletMutations _wallets;
-    private readonly PricingOptions _pricing;
     private readonly ISettlementUnitOfWork _unitOfWork;
 
     public AccrueEarningsOnOrderConfirmedHandler(
         ISellerEarningRepository earningRepository,
         IOrderingModuleApi orderingModuleApi,
         WalletMutations wallets,
-        PricingOptions pricing,
         ISettlementUnitOfWork unitOfWork)
     {
         _earningRepository = earningRepository;
         _orderingModuleApi = orderingModuleApi;
         _wallets = wallets;
-        _pricing = pricing;
         _unitOfWork = unitOfWork;
     }
 
@@ -56,10 +52,6 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
             return;
         }
 
-        var commRate = _pricing.PlatformCommissionRate;
-        var provRate = _pricing.ProviderFeeRate;
-        var total = commRate + provRate;
-
         var netBySeller = new Dictionary<Guid, decimal>();
         var totalCommission = 0m;
         var totalProvider = 0m;
@@ -72,11 +64,22 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
                 gross = 0m;
             }
 
-            // Répartition du brut : commission et frais provider en fraction du
-            // prix vendeur net (gross = net × (1 + total)) ; le net vendeur est
-            // le reste pour garantir gross = commission + provider + net.
-            var commission = Math.Round(gross * commRate / (1 + total));
-            var providerFee = Math.Round(gross * provRate / (1 + total));
+            // ═════════════════════════════════════════════════════════════════════
+            // LES TAUX VIENNENT DE LA LIGNE, PLUS DE LA CONFIGURATION.
+            //
+            // Le prix acheteur a été construit par l'offre comme
+            //     prix_vendeur × (1 + commission + provider),
+            // avec les taux en vigueur CE JOUR-LÀ. Refaire le partage avec les taux
+            // d'aujourd'hui, c'est appliquer un barème à un prix qui n'a pas été
+            // calculé avec lui : passer la commission de 10 % à 12 % faisait alors
+            // toucher 9 830 à un vendeur qui avait fixé son net à 10 000, sur toutes
+            // ses offres antérieures, et sans la moindre trace.
+            //
+            // La ligne porte désormais son propre barème. Un changement de taux
+            // n'affecte plus que ce qui est vendu après lui.
+            // ═════════════════════════════════════════════════════════════════════
+            var (commission, providerFee, _) =
+                GrossSplit.Split(gross, line.CommissionRate, line.ProviderFeeRate);
 
             var earning = SellerEarning.Create(
                 order.Id, line.OfferId, line.SellerId, line.ProductId, gross, commission, providerFee, order.Currency);

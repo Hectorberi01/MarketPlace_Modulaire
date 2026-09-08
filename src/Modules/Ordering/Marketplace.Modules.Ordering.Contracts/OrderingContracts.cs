@@ -12,7 +12,11 @@ public sealed record OrderLineSummary(
     decimal SellerDiscount,
     decimal PlatformDiscount,
     decimal FinalUnitPrice,
-    decimal LineTotal);
+    decimal LineTotal,
+    // Barème figé au moment de la commande. C'est ce que Settlement lit pour répartir
+    // le brut, au lieu de relire la configuration courante.
+    decimal CommissionRate = 0m,
+    decimal ProviderFeeRate = 0m);
 
 /// <summary>
 /// Adresse de livraison figée sur la commande (instantané).

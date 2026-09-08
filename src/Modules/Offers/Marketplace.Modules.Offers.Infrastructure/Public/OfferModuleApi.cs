@@ -98,5 +98,7 @@ internal sealed class OfferModuleApi : IOfferModuleApi
         offer.SellerPrice,
         offer.CommissionAmount,
         offer.ProviderFeeAmount,
-        offer.BasePrice.Amount);
+        offer.BasePrice.Amount,
+        offer.CommissionRate,
+        offer.ProviderFeeRate);
 }

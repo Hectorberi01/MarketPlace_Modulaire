@@ -23,7 +23,9 @@ public sealed class CartItem : Entity<Guid>
         Guid shipFromLocationId,
         decimal unitBaseAmount,
         string currency,
-        int quantity)
+        int quantity,
+        decimal commissionRate,
+        decimal providerFeeRate)
         : base(id)
     {
         OfferId = offerId;
@@ -35,6 +37,8 @@ public sealed class CartItem : Entity<Guid>
         UnitBaseAmount = unitBaseAmount;
         Currency = currency;
         Quantity = quantity;
+        CommissionRate = commissionRate;
+        ProviderFeeRate = providerFeeRate;
     }
 
     public Guid OfferId { get; private set; }
@@ -46,6 +50,12 @@ public sealed class CartItem : Entity<Guid>
     public decimal UnitBaseAmount { get; private set; }
     public string Currency { get; private set; } = default!;
     public int Quantity { get; private set; }
+
+    // Barème figé en même temps que le prix, et pour la même raison : le prix de
+    // base ci-dessus a été construit AVEC ces taux. Les séparer, c'est accepter
+    // qu'ils divergent — et la divergence se paie sur le net du vendeur.
+    public decimal CommissionRate { get; private set; }
+    public decimal ProviderFeeRate { get; private set; }
 
     internal void IncreaseQuantity(int by) => Quantity += by;
 

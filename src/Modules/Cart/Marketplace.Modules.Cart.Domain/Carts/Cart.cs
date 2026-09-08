@@ -69,7 +69,8 @@ public sealed class Cart : AggregateRoot<CartId>
 
     public Result AddItem(
         Guid offerId, Guid productId, Guid categoryId, Guid sellerId, string sku,
-        Guid shipFromLocationId, decimal unitBaseAmount, string currency, int quantity)
+        Guid shipFromLocationId, decimal unitBaseAmount, string currency, int quantity,
+        decimal commissionRate, decimal providerFeeRate)
     {
         if (Status != CartStatus.Active)
         {
@@ -95,7 +96,8 @@ public sealed class Cart : AggregateRoot<CartId>
         {
             _items.Add(new CartItem(
                 Guid.NewGuid(), offerId, productId, categoryId, sellerId, sku,
-                shipFromLocationId, unitBaseAmount, Currency, quantity));
+                shipFromLocationId, unitBaseAmount, Currency, quantity,
+                commissionRate, providerFeeRate));
         }
 
         Raise(new ItemAddedToCartDomainEvent(Id.Value, offerId, quantity));

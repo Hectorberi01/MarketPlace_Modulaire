@@ -42,7 +42,8 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 
         var drafts = cart.Lines.Select(l => new OrderLineDraft(
             l.OfferId, l.ProductId, l.SellerId, l.Sku, l.ShipFromLocationId, l.Quantity,
-            l.UnitBaseAmount, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice));
+            l.UnitBaseAmount, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice,
+            l.CommissionRate, l.ProviderFeeRate));
 
         // Le code promo du panier est FIGÉ dans la commande. C'est indispensable : le
         // panier est clôturé juste après, et le coupon n'est décompté qu'à la

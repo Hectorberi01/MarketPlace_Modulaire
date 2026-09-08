@@ -176,6 +176,9 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("CommissionRate")
+                        .HasColumnType("numeric(6,4)");
+
                     b.Property<decimal>("FinalUnitPrice")
                         .HasColumnType("numeric(18,2)");
 
@@ -190,6 +193,9 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("ProviderFeeRate")
+                        .HasColumnType("numeric(6,4)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");

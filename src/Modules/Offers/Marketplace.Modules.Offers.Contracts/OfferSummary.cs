@@ -17,6 +17,11 @@ public sealed record OfferSummary(
     decimal CommissionAmount,
     decimal ProviderFeeAmount,
     decimal ProductPrice,
+    // Barème appliqué à ce prix. Transporté jusqu'à la ligne de commande, où il
+    // sert à répartir le brut. Le figer ici évite qu'un changement de barème
+    // modifie rétroactivement le net des vendeurs.
+    decimal CommissionRate,
+    decimal ProviderFeeRate,
     // Remise : prix acheteur d'origine (barré) et fin de promo. Null si pas de remise.
     decimal? CompareAtAmount = null,
     DateTime? DiscountEndsOnUtc = null);

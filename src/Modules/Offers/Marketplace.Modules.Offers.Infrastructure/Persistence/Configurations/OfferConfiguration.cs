@@ -38,6 +38,13 @@ internal sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.CommissionAmount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.ProviderFeeAmount).HasColumnType("numeric(18,2)").IsRequired();
 
+        // Taux appliqués, et pas seulement les montants qu'ils ont produits : c'est ce
+        // qui permet de répartir le brut d'une commande sans jamais relire la config.
+        // numeric(6,4) couvre 0,0000 à 99,9999 — bien au-delà de tout taux plausible,
+        // et exactement, sans arrondi binaire.
+        builder.Property(o => o.CommissionRate).HasColumnType("numeric(6,4)").IsRequired();
+        builder.Property(o => o.ProviderFeeRate).HasColumnType("numeric(6,4)").IsRequired();
+
         // Remise (promo vendeur), toutes nullable. CompareAtPrice = prix acheteur d'origine
         // (barré) en owned optionnel ; OriginalSellerPrice permet de restaurer.
         builder.OwnsOne(o => o.CompareAtPrice, money =>

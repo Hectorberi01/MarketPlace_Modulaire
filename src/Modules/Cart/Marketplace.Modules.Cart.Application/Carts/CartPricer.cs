@@ -62,7 +62,8 @@ internal static class CartPricer
             lines.Add(new CartLineSummary(
                 item.OfferId, item.ProductId, item.CategoryId, item.SellerId, item.Sku,
                 item.ShipFromLocationId, item.Quantity, item.UnitBaseAmount,
-                b.SellerDiscount, b.PlatformDiscount, b.FinalAmount, lineTotal, item.Currency));
+                b.SellerDiscount, b.PlatformDiscount, b.FinalAmount, lineTotal, item.Currency,
+                item.CommissionRate, item.ProviderFeeRate));
 
             subtotal += item.UnitBaseAmount * item.Quantity;
             totalSeller += lineSeller;

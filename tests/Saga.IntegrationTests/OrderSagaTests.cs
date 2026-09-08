@@ -133,7 +133,9 @@ public sealed class OrderSagaTests : IAsyncLifetime
             UnitBasePrice: 10_000m,
             SellerDiscount: 0m,
             PlatformDiscount: 0m,
-            FinalUnitPrice: 10_000m);
+            FinalUnitPrice: 10_000m,
+            CommissionRate: 0.10m,
+            ProviderFeeRate: 0.05m);
 
         var order = Order.Create(Guid.NewGuid(), Guid.NewGuid(), "XOF", new[] { draft }).Value;
         order.MarkAwaitingPayment().IsSuccess.Should().BeTrue();

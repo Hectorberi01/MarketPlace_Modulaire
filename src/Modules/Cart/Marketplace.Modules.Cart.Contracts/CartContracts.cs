@@ -14,7 +14,10 @@ public sealed record CartLineSummary(
     decimal PlatformDiscount,
     decimal FinalUnitPrice,
     decimal LineTotal,
-    string Currency);
+    string Currency,
+    // Barème figé à l'ajout au panier, transmis tel quel à la commande.
+    decimal CommissionRate = 0m,
+    decimal ProviderFeeRate = 0m);
 
 /// <summary>Panier valorisé (snapshot lignes + totaux calculés via Pricing).</summary>
 public sealed record CartSummary(

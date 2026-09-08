@@ -79,6 +79,9 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
                     b.Property<decimal>("CommissionAmount")
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<decimal>("CommissionRate")
+                        .HasColumnType("numeric(6,4)");
+
                     b.Property<string>("Condition")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -108,6 +111,9 @@ namespace Marketplace.Modules.Offers.Infrastructure.Migrations
 
                     b.Property<decimal>("ProviderFeeAmount")
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("ProviderFeeRate")
+                        .HasColumnType("numeric(6,4)");
 
                     b.Property<Guid>("SellerId")
                         .HasColumnType("uuid");

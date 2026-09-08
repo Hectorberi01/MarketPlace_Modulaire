@@ -15,7 +15,6 @@ using Marketplace.Modules.Settlement.Application.Abstractions;
 using Marketplace.Modules.Settlement.Application.Batches;
 using Marketplace.Modules.Settlement.Application.Batches.EventHandlers;
 using Marketplace.Modules.Settlement.Application.Earnings;
-using Marketplace.Modules.Settlement.Application.Pricing;
 using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Batches.Events;
@@ -34,25 +33,17 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
 
     public void Install(IServiceCollection services, IConfiguration configuration)
     {
-        // Taux de tarification (section « Pricing »), liés manuellement (même
-        // pattern que Billing : aucune dépendance IOptions). Servent à répartir
-        // le brut d'une ligne entre net vendeur, commission et frais provider.
-        var pricingOptions = new PricingOptions();
-        var commissionRateRaw = configuration.GetSection("Pricing")["PlatformCommissionRate"];
-        if (decimal.TryParse(commissionRateRaw, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var parsedCommissionRate))
-        {
-            pricingOptions.PlatformCommissionRate = parsedCommissionRate;
-        }
-
-        var providerRateRaw = configuration.GetSection("Pricing")["ProviderFeeRate"];
-        if (decimal.TryParse(providerRateRaw, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var parsedProviderRate))
-        {
-            pricingOptions.ProviderFeeRate = parsedProviderRate;
-        }
-
-        services.AddSingleton(pricingOptions);
+        // AUCUN TAUX N'EST LU ICI, ET C'EST LE POINT DE TOUTE LA CORRECTION.
+        //
+        // Settlement liait auparavant la section de configuration « Pricing » pour
+        // répartir le brut d'une ligne. Le barème était donc celui du jour de la
+        // CONFIRMATION, alors que le prix payé avait été construit avec celui du jour
+        // de la MISE EN VENTE. Tout ajustement de commission réécrivait rétroactivement
+        // le net des vendeurs sur l'ensemble de leur catalogue.
+        //
+        // Les taux voyagent désormais sur la ligne de commande (OrderLineSummary), figés
+        // à l'achat. La contre-passation d'un retour, elle, ne lit plus aucun taux : elle
+        // reprend au prorata l'écriture d'origine.
 
         var connectionString = configuration.GetConnectionString("Marketplace")
             ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");

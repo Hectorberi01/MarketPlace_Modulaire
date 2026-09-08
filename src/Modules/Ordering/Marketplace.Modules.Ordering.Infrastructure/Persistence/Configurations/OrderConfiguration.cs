@@ -130,6 +130,10 @@ internal sealed class OrderLineConfiguration : IEntityTypeConfiguration<OrderLin
         builder.Property(l => l.Quantity).IsRequired();
         builder.Property(l => l.UnitBasePrice).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(l => l.SellerDiscount).HasColumnType("numeric(18,2)").IsRequired();
+
+        // Barème figé sur la ligne. numeric(6,4) : exact, et large au-delà du plausible.
+        builder.Property(l => l.CommissionRate).HasColumnType("numeric(6,4)").IsRequired();
+        builder.Property(l => l.ProviderFeeRate).HasColumnType("numeric(6,4)").IsRequired();
         builder.Property(l => l.PlatformDiscount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(l => l.FinalUnitPrice).HasColumnType("numeric(18,2)").IsRequired();
 

@@ -18,7 +18,8 @@ internal static class OrderMapper
         order.GrandTotal,
         order.Lines.Select(l => new OrderLineSummary(
             l.OfferId, l.ProductId, l.SellerId, l.Sku, l.ShipFromLocationId, l.Quantity,
-            l.UnitBasePrice, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice, l.LineTotal)).ToList(),
+            l.UnitBasePrice, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice, l.LineTotal,
+            l.CommissionRate, l.ProviderFeeRate)).ToList(),
         order.HasShippingAddress
             ? new OrderShippingAddressSummary(
                 order.ShipToLabel, order.ShipToRecipient,

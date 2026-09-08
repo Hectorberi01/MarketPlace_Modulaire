@@ -71,6 +71,8 @@ internal sealed class CartItemConfiguration : IEntityTypeConfiguration<CartItem>
         builder.Property(i => i.Sku).HasMaxLength(64).IsRequired();
         builder.Property(i => i.ShipFromLocationId).IsRequired();
         builder.Property(i => i.UnitBaseAmount).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Property(i => i.CommissionRate).HasColumnType("numeric(6,4)").IsRequired();
+        builder.Property(i => i.ProviderFeeRate).HasColumnType("numeric(6,4)").IsRequired();
         builder.Property(i => i.Currency).HasMaxLength(3).IsRequired();
         builder.Property(i => i.Quantity).IsRequired();
 

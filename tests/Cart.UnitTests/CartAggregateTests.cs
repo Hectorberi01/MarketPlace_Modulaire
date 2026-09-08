@@ -17,8 +17,8 @@ public class CartAggregateTests
         var cart = NewCart();
         var (offer, product, category, seller, location) = Ids();
 
-        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 1);
-        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 2);
+        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 1, 0.10m, 0.05m);
+        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 2, 0.10m, 0.05m);
 
         cart.Items.Should().HaveCount(1);
         cart.Items.Single().Quantity.Should().Be(3);
@@ -30,7 +30,7 @@ public class CartAggregateTests
         var cart = NewCart();
         var (offer, product, category, seller, location) = Ids();
 
-        var result = cart.AddItem(offer, product, category, seller, "SKU-1", location, 50m, "EUR", 1);
+        var result = cart.AddItem(offer, product, category, seller, "SKU-1", location, 50m, "EUR", 1, 0.10m, 0.05m);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("cart.currency_mismatch");
@@ -42,7 +42,7 @@ public class CartAggregateTests
     {
         var cart = NewCart();
         var (offer, product, category, seller, location) = Ids();
-        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 2);
+        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 2, 0.10m, 0.05m);
 
         cart.UpdateItemQuantity(offer, 0);
 
@@ -62,7 +62,7 @@ public class CartAggregateTests
     {
         var cart = NewCart();
         var (offer, product, category, seller, location) = Ids();
-        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 1);
+        cart.AddItem(offer, product, category, seller, "SKU-1", location, 7000m, "XOF", 1, 0.10m, 0.05m);
 
         var result = cart.MarkCheckedOut();
 

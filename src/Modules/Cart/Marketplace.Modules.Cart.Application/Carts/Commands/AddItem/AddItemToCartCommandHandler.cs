@@ -80,7 +80,8 @@ internal sealed class AddItemToCartCommandHandler : ICommandHandler<AddItemToCar
 
         var addResult = cart.AddItem(
             offer.Id, offer.ProductId, product.CategoryId, offer.SellerId, offer.Sku,
-            offer.ShipFromLocationId, offer.BasePriceAmount, offer.Currency, command.Quantity);
+            offer.ShipFromLocationId, offer.BasePriceAmount, offer.Currency, command.Quantity,
+            offer.CommissionRate, offer.ProviderFeeRate);
 
         if (addResult.IsFailure)
         {

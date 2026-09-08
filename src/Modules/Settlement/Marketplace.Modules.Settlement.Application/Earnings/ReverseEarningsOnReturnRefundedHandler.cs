@@ -2,8 +2,8 @@ using Microsoft.Extensions.Logging;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
 using Marketplace.Modules.Settlement.Application.Abstractions;
-using Marketplace.Modules.Settlement.Application.Pricing;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Settlement.Domain.Earnings;
 
 namespace Marketplace.Modules.Settlement.Application.Earnings;
 
@@ -23,27 +23,33 @@ namespace Marketplace.Modules.Settlement.Application.Earnings;
 /// ─────────────────────────────────────────────────────────────────────────────
 ///
 /// <para>
-/// La répartition reprend EXACTEMENT la formule de l'accrual
-/// (AccrueEarningsOnOrderConfirmedHandler) : le brut remboursé se décompose en
-/// commission, frais provider et net vendeur. Utiliser une autre formule ici — même
-/// « équivalente » — laisserait des centimes orphelins à chaque retour, et les
-/// comptes cesseraient de tomber juste.
+/// La contre-passation se fait AU PRORATA DE L'ÉCRITURE D'ORIGINE, et non par un
+/// nouveau calcul à partir de taux. C'est plus qu'une simplification : recalculer
+/// supposait que le barème n'avait pas bougé depuis la vente. S'il avait changé, on
+/// reprenait au vendeur un montant qui ne correspondait à rien de ce qui lui avait
+/// été crédité, et l'écart restait au grand livre. Défaire au prorata défait
+/// exactement ce qui a été fait, quel que soit le barème du jour.
+/// </para>
+/// <para>
+/// AUCUNE ÉCRITURE D'ORIGINE, AUCUNE CONTRE-PASSATION. Si le gain correspondant est
+/// introuvable, le vendeur n'a jamais été crédité pour cette commande : le débiter
+/// créerait la perte que ce handler est censé éviter. On journalise et on s'arrête.
 /// </para>
 public sealed class ReverseEarningsOnReturnRefundedHandler : IIntegrationEventHandler<ReturnRefundedIntegrationEvent>
 {
     private readonly WalletMutations _wallets;
-    private readonly PricingOptions _pricing;
+    private readonly ISellerEarningRepository _earningRepository;
     private readonly ISettlementUnitOfWork _unitOfWork;
     private readonly ILogger<ReverseEarningsOnReturnRefundedHandler> _logger;
 
     public ReverseEarningsOnReturnRefundedHandler(
         WalletMutations wallets,
-        PricingOptions pricing,
+        ISellerEarningRepository earningRepository,
         ISettlementUnitOfWork unitOfWork,
         ILogger<ReverseEarningsOnReturnRefundedHandler> logger)
     {
         _wallets = wallets;
-        _pricing = pricing;
+        _earningRepository = earningRepository;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
@@ -80,19 +86,34 @@ public sealed class ReverseEarningsOnReturnRefundedHandler : IIntegrationEventHa
             return;
         }
 
-        var commRate = _pricing.PlatformCommissionRate;
-        var provRate = _pricing.ProviderFeeRate;
-        var total = commRate + provRate;
+        // ═════════════════════════════════════════════════════════════════════════
+        // ON DÉFAIT L'ÉCRITURE D'ORIGINE, ON N'EN RECALCULE PAS UNE NOUVELLE.
+        //
+        // Les gains de ce vendeur sur cette commande portent déjà la répartition
+        // exacte qui a été créditée à la confirmation. Le remboursement en reprend
+        // la même fraction — aucun taux n'intervient, donc aucune divergence
+        // possible si le barème a changé entre la vente et le retour.
+        // ═════════════════════════════════════════════════════════════════════════
+        var earnings = (await _earningRepository.ListByOrderAsync(e.OrderId, cancellationToken))
+            .Where(x => x.SellerId == e.SellerId)
+            .ToList();
 
-        // Le montant remboursé est le BRUT (ce que l'acheteur avait payé). On le
-        // redécompose comme à l'accrual : brut = net × (1 + commission + provider).
-        var commission = Math.Round(e.RefundAmount * commRate / (1 + total));
-        var providerFee = Math.Round(e.RefundAmount * provRate / (1 + total));
+        var accruedGross = earnings.Sum(x => x.GrossAmount);
+        if (earnings.Count == 0 || accruedGross <= 0m)
+        {
+            _logger.LogError(
+                "Remboursement {ReturnRequestId} (commande {OrderId}, vendeur {SellerId}) : AUCUN GAIN COMPTABILISÉ " +
+                "à contre-passer. Rien n'est débité — débiter un vendeur jamais crédité créerait la perte " +
+                "que cette contre-passation doit éviter. À traiter à la main.",
+                e.ReturnRequestId, e.OrderId, e.SellerId);
+            return;
+        }
 
-        // Le net vendeur est le RESTE, et non un troisième arrondi : c'est ce qui
-        // garantit brut = commission + provider + net, au franc près. Trois arrondis
-        // indépendants ne se rejoignent pas, et l'écart s'accumule silencieusement.
-        var sellerNet = e.RefundAmount - commission - providerFee;
+        var (commission, providerFee, sellerNet) = GrossSplit.Prorate(
+            e.RefundAmount,
+            accruedGross,
+            earnings.Sum(x => x.CommissionAmount),
+            earnings.Sum(x => x.ProviderFeeAmount));
 
         // La référence est le REMBOURSEMENT, pas la commande : deux retours sur la même
         // commande doivent rester distinguables au grand livre — et c'est cette

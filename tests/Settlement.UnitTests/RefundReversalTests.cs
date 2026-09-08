@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Settlement.Domain.Earnings;
 using Marketplace.Modules.Settlement.Domain.Wallets;
 using Xunit;
 
@@ -138,17 +139,16 @@ public class RefundReversalTests
     [InlineData(7)]
     public void La_repartition_du_remboursement_tombe_juste_au_franc_pres(decimal refundAmount)
     {
-        const decimal commRate = 0.10m;   // PricingOptions par défaut
-        const decimal provRate = 0.05m;
-        const decimal total = commRate + provRate;
-
-        // Formule identique à celle du handler ET de l'accrual — c'est le point.
-        var commission = Math.Round(refundAmount * commRate / (1 + total));
-        var providerFee = Math.Round(refundAmount * provRate / (1 + total));
-        var sellerNet = refundAmount - commission - providerFee;
+        // Ce test recopiait autrefois la formule du handler, ligne pour ligne. Deux
+        // copies d'une règle comptable ne restent d'accord que par chance : le jour où
+        // l'une bouge, le test continue de passer en validant l'ancienne. La règle vit
+        // désormais dans GrossSplit, et c'est ELLE qu'on interroge ici.
+        var accrued = GrossSplit.Split(refundAmount, 0.10m, 0.05m);
+        var (commission, providerFee, sellerNet) = GrossSplit.Prorate(
+            refundAmount, refundAmount, accrued.Commission, accrued.ProviderFee);
 
         (commission + providerFee + sellerNet).Should().Be(refundAmount,
-            "aucun centime ne doit se perdre en route : le brut remboursé se redécompose EXACTEMENT");
+            "aucun franc ne doit se perdre en route : le brut remboursé se redécompose EXACTEMENT");
         sellerNet.Should().BeGreaterThan(0m);
     }
 }

@@ -6,8 +6,11 @@ namespace Ordering.UnitTests;
 
 public class OrderAggregateTests
 {
-    private static OrderLineDraft Line(int qty, decimal unitBase, decimal sellerDisc, decimal platformDisc, decimal finalUnit)
-        => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "SKU-1", Guid.NewGuid(), qty, unitBase, sellerDisc, platformDisc, finalUnit);
+    private static OrderLineDraft Line(
+        int qty, decimal unitBase, decimal sellerDisc, decimal platformDisc, decimal finalUnit,
+        decimal commissionRate = 0.10m, decimal providerFeeRate = 0.05m)
+        => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "SKU-1", Guid.NewGuid(), qty, unitBase, sellerDisc, platformDisc, finalUnit,
+            commissionRate, providerFeeRate);
 
     private static Order NewOrder(params OrderLineDraft[] lines)
         => Order.Create(Guid.NewGuid(), Guid.NewGuid(), "XOF", lines).Value;

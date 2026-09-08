@@ -24,6 +24,8 @@ public sealed class Offer : AggregateRoot<OfferId>
         decimal sellerPrice,
         decimal commissionAmount,
         decimal providerFeeAmount,
+        decimal commissionRate,
+        decimal providerFeeRate,
         Money basePrice,
         OfferCondition condition,
         FulfillmentType fulfillmentType,
@@ -37,6 +39,8 @@ public sealed class Offer : AggregateRoot<OfferId>
         SellerPrice = sellerPrice;
         CommissionAmount = commissionAmount;
         ProviderFeeAmount = providerFeeAmount;
+        CommissionRate = commissionRate;
+        ProviderFeeRate = providerFeeRate;
         BasePrice = basePrice;
         Condition = condition;
         FulfillmentType = fulfillmentType;
@@ -61,6 +65,25 @@ public sealed class Offer : AggregateRoot<OfferId>
 
     /// <summary>Frais provider empilés sur le prix vendeur.</summary>
     public decimal ProviderFeeAmount { get; private set; }
+
+    // ---- Barème appliqué ---------------------------------------------------------
+    //
+    // LES DEUX TAUX CI-DESSOUS SONT MÉMORISÉS, PAS SEULEMENT LES MONTANTS QU'ILS ONT
+    // PRODUITS. Ils voyagent ensuite jusqu'à la ligne de commande (Cart puis Ordering),
+    // où Settlement les relit pour répartir le brut.
+    //
+    // Sans eux, l'accrual relisait les taux depuis la CONFIGURATION, au moment de la
+    // confirmation. Passer la commission de 10 % à 12 % changeait donc rétroactivement
+    // la répartition de toutes les offres déjà tarifées à 10 % : le prix acheteur avait
+    // été construit avec l'ancien taux, le partage se faisait avec le nouveau, et le
+    // vendeur touchait moins que le prix net qu'il avait fixé. En silence, et sur tout
+    // son catalogue.
+
+    /// <summary>Taux de commission plateforme appliqué au dernier calcul de prix (0.10 = 10 %).</summary>
+    public decimal CommissionRate { get; private set; }
+
+    /// <summary>Taux de frais provider appliqué au dernier calcul de prix (0.05 = 5 %).</summary>
+    public decimal ProviderFeeRate { get; private set; }
 
     /// <summary>
     /// PRIX PRODUIT payé par l'acheteur = prix vendeur + commission + frais provider.
@@ -156,6 +179,8 @@ public sealed class Offer : AggregateRoot<OfferId>
             sellerPrice,
             commissionAmount,
             providerFeeAmount,
+            commissionRate,
+            providerFeeRate,
             priceResult.Value,
             condition,
             fulfillmentType,
@@ -186,6 +211,8 @@ public sealed class Offer : AggregateRoot<OfferId>
         SellerPrice = sellerPrice;
         CommissionAmount = commissionAmount;
         ProviderFeeAmount = providerFeeAmount;
+        CommissionRate = commissionRate;
+        ProviderFeeRate = providerFeeRate;
         BasePrice = priceResult.Value;
 
         // Un changement de prix manuel ANNULE toute remise en cours (le nouveau prix
@@ -258,6 +285,8 @@ public sealed class Offer : AggregateRoot<OfferId>
         SellerPrice = discounted;
         CommissionAmount = commissionAmount;
         ProviderFeeAmount = providerFeeAmount;
+        CommissionRate = commissionRate;
+        ProviderFeeRate = providerFeeRate;
         BasePrice = newPrice.Value;
 
         Raise(new OfferPriceChangedDomainEvent(Id.Value, ProductId, BasePrice.Amount, BasePrice.Currency));
@@ -282,6 +311,8 @@ public sealed class Offer : AggregateRoot<OfferId>
         SellerPrice = original;
         CommissionAmount = commissionAmount;
         ProviderFeeAmount = providerFeeAmount;
+        CommissionRate = commissionRate;
+        ProviderFeeRate = providerFeeRate;
         BasePrice = priceResult.Value;
 
         OriginalSellerPrice = null;
