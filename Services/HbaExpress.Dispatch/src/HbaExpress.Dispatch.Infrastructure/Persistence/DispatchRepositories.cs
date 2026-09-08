@@ -17,6 +17,12 @@ internal sealed class CourierRepository : ICourierRepository
     public async Task<Courier?> GetByIdAsync(CourierId id, CancellationToken cancellationToken = default)
         => await _dbContext.Couriers.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
+    // AVEC SUIVI EF, comme la lecture par identifiant : c'est par ici que passent toutes
+    // les routes de l'application coursier, y compris celles qui mutent (mise en ligne,
+    // position, zone). Sans suivi, aucune de ces écritures ne serait enregistrée.
+    public async Task<Courier?> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+        => await _dbContext.Couriers.FirstOrDefaultAsync(c => c.UserId == userId, cancellationToken);
+
     /// <summary>
     /// Candidats à une offre.
     ///

@@ -5,6 +5,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Payments.Application.Payments.Commands;
 using Marketplace.Modules.Payments.Application.Payments.Commands.InitiatePayment;
 using Marketplace.Modules.Payments.Application.Payments.Queries;
+using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Payments.Contracts;
 using Marketplace.Modules.Settlement.Application.Wallets;
 
@@ -21,7 +22,7 @@ public static class PaymentsEndpoints
     /// <summary>Enregistre les routes de paiement.</summary>
     public static IEndpointRouteBuilder MapPaymentsEndpoints(this IEndpointRouteBuilder app)
     {
-        var payments = app.MapGroup("/api/payments").WithTags("Payments").RequireAuthorization();
+        var payments = app.MapAuthenticatedGroup("/api/payments").WithTags("Payments");
 
         payments.MapPost("/", InitiateAsync).WithName("InitiatePayment");
         payments.MapGet("/{id:guid}", GetAsync).WithName("GetPayment");
@@ -68,8 +69,40 @@ public static class PaymentsEndpoints
     }
 
     /// <summary>Initie un paiement et renvoie l'URL de redirection (checkout) ou le client secret (intent).</summary>
-    private static async Task<IResult> InitiateAsync(InitiateRequest request, ISender sender, CancellationToken ct)
+    private static async Task<IResult> InitiateAsync(
+        ClaimsPrincipal principal, InitiateRequest request, ISender sender, CancellationToken ct)
     {
+        // ═════════════════════════════════════════════════════════════════════════
+        // L'IDENTIFIANT DE COMMANDE VIENT DU CORPS : IL FAUT DONC VÉRIFIER QU'ELLE EST
+        // BIEN CELLE DE L'APPELANT.
+        //
+        // Les deux routes voisines — GET /{id} et GET /order/{orderId} — font ce
+        // contrôle ; celle-ci ne le faisait pas. Trois conséquences, dont la première
+        // est la plus vicieuse :
+        //
+        //  • BLOCAGE DÉFINITIF DU PAIEMENT D'AUTRUI. Un paiement « Pending » créé sur
+        //    la commande d'un tiers fait échouer sa vraie tentative avec
+        //    « payments.already_exists ». Sa commande devient impayable, et il n'a
+        //    aucun moyen de comprendre pourquoi.
+        //  • ORACLE D'ÉNUMÉRATION : les réponses distinguent « introuvable »,
+        //    « non payable » et « déjà existant », ce qui permet de cartographier les
+        //    commandes de la plateforme.
+        //  • URL DE RETOUR CHOISIE PAR L'ATTAQUANT sur une session PSP rattachée à
+        //    quelqu'un d'autre.
+        // ═════════════════════════════════════════════════════════════════════════
+        var order = await sender.Send(new GetOrderQuery(request.OrderId), ct);
+        if (order.IsFailure)
+        {
+            return Results.NotFound();
+        }
+
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != order.Value.BuyerId)
+        {
+            // 404, et non 403 : répondre « interdit » confirmerait que la commande
+            // existe, ce qui suffit à l'énumération.
+            return Results.NotFound();
+        }
+
         var command = new InitiatePaymentCommand(
             request.OrderId, request.Method, request.Provider,
             request.Flow ?? "HostedCheckout", request.ReturnUrl, request.CancelUrl, request.PayerPhone);

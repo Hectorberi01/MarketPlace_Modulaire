@@ -50,6 +50,9 @@ namespace HbaExpress.Dispatch.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Vehicle")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -61,6 +64,9 @@ namespace HbaExpress.Dispatch.Infrastructure.Migrations
                         .HasColumnName("CommuneCodes");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
 
                     b.HasIndex("Standing", "Availability");
 

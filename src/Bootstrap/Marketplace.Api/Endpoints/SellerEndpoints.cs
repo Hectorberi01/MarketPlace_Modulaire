@@ -33,7 +33,7 @@ public static class SellerEndpoints
 
     private static void MapSelfService(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/sellers").WithTags("Sellers · Boutique").RequireAuthorization();
+        var group = app.MapAuthenticatedGroup("/api/sellers").WithTags("Sellers · Boutique");
 
         group.MapPost("/", OnboardAsync).WithName("OnboardSeller");
         group.MapGet("/me", GetMyShopAsync).WithName("GetMyShop");

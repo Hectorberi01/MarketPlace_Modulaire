@@ -18,5 +18,15 @@ public sealed record CourierActivatedIntegrationEvent : IntegrationEvent
 public sealed record CourierSuspendedIntegrationEvent : IntegrationEvent
 {
     public required Guid CourierId { get; init; }
+
+    /// <summary>
+    /// Le COMPTE du coursier, en plus de son identifiant de bénéficiaire.
+    ///
+    /// Le service de dispatch en a besoin s'il découvre ce coursier par cet événement —
+    /// un coursier suspendu avant d'avoir jamais été annoncé actif. Sans lui, il serait
+    /// créé sans moyen de s'authentifier.
+    /// </summary>
+    public required Guid UserId { get; init; }
+
     public required string Reason { get; init; }
 }

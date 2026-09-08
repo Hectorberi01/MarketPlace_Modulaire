@@ -89,7 +89,7 @@ public static class IdentityEndpoints
 
     private static void MapAccount(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/identity/account").WithTags("Identity · Account").RequireAuthorization();
+        var group = app.MapAuthenticatedGroup("/api/identity/account").WithTags("Identity · Account");
 
         group.MapGet("/me", GetMeAsync).WithName("GetMe");
         group.MapPut("/me", UpdateMeAsync).WithName("UpdateProfile");

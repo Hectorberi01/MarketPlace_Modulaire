@@ -124,6 +124,7 @@ public sealed class SendCourierActivatedToDispatchHandler
         => _dispatch.SendCourierStandingAsync(
             new DispatchCourierStanding(
                 integrationEvent.CourierId,
+                integrationEvent.UserId,
                 string.IsNullOrWhiteSpace(integrationEvent.DisplayName) ? "Coursier" : integrationEvent.DisplayName,
                 "Active"),
             cancellationToken);
@@ -150,6 +151,7 @@ public sealed class SendCourierSuspendedToDispatchHandler
     public Task HandleAsync(
         CourierSuspendedIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
         => _dispatch.SendCourierStandingAsync(
-            new DispatchCourierStanding(integrationEvent.CourierId, string.Empty, "Suspended"),
+            new DispatchCourierStanding(
+                integrationEvent.CourierId, integrationEvent.UserId, string.Empty, "Suspended"),
             cancellationToken);
 }

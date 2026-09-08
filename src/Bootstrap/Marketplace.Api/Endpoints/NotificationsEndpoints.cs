@@ -15,7 +15,7 @@ public static class NotificationsEndpoints
     /// <summary>Enregistre les routes des notifications (utilisateur authentifié).</summary>
     public static IEndpointRouteBuilder MapNotificationsEndpoints(this IEndpointRouteBuilder app)
     {
-        var notifications = app.MapGroup("/api/notifications").WithTags("Notifications").RequireAuthorization();
+        var notifications = app.MapAuthenticatedGroup("/api/notifications").WithTags("Notifications");
 
         notifications.MapGet("/", ListAsync).WithName("ListMyNotifications");
         notifications.MapGet("/unread-count", UnreadCountAsync).WithName("GetUnreadNotificationCount");

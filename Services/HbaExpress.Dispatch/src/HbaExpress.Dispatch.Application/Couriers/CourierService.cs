@@ -31,13 +31,17 @@ public sealed class CourierService
     /// c'est ainsi qu'il entre dans le service, sans inscription séparée.
     /// </summary>
     public async Task<Result> ApplyStandingAsync(
-        Guid courierId, string displayName, CourierStanding standing, CancellationToken cancellationToken = default)
+        Guid courierId, Guid userId, string displayName, CourierStanding standing,
+        CancellationToken cancellationToken = default)
     {
         var courier = await _couriers.GetByIdAsync(new CourierId(courierId), cancellationToken);
 
         if (courier is null)
         {
-            var registered = Courier.Register(courierId, displayName, VehicleType.Motorcycle);
+            // Le UserId est indispensable À LA CRÉATION : c'est lui qui permettra au
+            // coursier de s'authentifier. Un coursier créé sans compte serait offert des
+            // courses et incapable d'en prendre une.
+            var registered = Courier.Register(courierId, userId, displayName, VehicleType.Motorcycle);
             if (registered.IsFailure)
             {
                 return registered;
@@ -50,6 +54,20 @@ public sealed class CourierService
         courier.ApplyStanding(standing);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Le coursier derrière un compte utilisateur, ou <c>null</c> s'il est inconnu.
+    ///
+    /// Le jeton JWT du coursier porte son COMPTE (claim « sub »), pas son identifiant de
+    /// coursier : la marketplace n'émet qu'un seul type de jeton, pour tous ses publics.
+    /// Cette résolution est donc le premier geste de chaque route de l'application
+    /// coursier.
+    /// </summary>
+    public async Task<CourierId?> ResolveByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var courier = await _couriers.GetByUserAsync(userId, cancellationToken);
+        return courier?.Id;
     }
 
     public async Task<Result> GoOnlineAsync(CourierId courierId, CancellationToken cancellationToken = default)

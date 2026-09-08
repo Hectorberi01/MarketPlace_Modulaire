@@ -80,5 +80,11 @@ public sealed record DispatchDropoff(
 
 public sealed record DispatchOrderCancelled(Guid OrderId, string Reason);
 
+/// <param name="CourierId">Identifiant de BÉNÉFICIAIRE : celui qui désigne le portefeuille à créditer.</param>
+/// <param name="UserId">
+/// Identifiant du COMPTE : celui que porte le jeton JWT du coursier, et par lequel le
+/// service de dispatch le reconnaît quand il appelle. Les deux sont nécessaires, et ce
+/// sont deux Guid différents — l'un fait payer, l'autre authentifie.
+/// </param>
 /// <param name="Standing">« Pending », « Active » ou « Suspended ». Le service refuse toute autre valeur.</param>
-public sealed record DispatchCourierStanding(Guid CourierId, string DisplayName, string Standing);
+public sealed record DispatchCourierStanding(Guid CourierId, Guid UserId, string DisplayName, string Standing);

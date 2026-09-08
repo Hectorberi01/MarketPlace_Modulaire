@@ -14,7 +14,7 @@ public static class WishlistEndpoints
     /// <summary>Enregistre les routes de la liste d'envies.</summary>
     public static IEndpointRouteBuilder MapWishlistEndpoints(this IEndpointRouteBuilder app)
     {
-        var wishlist = app.MapGroup("/api/wishlist").WithTags("Wishlist").RequireAuthorization();
+        var wishlist = app.MapAuthenticatedGroup("/api/wishlist").WithTags("Wishlist");
 
         wishlist.MapGet("/", GetAsync).WithName("GetMyWishlist");
         wishlist.MapPost("/items", AddAsync).WithName("AddToWishlist");

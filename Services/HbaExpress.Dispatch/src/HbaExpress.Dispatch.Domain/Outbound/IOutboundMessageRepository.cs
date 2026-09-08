@@ -13,8 +13,7 @@ public interface IOutboundMessageRepository
     /// doublon ne coûte rien ici (la marketplace est idempotente sur l'identifiant de
     /// course), mais la règle reste : UN SEUL exécutant tant que ce verrou manque.
     /// </summary>
-    Task<IReadOnlyList<OutboundMessage>> ListPendingAsync(
-        DateTime nowUtc, int take, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OutboundMessage>> ListPendingAsync(DateTime nowUtc, int take, CancellationToken cancellationToken = default);
 
     /// <summary>Compte des messages abandonnés : ce que la supervision doit surveiller.</summary>
     Task<int> CountDeadLetteredAsync(CancellationToken cancellationToken = default);

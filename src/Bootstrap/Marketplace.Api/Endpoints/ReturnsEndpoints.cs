@@ -14,17 +14,48 @@ public static class ReturnsEndpoints
     /// <summary>Enregistre les routes de retour.</summary>
     public static IEndpointRouteBuilder MapReturnsEndpoints(this IEndpointRouteBuilder app)
     {
-        var returns = app.MapGroup("/api/returns").WithTags("Returns").RequireAuthorization();
+        // ═════════════════════════════════════════════════════════════════════════
+        // DEUX GROUPES, PARCE QUE CES ROUTES N'ONT PAS LE MÊME PUBLIC.
+        //
+        // Il n'y en avait qu'un — `MapGroup("/api/returns").RequireAuthorization()` —
+        // et le cycle de vie du retour était donc ouvert à TOUT COMPTE AUTHENTIFIÉ,
+        // sans le moindre contrôle de propriété, ni à l'endpoint ni dans le handler
+        // (ReturnMutationHandlerBase.MutateAsync charge par identifiant et mute).
+        //
+        // CE QUE CELA PERMETTAIT, CONCRÈTEMENT. `POST /{id}/refund` lève
+        // ReturnRefundApprovedDomainEvent, que Settlement transforme en CRÉDIT RÉEL de
+        // la cagnotte client. Un acheteur ouvrait un retour légitime sur sa propre
+        // commande — cette route-là vérifie bien la propriété — puis enchaînait
+        // approve → received → refund sur son propre identifiant : remboursé, et il
+        // garde la marchandise. Sur l'identifiant d'un tiers, il remboursait un inconnu
+        // aux frais de la plateforme. Le plafond RefundableAmount borne le MONTANT ;
+        // rien ne bornait QUI décide.
+        //
+        // C'est le même motif que POST /api/shipments/{id}/deliver, corrigé de la même
+        // façon : le cycle de vie passe au back-office.
+        //
+        // LE CHEMIN VENDEUR N'EST PAS TOUCHÉ. Il existe déjà, et il est correct :
+        // /seller/returns (BFF Vendeur) exige le rôle Seller ET vérifie la propriété du
+        // retour à chaque transition (SellerBff.OwnsReturnAsync). C'est là que passent
+        // les vendeurs ; ces routes-ci sont le back-office.
+        // ═════════════════════════════════════════════════════════════════════════
+        var mine = app.MapAuthenticatedGroup("/api/returns").WithTags("Returns");
 
-        returns.MapPost("/", RequestAsync).WithName("RequestReturn");
-        returns.MapGet("/mine", ListMineAsync).WithName("ListMyReturns");
-        returns.MapGet("/seller/{sellerId:guid}", ListSellerAsync).WithName("ListSellerReturns");
-        returns.MapGet("/{id:guid}", GetAsync).WithName("GetReturn");
-        returns.MapPost("/{id:guid}/approve", ApproveAsync).WithName("ApproveReturn");
-        returns.MapPost("/{id:guid}/reject", RejectAsync).WithName("RejectReturn");
-        returns.MapPost("/{id:guid}/tracking", TrackingAsync).WithName("AddReturnTracking");
-        returns.MapPost("/{id:guid}/received", ReceivedAsync).WithName("MarkReturnReceived");
-        returns.MapPost("/{id:guid}/refund", RefundAsync).WithName("RefundReturn");
+        mine.MapPost("/", RequestAsync).WithName("RequestReturn");
+        mine.MapGet("/mine", ListMineAsync).WithName("ListMyReturns");
+
+        // Lecture unitaire : ACHETEUR PROPRIÉTAIRE ou admin — le contrôle est dans
+        // GetAsync, calqué sur celui d'OrderingEndpoints.
+        mine.MapGet("/{id:guid}", GetAsync).WithName("GetReturn");
+
+        var backOffice = app.MapAdminGroup("/api/returns").WithTags("Returns");
+
+        backOffice.MapGet("/seller/{sellerId:guid}", ListSellerAsync).WithName("ListSellerReturns");
+        backOffice.MapPost("/{id:guid}/approve", ApproveAsync).WithName("ApproveReturn");
+        backOffice.MapPost("/{id:guid}/reject", RejectAsync).WithName("RejectReturn");
+        backOffice.MapPost("/{id:guid}/tracking", TrackingAsync).WithName("AddReturnTracking");
+        backOffice.MapPost("/{id:guid}/received", ReceivedAsync).WithName("MarkReturnReceived");
+        backOffice.MapPost("/{id:guid}/refund", RefundAsync).WithName("RefundReturn");
 
         return app;
     }
@@ -61,10 +92,25 @@ public static class ReturnsEndpoints
     }
 
     /// <summary>Récupère une demande de retour.</summary>
-    private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
+    private static async Task<IResult> GetAsync(
+        ClaimsPrincipal principal, Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new GetReturnQuery(id), ct);
-        return result.Match(item => Results.Ok(item));
+        if (result.IsFailure)
+        {
+            return result.Match(item => Results.Ok(item));
+        }
+
+        // ANTI-IDOR. Sans ce contrôle, n'importe quel compte lisait le retour de
+        // n'importe qui : identifiants d'acheteur et de vendeur, montant remboursable,
+        // transporteur et numéro de suivi. Le 404 plutôt qu'un 403 : confirmer
+        // l'existence d'un retour qu'on n'a pas le droit de voir est déjà une fuite.
+        if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(result.Value);
     }
 
     /// <summary>Approuve la demande de retour.</summary>

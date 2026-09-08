@@ -32,15 +32,40 @@ public sealed class Courier : AggregateRoot<CourierId>
     {
     }
 
-    private Courier(CourierId id, string displayName, VehicleType vehicle)
+    private Courier(CourierId id, Guid userId, string displayName, VehicleType vehicle)
         : base(id)
     {
+        UserId = userId;
         DisplayName = displayName;
         Vehicle = vehicle;
         Standing = CourierStanding.Pending;
         Availability = CourierAvailability.Offline;
         CreatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Le compte avec lequel ce coursier se connecte.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// DEUX IDENTIFIANTS, ET IL FAUT LES DEUX. C'EST CONTRE-INTUITIF, DONC ÉCRIT ICI.
+    ///
+    /// La marketplace donne au coursier un identifiant de BÉNÉFICIAIRE (<c>CourierId</c>,
+    /// la clé de cet agrégat) et il possède par ailleurs un compte UTILISATEUR
+    /// (<c>UserId</c>). Ce sont deux Guid différents.
+    ///
+    ///  • C'est le CourierId qui fait payer : POST /api/delivery/courses/completed
+    ///    l'attend, et lui seul désigne le portefeuille à créditer.
+    ///  • C'est le UserId qui authentifie : le jeton JWT du coursier porte son compte
+    ///    utilisateur dans la claim « sub », la marketplace n'en émettant pas d'autre.
+    ///
+    /// Ne garder que le premier — ce qui était le cas — donnait un service qui offre des
+    /// courses à un coursier enregistré et répond 404 à ce même coursier quand il essaie
+    /// de les prendre : le jeton présente un identifiant que la table ne contient pas.
+    /// La panne ne se voit pas à la compilation, et pas non plus dans les tests de chaque
+    /// service pris séparément — seulement à la jointure.
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public Guid UserId { get; private set; }
 
     /// <summary>Nom d'affichage, recopié de la marketplace pour l'écran de l'acheteur.</summary>
     public string DisplayName { get; private set; } = default!;
@@ -63,11 +88,21 @@ public sealed class Courier : AggregateRoot<CourierId>
 
     public DateTime CreatedAtUtc { get; private set; }
 
-    public static Result<Courier> Register(Guid courierId, string displayName, VehicleType vehicle)
+    public static Result<Courier> Register(
+        Guid courierId, Guid userId, string displayName, VehicleType vehicle)
     {
         if (courierId == Guid.Empty)
         {
             return Error.Validation("courier.id_required", "L'identifiant du coursier est obligatoire.");
+        }
+
+        if (userId == Guid.Empty)
+        {
+            // Sans compte utilisateur, ce coursier existerait en base et ne pourrait
+            // jamais se connecter : offert des courses, incapable d'en prendre une.
+            return Error.Validation(
+                "courier.user_required",
+                "Le compte utilisateur du coursier est obligatoire — c'est par lui qu'il s'authentifie.");
         }
 
         if (string.IsNullOrWhiteSpace(displayName))
@@ -75,7 +110,7 @@ public sealed class Courier : AggregateRoot<CourierId>
             return Error.Validation("courier.name_required", "Le nom du coursier est obligatoire.");
         }
 
-        return new Courier(new CourierId(courierId), displayName.Trim(), vehicle);
+        return new Courier(new CourierId(courierId), userId, displayName.Trim(), vehicle);
     }
 
     /// <summary>Recopie le droit de travailler décidé par la marketplace.</summary>

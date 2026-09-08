@@ -15,7 +15,7 @@ public static class LoyaltyEndpoints
     /// <summary>Enregistre les routes de fidélité.</summary>
     public static IEndpointRouteBuilder MapLoyaltyEndpoints(this IEndpointRouteBuilder app)
     {
-        var loyalty = app.MapGroup("/api/loyalty").WithTags("Loyalty").RequireAuthorization();
+        var loyalty = app.MapAuthenticatedGroup("/api/loyalty").WithTags("Loyalty");
 
         loyalty.MapGet("/", GetAsync).WithName("GetMyLoyalty");
         loyalty.MapPost("/redeem", RedeemAsync).WithName("RedeemPoints");

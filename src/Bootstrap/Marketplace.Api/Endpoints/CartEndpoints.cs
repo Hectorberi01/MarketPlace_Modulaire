@@ -16,7 +16,7 @@ public static class CartEndpoints
     /// <summary>Enregistre les routes du panier (acheteur authentifié).</summary>
     public static IEndpointRouteBuilder MapCartEndpoints(this IEndpointRouteBuilder app)
     {
-        var cart = app.MapGroup("/api/cart").WithTags("Cart").RequireAuthorization();
+        var cart = app.MapAuthenticatedGroup("/api/cart").WithTags("Cart");
 
         cart.MapGet("/", GetAsync).WithName("GetCart");
         cart.MapPost("/items", AddItemAsync).WithName("AddCartItem");

@@ -218,6 +218,9 @@ public class DeliveryJobServiceTests
         public Task<Courier?> GetByIdAsync(CourierId id, CancellationToken cancellationToken = default)
             => Task.FromResult(_couriers.FirstOrDefault(c => c.Id == id));
 
+        public Task<Courier?> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_couriers.FirstOrDefault(c => c.UserId == userId));
+
         public Task<IReadOnlyList<Courier>> ListCandidatesAsync(
             string communeCode, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Courier>>(

@@ -15,6 +15,13 @@ internal sealed class CourierConfiguration : IEntityTypeConfiguration<Courier>
             .HasConversion(id => id.Value, value => new CourierId(value))
             .ValueGeneratedNever();
 
+        builder.Property(c => c.UserId).IsRequired();
+
+        // UNIQUE : un compte utilisateur ne peut désigner qu'un seul coursier. Sans cette
+        // contrainte, un doublon rendrait la résolution du jeton non déterministe — le
+        // même livreur verrait ses courses tantôt d'un côté, tantôt de l'autre.
+        builder.HasIndex(c => c.UserId).IsUnique();
+
         builder.Property(c => c.DisplayName).HasMaxLength(120).IsRequired();
 
         // Persistés en CHAÎNE : ajouter un statut ou un type de véhicule ne renumérote

@@ -38,7 +38,11 @@ internal static class TestJobs
 
     public static Courier OnlineCourier(GeoPoint at, DateTime nowUtc, string commune = "cotonou")
     {
-        var courier = Courier.Register(Guid.NewGuid(), "Kossi Adjovi", VehicleType.Motorcycle).Value;
+        // Deux Guid distincts, comme en vrai : identifiant de bénéficiaire et compte
+        // utilisateur. Les confondre dans un test masquerait précisément le bug
+        // que cette distinction corrige.
+        var courier = Courier.Register(
+            Guid.NewGuid(), Guid.NewGuid(), "Kossi Adjovi", VehicleType.Motorcycle).Value;
         courier.ApplyStanding(CourierStanding.Active);
         courier.SetServiceArea(new[] { commune });
         courier.GoOnline();

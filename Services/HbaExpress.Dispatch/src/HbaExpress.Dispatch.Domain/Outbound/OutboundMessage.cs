@@ -33,8 +33,7 @@ public sealed class OutboundMessage : Entity<Guid>
     {
     }
 
-    private OutboundMessage(Guid id, string type, string payload, DateTime nowUtc)
-        : base(id)
+    private OutboundMessage(Guid id, string type, string payload, DateTime nowUtc) : base(id)
     {
         Type = type;
         Payload = payload;

@@ -14,7 +14,7 @@ public static class MessagingEndpoints
     /// <summary>Enregistre les routes de messagerie.</summary>
     public static IEndpointRouteBuilder MapMessagingEndpoints(this IEndpointRouteBuilder app)
     {
-        var conversations = app.MapGroup("/api/conversations").WithTags("Messaging").RequireAuthorization();
+        var conversations = app.MapAuthenticatedGroup("/api/conversations").WithTags("Messaging");
 
         conversations.MapPost("/", StartAsync).WithName("StartConversation");
         conversations.MapGet("/", ListMineAsync).WithName("ListMyConversations");

@@ -17,7 +17,7 @@ public static class OrderingEndpoints
     /// <summary>Enregistre les routes de commande (acheteur authentifié).</summary>
     public static IEndpointRouteBuilder MapOrderingEndpoints(this IEndpointRouteBuilder app)
     {
-        var orders = app.MapGroup("/api/orders").WithTags("Ordering").RequireAuthorization();
+        var orders = app.MapAuthenticatedGroup("/api/orders").WithTags("Ordering");
 
         orders.MapPost("/", PlaceAsync).WithName("PlaceOrder");
         orders.MapGet("/", ListMineAsync).WithName("ListMyOrders");

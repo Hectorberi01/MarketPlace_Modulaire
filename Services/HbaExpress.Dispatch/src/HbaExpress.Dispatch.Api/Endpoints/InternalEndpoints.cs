@@ -138,7 +138,7 @@ public static class InternalEndpoints
         }
 
         var displayName = string.IsNullOrWhiteSpace(request.DisplayName) ? "Coursier" : request.DisplayName;
-        var result = await couriers.ApplyStandingAsync(request.CourierId, displayName, standing, ct);
+        var result = await couriers.ApplyStandingAsync(request.CourierId, request.UserId, displayName, standing, ct);
         return result.Match(Results.NoContent);
     }
 
@@ -263,7 +263,18 @@ public static class InternalEndpoints
 
     public sealed class CourierStandingChangedRequest
     {
+        /// <summary>Identifiant de BÉNÉFICIAIRE — celui qui désigne le portefeuille à créditer.</summary>
         public Guid CourierId { get; set; }
+
+        /// <summary>
+        /// Identifiant du COMPTE — celui que porte le jeton JWT du coursier.
+        ///
+        /// Les deux sont nécessaires, et ce sont deux Guid différents : l'un fait payer,
+        /// l'autre authentifie. Voir Courier.UserId. N'exiger que le premier donnait un
+        /// coursier enregistré, offert des courses, et incapable d'en prendre une.
+        /// </summary>
+        public Guid UserId { get; set; }
+
         public string? DisplayName { get; set; }
 
         /// <summary>« Pending », « Active » ou « Suspended ». Toute autre valeur est refusée.</summary>
