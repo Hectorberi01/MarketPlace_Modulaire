@@ -30,5 +30,6 @@ internal static class OrderMapper
                 order.ShipToPhone)
             : null,
         order.ShippingFee,
-        order.WalletApplied);
+        order.WalletApplied,
+        order.DeliveredAtUtc);
 }

@@ -138,11 +138,35 @@ public static class ClientOrderEndpoints
         return (await sender.Send(new CancelOrderCommand(id, request?.Reason ?? string.Empty), ct)).Match(() => Results.NoContent());
     }
 
-    /// <summary>Ouvre une demande de retour (RMA) sur une ligne de la commande.</summary>
+    /// <summary>
+    /// Ouvre une demande de retour (RMA) sur une ligne de la commande.
+    ///
+    /// C'ÉTAIT LA SEULE ROUTE `/{id}` DE CE FICHIER À NE PAS CHARGER LA COMMANDE
+    /// POSSÉDÉE. `CancelAsync` juste au-dessus et `TrackingAsync` juste en dessous
+    /// appellent `LoadOwnedOrderAsync` ; celle-ci passait l'identifiant tel quel et
+    /// laissait le domaine trancher — lequel répondait 403, donc confirmait l'existence.
+    ///
+    /// Le domaine a été corrigé aussi (voir RequestReturnCommandHandler) : c'est lui qui
+    /// protège l'autre hôte. La garde est reposée ici pour que le fichier redevienne
+    /// homogène — quatre routes par identifiant, quatre fois le même geste. Une exception
+    /// silencieuse au milieu d'un motif régulier est ce qui a permis à celle-ci de
+    /// passer inaperçue.
+    /// </summary>
     private static async Task<IResult> ReturnAsync(ClaimsPrincipal user, Guid id, ReturnRequest request, ISender sender, CancellationToken ct)
-        => ClientBff.CurrentUserId(user) is not { } buyerId
-            ? Results.Unauthorized()
-            : (await sender.Send(new RequestReturnCommand(buyerId, id, request.OfferId, request.Reason), ct)).Match(rid => Results.Ok(new { returnRequestId = rid }));
+    {
+        if (ClientBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
+        {
+            return Results.NotFound();
+        }
+
+        return (await sender.Send(new RequestReturnCommand(buyerId, id, request.OfferId, request.Reason), ct))
+            .Match(rid => Results.Ok(new { returnRequestId = rid }));
+    }
 
     /// <summary>Suivi d'expédition (expéditions de la commande + statuts). Réservé au propriétaire.</summary>
     private static async Task<IResult> TrackingAsync(ClaimsPrincipal user, Guid id, ISender sender, IShippingModuleApi shipping, CancellationToken ct)

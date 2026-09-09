@@ -160,7 +160,10 @@ internal sealed class ArchiveConversationCommandHandler : ConversationMutationHa
         {
             if (!conv.ParticipantIds.Contains(c.UserId))
             {
-                return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant."));
+                // Mot pour mot le refus de `MutateAsync` quelques lignes plus haut :
+                // un code ou un message différent trahirait l'existence de la
+                // conversation aussi sûrement qu'un 403.
+                return Result.Failure(Error.NotFound("messaging.not_found", "Conversation introuvable."));
             }
 
             conv.Archive();

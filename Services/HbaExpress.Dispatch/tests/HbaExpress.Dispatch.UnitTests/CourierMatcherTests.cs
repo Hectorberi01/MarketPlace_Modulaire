@@ -71,7 +71,7 @@ public class CourierMatcherTests
         var job = TestJobs.NewJob(pickupAt: TestJobs.Dantokpa);
         var courier = TestJobs.OnlineCourier(TestJobs.Dantokpa, Now);
 
-        courier.ApplyStanding(CourierStanding.Suspended);
+        courier.ApplyStanding(CourierStanding.Suspended, DateTime.UtcNow);
 
         // La suspension le sort de la file IMMÉDIATEMENT : ne pas le faire le laisserait
         // recevoir des offres jusqu'à sa prochaine action dans l'application.

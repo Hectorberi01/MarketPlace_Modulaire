@@ -33,6 +33,54 @@ public static class InternalEndpoints
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Nombre maximal de caractères lus d'un corps à signer.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LIRE LE CORPS AVANT DE VÉRIFIER LA SIGNATURE EST OBLIGATOIRE. LE LIRE SANS
+    /// LIMITE NE L'EST PAS.
+    ///
+    /// La signature porte sur les octets reçus : il FAUT donc les lire avant de pouvoir
+    /// juger l'appel. La conséquence, jamais bornée jusqu'ici, est qu'un appelant
+    /// anonyme faisait allouer une chaîne de la taille qu'il voulait — le seul plafond
+    /// étant celui de Kestrel, 30 Mo, et ces routes ont en plus le limiteur de débit
+    /// désactivé. Aucune limite de taille de corps n'existait nulle part dans le dépôt.
+    ///
+    /// Ces charges font quelques centaines d'octets. Soixante-quatre kilo-octets laissent
+    /// une marge de deux ordres de grandeur et ramènent l'allocation à quelque chose
+    /// qu'on peut se permettre de jeter.
+    ///
+    /// LE PLAFOND EST EN CARACTÈRES, pas en octets : on borne ce qu'on ALLOUE, ce qui est
+    /// le point. Un corps UTF-8 peut valoir jusqu'à quatre octets par caractère, donc la
+    /// borne réelle en octets est plus haute — sans importance ici, puisqu'on refuse bien
+    /// avant d'atteindre quoi que ce soit de coûteux.
+    /// </summary>
+    private const int MaxSignedBodyChars = 64 * 1024;
+
+    /// <summary>
+    /// Lit le corps brut en refusant tout ce qui dépasse <see cref="MaxSignedBodyChars"/>.
+    /// Renvoie <c>null</c> si le corps est trop grand — l'appelant répond alors 413.
+    /// </summary>
+    private static async Task<string?> ReadCappedBodyAsync(HttpRequest http, CancellationToken ct)
+    {
+        http.EnableBuffering();
+
+        // L'en-tête annoncé permet de refuser sans rien lire quand il est présent et
+        // honnête. Il ne fait pas foi — d'où le second contrôle, sur ce qu'on a lu.
+        if (http.ContentLength is > MaxSignedBodyChars)
+        {
+            return null;
+        }
+
+        var buffer = new char[MaxSignedBodyChars + 1];
+        using var reader = new StreamReader(http.Body, leaveOpen: true);
+        var read = await reader.ReadBlockAsync(buffer, ct);
+        http.Body.Position = 0;
+
+        return read > MaxSignedBodyChars ? null : new string(buffer, 0, read);
+    }
+
+
     public static IEndpointRouteBuilder MapInternalEndpoints(this IEndpointRouteBuilder app)
     {
         var internals = app.MapGroup("/internal").WithTags("Internal").AllowAnonymous();
@@ -137,8 +185,21 @@ public static class InternalEndpoints
             return Results.BadRequest(new { error = "unknown_standing", value = request.Standing });
         }
 
+        // L'HORODATAGE D'ÉMISSION EST OBLIGATOIRE, ET SON ABSENCE EST REFUSÉE.
+        //
+        // Retomber sur « maintenant » ferait passer un vieux message rejoué pour la
+        // décision la plus récente — exactement ce que le verrou monotone doit empêcher.
+        // Retomber sur DateTime.MinValue ferait l'inverse : toute annonce serait périmée,
+        // et plus aucun coursier ne changerait de statut. Ni l'un ni l'autre : on refuse.
+        if (request.OccurredOnUtc is null)
+        {
+            return Results.BadRequest(new { error = "missing_occurred_at" });
+        }
+
         var displayName = string.IsNullOrWhiteSpace(request.DisplayName) ? "Coursier" : request.DisplayName;
-        var result = await couriers.ApplyStandingAsync(request.CourierId, request.UserId, displayName, standing, ct);
+        var result = await couriers.ApplyStandingAsync(
+            request.CourierId, request.UserId, displayName, standing,
+            request.OccurredOnUtc.Value.ToUniversalTime(), ct);
         return result.Match(Results.NoContent);
     }
 
@@ -154,15 +215,17 @@ public static class InternalEndpoints
         HttpRequest http, IConfiguration configuration, CancellationToken ct)
         where TPayload : class
     {
-        http.EnableBuffering();
-        using var reader = new StreamReader(http.Body, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync(ct);
-        http.Body.Position = 0;
+        var rawBody = await ReadCappedBodyAsync(http, ct);
+        if (rawBody is null)
+        {
+            return (Results.StatusCode(StatusCodes.Status413PayloadTooLarge), null);
+        }
 
         var secret = configuration[InboundSignature.SecretKey];
         var signature = http.Headers[InboundSignature.Header].ToString();
+        var timestamp = http.Headers[InboundSignature.TimestampHeader].ToString();
 
-        if (!InboundSignature.Verify(rawBody, signature, secret))
+        if (!InboundSignature.Verify(rawBody, timestamp, signature, secret))
         {
             // 401 sans détail : dire POURQUOI la signature est refusée aiderait surtout
             // celui qui essaie d'en fabriquer une.
@@ -279,5 +342,15 @@ public static class InternalEndpoints
 
         /// <summary>« Pending », « Active » ou « Suspended ». Toute autre valeur est refusée.</summary>
         public string? Standing { get; set; }
+
+        /// <summary>
+        /// Instant où la MARKETPLACE a pris la décision — pas celui où l'appel arrive.
+        ///
+        /// C'est ce qui permet d'ordonner deux annonces contradictoires sans se fier à
+        /// l'ordre d'arrivée, qu'un rejeu ou un réessai d'outbox rend peu fiable. Voir
+        /// Courier.ApplyStanding. Nullable pour pouvoir répondre un 400 propre : un
+        /// `required` ferait lever au milieu de la désérialisation.
+        /// </summary>
+        public DateTime? OccurredOnUtc { get; set; }
     }
 }

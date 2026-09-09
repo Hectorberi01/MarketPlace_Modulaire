@@ -94,57 +94,149 @@ public static class ClientAuthEndpoints
 
     /// <summary>Confirme l'adresse e-mail à partir du lien reçu par mail.</summary>
     private static async Task<IResult> ConfirmEmailAsync(ConfirmEmailRequest request, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ConfirmEmailCommand(request.UserId, request.Token), ct))
+        => (await sender.Send(new ConfirmEmailCommand(request.Email, request.Token), ct))
             .Match(() => Results.Ok(new { confirmed = true }));
 
     /// <summary>
-    /// Renvoie un code de vérification à un compte EXISTANT non vérifié.
+    /// Renvoie un code de vérification à un compte existant non vérifié.
     ///
-    /// CETTE RÉPONSE N'EST PAS NEUTRE, contrairement à ce qu'affirmait ce
-    /// commentaire. Elle rend `{ userId: <guid> }` si l'adresse est connue et
-    /// `{ userId: null }` sinon : c'est un ORACLE D'EXISTENCE de compte, exploitable
-    /// sans authentification, et chaque appel positif envoie un e-mail à la victime.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA RÉPONSE EST CONSTANTE. C'ÉTAIT UN ORACLE, ET IL EST FERMÉ.
     ///
-    /// Ce n'est pas corrigé ici, et c'est un choix : l'écran de saisie du code a
-    /// besoin de cet `userId` pour appeler `confirm-email`. Neutraliser la réponse
-    /// sans livrer en même temps la version correspondante de l'application casserait
-    /// la vérification d'e-mail pour tous les nouveaux comptes.
+    /// Cette route rendait `{ userId: <guid> }` quand l'adresse était connue et
+    /// `{ userId: null }` sinon. Sans aucun jeton, on testait une liste d'adresses et on
+    /// savait lesquelles avaient un compte — et chaque test positif ENVOYAIT UN VRAI
+    /// E-MAIL à la personne visée : harcèlement, et usure de la réputation d'expéditeur
+    /// du domaine. La limitation de débit bornait le rythme, pas la faisabilité.
     ///
-    /// CORRECTION À MENER CONJOINTEMENT (backend + app) :
-    ///   1. `ConfirmEmailCommand` accepte l'e-mail à la place de l'`userId` ;
-    ///   2. cette route renvoie toujours `{ sent: true }`, quoi qu'il arrive ;
-    ///   3. l'app garde l'e-mail saisi plutôt que l'identifiant.
+    /// L'identifiant était rendu parce que l'écran de saisie du code en avait besoin pour
+    /// confirmer ensuite. C'est ce lien qui a été coupé : `ConfirmEmailCommand` prend
+    /// désormais l'ADRESSE, que l'application connaît déjà puisque l'utilisateur vient de
+    /// la saisir. Plus rien n'a besoin d'être divulgué.
     ///
-    /// En attendant, le seul rempart est la limitation de débit (30/min par IP) — qui
-    /// borne le rythme, pas la faisabilité. Même remarque pour
-    /// `SellerRegistrationEndpoints.ResendAsync`.
-    /// ─────────────────────────────────────────────────────────────────────────────
+    /// LE RÉSULTAT EST IGNORÉ, comme sur `password/forgot` trente lignes plus haut — les
+    /// deux routes se contredisaient à cette distance.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static async Task<IResult> ResendEmailAsync(
         ResendRequest request, ISender sender, IIdentityModuleApi identity, CancellationToken ct)
     {
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE COMMENTAIRE DISAIT « COMPTE NON VÉRIFIÉ ». LE CODE NE LE CONTRÔLAIT PAS.
+        //
+        // `BeginEmailVerification` ne regarde ni `EmailVerified` ni le statut : il pose
+        // un code, point. N'importe quel compte EXISTANT recevait donc un e-mail —
+        // vérifié, actif, suspendu, supprimé. Avec une liste d'adresses clients, on
+        // arrosait la base entière. C'est le harcèlement et l'usure de réputation
+        // d'expéditeur que la correction de cette route nommait comme sa raison d'être,
+        // encore présents par le canal de l'effet de bord après avoir été fermés dans
+        // celui de la réponse.
+        //
+        // LA GARDE EST ICI, PAS DANS LE DOMAINE. `BeginEmailVerification` doit continuer
+        // d'accepter un compte déjà vérifié : c'est ce qui permet à un acheteur qui se
+        // lance dans la vente de prouver qu'il relève sa boîte avant qu'on lui rattache
+        // une boutique. La règle « seulement si non vérifié » est propre à CETTE
+        // surface, où confirmer son adresse est la seule chose que le code sert à faire.
+        // ═════════════════════════════════════════════════════════════════════════
         var user = await identity.GetUserByEmailAsync(request.Email, ct);
-        if (user is null)
+        if (user is not null && !user.EmailVerified && IsResendEligible(user.Status))
         {
-            return Results.Ok(new { userId = (Guid?)null });
+            _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
         }
 
-        _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
-        return Results.Ok(new { userId = (Guid?)user.Id });
+        return Results.Ok(new
+        {
+            sent = true,
+            message = "Si un compte existe pour cette adresse et n'est pas encore vérifié, "
+                    + "un nouveau lien vient d'être envoyé."
+        });
     }
+
+    /// <summary>
+    /// Un compte dans cet état peut-il recevoir un nouveau code ?
+    ///
+    /// Liste BLANCHE, et les noms viennent de l'énumération `UserStatus`. Un compte
+    /// suspendu ou supprimé n'a rien à confirmer : lui envoyer un code ne lui rend aucun
+    /// service et donne à l'expéditeur d'une boucle de sondage un e-mail de plus.
+    /// </summary>
+    private static bool IsResendEligible(string status)
+        => string.Equals(status, "PendingVerification", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Réinitialise le mot de passe à partir du jeton reçu.</summary>
     private static async Task<IResult> ResetPasswordAsync(ResetRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new ResetPasswordCommand(request.Email, request.Token, request.NewPassword), ct))
             .Match(() => Results.Ok(new { reset = true }));
 
-    /// <summary>Création de compte (email/téléphone + mot de passe).</summary>
+    /// <summary>
+    /// Création de compte.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ORACLE FERMÉ CÔTÉ VENDEUR ÉTAIT RESTÉ OUVERT ICI, TROIS FICHIERS PLUS LOIN.
+    ///
+    /// La route rendait `409 identity.user.email_taken` sur une adresse prise et
+    /// `200 { id }` sur une adresse libre : EXISTENCE ET IDENTIFIANT INTERNE, en une
+    /// seule requête anonyme. C'est la paire exacte que `/seller/auth/register` a passé
+    /// cent lignes de commentaire à supprimer — sur une route d'inscription voisine, qui
+    /// appelle la même commande.
+    ///
+    /// La branche `identity.user.phone_taken` énumérait en plus les NUMÉROS, un
+    /// identifiant qu'aucune surface n'avait encore été durcie contre.
+    ///
+    /// Réponse constante désormais, et plus de Guid. Les erreurs de SAISIE, elles,
+    /// remontent telles quelles : elles portent sur ce que l'appelant vient de taper,
+    /// pas sur ce que la base contient, et les taire empêcherait de corriger un
+    /// formulaire. Le pipeline de validation s'exécute avant le handler, donc identique
+    /// dans les deux cas.
+    ///
+    /// AUCUN CODE N'EST RENVOYÉ QUAND L'ADRESSE EST DÉJÀ PRISE — contrairement au
+    /// parcours vendeur, qui en émet un. La différence est justifiée : là-bas, un
+    /// acheteur qui se lance doit PROUVER qu'il relève la boîte avant qu'on lui rattache
+    /// une boutique. Ici il n'y a rien à rattacher ; la bonne action est de se
+    /// connecter, et envoyer un e-mail à chaque sondage ne servirait qu'à harceler.
+    ///
+    /// CE QUI RESTE, ET QUI EST INHÉRENT : sonder une adresse LIBRE crée un vrai compte.
+    /// On peut donc squatter une adresse non inscrite — sa titulaire ne pourra plus
+    /// s'inscrire et recevra un code qu'elle n'a pas demandé. Fermer ça demanderait une
+    /// épreuve avant création (captcha, ou création différée jusqu'à la validation du
+    /// code). C'est une décision produit, pas une correction.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static async Task<IResult> RegisterAsync(RegisterRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(
-            new RegisterUserCommand(request.FirstName, request.LastName, request.Email, request.PhoneNumber ?? string.Empty, request.Password), ct);
-        return result.Match(id => Results.Ok(new { id }));
+        var created = await sender.Send(new RegisterUserCommand(
+            request.FirstName, request.LastName, request.Email,
+            request.PhoneNumber ?? string.Empty, request.Password), ct);
+
+        // Les deux conflits d'existence sont AVALÉS, y compris `phone_taken`. Le taire
+        // laisse un inscrit légitime dont le numéro est déjà pris attendre un code qui
+        // ne viendra pas — d'où la dernière phrase du message. Le dire rouvrirait
+        // l'énumération sur le numéro au lieu de l'adresse.
+        if (created.IsFailure && !IsExistingAccountConflict(created.Error.Code))
+        {
+            return created.Match(_ => Results.Ok());
+        }
+
+        return Results.Ok(new
+        {
+            registered = true,
+            requiresVerification = true,
+            message = "Si cette adresse n'a pas déjà de compte, un code à 6 chiffres vient "
+                    + "d'être envoyé. Si vous en avez déjà un, connectez-vous. Sans code d'ici "
+                    + "quelques minutes, vérifiez les informations saisies ou contactez l'assistance."
+        });
     }
+
+    /// <summary>
+    /// Ce code d'erreur signifie-t-il « ce compte existe déjà » ?
+    ///
+    /// Les deux valeurs viennent de `RegisterUserCommandHandler`, et sont listées
+    /// explicitement plutôt que déduites d'un préfixe : le jour où une troisième erreur
+    /// de conflit apparaîtra, il vaut mieux qu'elle remonte à l'appelant — visible, donc
+    /// corrigeable — plutôt qu'elle disparaisse dans la réponse uniforme.
+    /// </summary>
+    private static bool IsExistingAccountConflict(string code)
+        => code is "identity.user.email_taken" or "identity.user.phone_taken";
 
     /// <summary>Connexion : renvoie access + refresh token.</summary>
     /// <summary>
@@ -177,7 +269,7 @@ public static class ClientAuthEndpoints
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);
-    public sealed record ConfirmEmailRequest(Guid UserId, string Token);
+    public sealed record ConfirmEmailRequest(string Email, string Token);
     public sealed record ResendRequest(string Email);
     public sealed record ForgotRequest(string Email);
     public sealed record ResetRequest(string Email, string Token, string NewPassword);

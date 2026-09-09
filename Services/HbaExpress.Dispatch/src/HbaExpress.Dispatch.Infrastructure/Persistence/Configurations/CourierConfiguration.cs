@@ -33,6 +33,12 @@ internal sealed class CourierConfiguration : IEntityTypeConfiguration<Courier>
         builder.Property(c => c.LastPositionAtUtc);
         builder.Property(c => c.CreatedAtUtc).IsRequired();
 
+        // NULLABLE, ET PAS DE VALEUR PAR DÉFAUT. Les coursiers déjà en base n'ont pas
+        // d'annonce enregistrée : leur donner « maintenant » à la migration ferait
+        // ignorer la prochaine annonce légitime plus ancienne que la migration elle-même.
+        // Nul veut dire « aucune annonce appliquée », et la première passe.
+        builder.Property(c => c.StandingAnnouncedAtUtc);
+
         // La position est un objet-valeur : aplatie en deux colonnes sur la ligne du
         // coursier. Facultative — un coursier qui n'a jamais ouvert l'application n'en a
         // pas, et c'est un état normal, pas une donnée manquante.

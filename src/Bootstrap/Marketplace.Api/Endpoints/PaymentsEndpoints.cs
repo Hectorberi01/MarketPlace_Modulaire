@@ -39,7 +39,7 @@ public static class PaymentsEndpoints
         // Webhooks PSP + retour de redirection : appelés par le PSP / le navigateur, donc anonymes.
         //
         // ═════════════════════════════════════════════════════════════════════════
-        // ⚠️ `DisableRateLimiting()` — ET C'EST INDISPENSABLE.
+        // `DisableRateLimiting()` — ET C'EST INDISPENSABLE.
         //
         // Le limiteur global partitionne les appelants anonymes PAR ADRESSE IP. Or TOUS
         // les webhooks d'un PSP arrivent de la MÊME poignée d'adresses : ils tomberaient
@@ -116,7 +116,14 @@ public static class PaymentsEndpoints
         var result = await sender.Send(new GetPaymentQuery(id), ct);
         if (result.IsFailure)
         {
-            return result.Match(payment => Results.Ok(payment));
+            // LES DEUX BRANCHES RÉPONDENT LA MÊME CHOSE, ET C'EST TOUT L'OBJET.
+            //
+            // Celle-ci rendait un ProblemDetails avec le code d'erreur dans `title`,
+            // l'autre un 404 nu. Même statut, corps différents : la ressource absente et
+            // la ressource d'autrui restaient distinguables, donc l'anti-IDOR d'en
+            // dessous ne servait à rien. `PaymentsEndpoints.InitiateAsync` fait déjà
+            // ainsi, avec le raisonnement en commentaire.
+            return Results.NotFound();
         }
         // Anti-IDOR : seul le propriétaire du paiement (ou un admin) peut le lire.
         if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
@@ -132,7 +139,9 @@ public static class PaymentsEndpoints
         var result = await sender.Send(new GetPaymentByOrderQuery(orderId), ct);
         if (result.IsFailure)
         {
-            return result.Match(payment => Results.Ok(payment));
+            // Idem. Cette route-ci prend un identifiant de COMMANDE : la distinction
+            // révélait l'existence d'une commande, pas seulement d'un paiement.
+            return Results.NotFound();
         }
         if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
         {
@@ -177,6 +186,41 @@ public static class PaymentsEndpoints
         => await HandleWebhookAsync("Moov", "X-Callback-Signature", httpRequest, sender, ct);
 
     /// <summary>
+    /// Nombre maximal de caractères lus d'un corps de webhook.
+    ///
+    /// La signature PSP porte sur les octets reçus : on doit lire avant de juger. Sans
+    /// plafond, un appelant anonyme faisait allouer jusqu'aux 30 Mo par défaut de
+    /// Kestrel — et ce groupe a `DisableRateLimiting`. Ces charges font quelques
+    /// centaines d'octets ; 64 Kio laissent deux ordres de grandeur de marge.
+    ///
+    /// Le plafond est en CARACTÈRES : c'est l'allocation qu'on borne.
+    /// </summary>
+    private const int MaxSignedBodyChars = 64 * 1024;
+
+    /// <summary>
+    /// Lit le corps brut en refusant ce qui dépasse <see cref="MaxSignedBodyChars"/>.
+    /// Renvoie <c>null</c> si le corps est trop grand.
+    /// </summary>
+    private static async Task<string?> ReadCappedBodyAsync(HttpRequest http, CancellationToken ct)
+    {
+        http.EnableBuffering();
+
+        // L'en-tête annoncé permet de refuser sans rien lire quand il est là. Il ne fait
+        // pas foi — d'où le second contrôle, sur ce qu'on a effectivement lu.
+        if (http.ContentLength is > MaxSignedBodyChars)
+        {
+            return null;
+        }
+
+        var buffer = new char[MaxSignedBodyChars + 1];
+        using var reader = new StreamReader(http.Body, leaveOpen: true);
+        var read = await reader.ReadBlockAsync(buffer, ct);
+        http.Body.Position = 0;
+
+        return read > MaxSignedBodyChars ? null : new string(buffer, 0, read);
+    }
+
+    /// <summary>
     /// Webhook FedaPay. FedaPay poste sur la MÊME URL les événements de transaction
     /// (encaissement) et de payout (reversement vendeur) : on aiguille donc d'abord.
     ///
@@ -187,8 +231,14 @@ public static class PaymentsEndpoints
     private static async Task<IResult> FedaPayWebhookAsync(
         HttpRequest httpRequest, ISender sender, IPayoutModuleApi payouts, CancellationToken ct)
     {
-        using var reader = new StreamReader(httpRequest.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
+        // MÊME PLAFOND QUE LES AUTRES ROUTES SIGNÉES, et ce groupe a en plus le
+        // limiteur de débit désactivé — voir MaxSignedBodyChars.
+        var rawBody = await ReadCappedBodyAsync(httpRequest, ct);
+        if (rawBody is null)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
         var signature = httpRequest.Headers["x-fedapay-signature"].ToString();
 
         var payoutEvent = payouts.ReadPayoutWebhook(rawBody, signature);
@@ -215,8 +265,12 @@ public static class PaymentsEndpoints
     private static async Task<IResult> HandleWebhookAsync(
         string provider, string signatureHeader, HttpRequest httpRequest, ISender sender, CancellationToken ct)
     {
-        using var reader = new StreamReader(httpRequest.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
+        var rawBody = await ReadCappedBodyAsync(httpRequest, ct);
+        if (rawBody is null)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
         var signature = httpRequest.Headers[signatureHeader].ToString();
 
         var result = await sender.Send(new ProcessGatewayWebhookCommand(provider, rawBody, signature), ct);

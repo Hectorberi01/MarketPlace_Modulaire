@@ -48,6 +48,27 @@ public sealed class Order : AggregateRoot<OrderId>
     public OrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// Date de livraison. NULLE tant que la commande n'est pas livrée — et sur toutes
+    /// celles livrées avant l'existence de ce champ.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CE N'EST PAS UN CONFORT D'AFFICHAGE : C'EST LE POINT DE DÉPART DU DÉLAI DE
+    /// RETOUR.
+    ///
+    /// Le délai devait courir depuis quelque part, et `CreatedAtUtc` aurait été le choix
+    /// gratuit — aucune colonne à ajouter. Mais il aurait fait porter à l'acheteur le
+    /// temps d'une livraison qu'il ne contrôle pas : une expédition lente lui aurait
+    /// mangé sa fenêtre, et à la limite l'aurait fait expirer AVANT qu'il ait reçu son
+    /// colis. Le délai part donc de la réception.
+    ///
+    /// NULLE SUR LES COMMANDES ANCIENNES, et c'est le seul choix honnête : on ne sait pas
+    /// quand elles ont été livrées. `RequestReturnCommandHandler` traite ce cas en
+    /// ACCEPTANT le retour — voir le raisonnement là-bas.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public DateTime? DeliveredAtUtc { get; private set; }
+
     public decimal Subtotal { get; private set; }
     public decimal TotalSellerDiscount { get; private set; }
     public decimal TotalPlatformDiscount { get; private set; }
@@ -327,6 +348,7 @@ public sealed class Order : AggregateRoot<OrderId>
         }
 
         Status = OrderStatus.Delivered;
+        DeliveredAtUtc = DateTime.UtcNow;
         Raise(new OrderDeliveredDomainEvent(Id.Value, BuyerId));
         return Result.Success();
     }

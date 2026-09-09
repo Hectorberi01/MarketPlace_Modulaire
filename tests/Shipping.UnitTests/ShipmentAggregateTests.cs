@@ -30,8 +30,9 @@ public class ShipmentAggregateTests
         result.Error.Code.Should().Be("shipping.no_lines");
     }
 
+    /// <summary>Repli transporteur tiers : préparée, confiée, livrée.</summary>
     [Fact]
-    public void Happy_path_prepare_ship_deliver()
+    public void Chemin_transporteur_preparer_expedier_livrer()
     {
         var shipment = NewShipment();
 
@@ -39,15 +40,108 @@ public class ShipmentAggregateTests
         shipment.MarkShipped("DHL", "TRACK-123").IsSuccess.Should().BeTrue();
         shipment.Status.Should().Be(ShipmentStatus.Shipped);
         shipment.TrackingNumber.Should().Be("TRACK-123");
+        shipment.DeliveryMode.Should().Be(ShipmentDeliveryMode.Carrier);
 
         shipment.MarkDelivered().IsSuccess.Should().BeTrue();
         shipment.Status.Should().Be(ShipmentStatus.Delivered);
+    }
+
+    /// <summary>
+    /// Chemin NOMINAL : le coursier de la plateforme, qui ne passe jamais par « en
+    /// transit ». Il ramasse et il dépose dans la même course.
+    /// </summary>
+    [Fact]
+    public void Chemin_coursier_preparer_puis_livrer_sans_passer_par_en_transit()
+    {
+        var shipment = NewShipment();
+        var course = Guid.NewGuid();
+
+        shipment.MarkPreparing().IsSuccess.Should().BeTrue();
+
+        shipment.MarkDeliveredByCourier(course).IsSuccess.Should().BeTrue();
+        shipment.Status.Should().Be(ShipmentStatus.Delivered);
+        shipment.DeliveryMode.Should().Be(ShipmentDeliveryMode.Courier);
+        shipment.DeliveryJobId.Should().Be(course);
+        shipment.Carrier.Should().BeNull("une moto en propre n'a pas de transporteur");
+        shipment.TrackingNumber.Should().BeNull("ni de numéro de suivi");
+    }
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// LE TEST DE NON-RÉGRESSION DE LA RUPTURE PRINCIPALE. NE PAS ASSOUPLIR.
+    ///
+    /// Sans `MarkDeliveredByCourier`, une expédition portée par un coursier restait
+    /// « en préparation » à jamais : `MarkDelivered` exige « en transit », et pour y
+    /// arriver il fallait un transporteur et un numéro de suivi qui n'existent pas.
+    /// La commande n'atteignait donc jamais « livrée », et la séquestre du vendeur
+    /// n'était jamais libérée — sans la moindre erreur nulle part.
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public void Une_expedition_en_preparation_ne_peut_PAS_etre_livree_par_le_chemin_transporteur()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+
+        shipment.MarkDelivered().IsFailure.Should().BeTrue(
+            "c'est ce refus qui bloquait la chaîne ; il reste juste, et c'est "
+            + "MarkDeliveredByCourier qui doit être appelée à la place");
+    }
+
+    [Fact]
+    public void Une_annonce_de_course_rejouee_est_un_succes_silencieux()
+    {
+        var shipment = NewShipment();
+        var course = Guid.NewGuid();
+        shipment.MarkPreparing();
+        shipment.MarkDeliveredByCourier(course);
+        shipment.ClearDomainEvents();
+
+        // La file de sortie du service de dispatch réessaie : un rejeu doit passer sans
+        // rien changer NI RIEN LEVER — sinon la commande serait annoncée livrée deux fois.
+        shipment.MarkDeliveredByCourier(course).IsSuccess.Should().BeTrue();
+        shipment.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Une_expedition_deja_livree_par_une_AUTRE_course_est_refusee()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+        shipment.MarkDeliveredByCourier(Guid.NewGuid());
+
+        // L'idempotence porte sur la COURSE, pas sur l'état : deux courses distinctes
+        // qui prétendent avoir livré la même part est une incohérence entre les deux
+        // systèmes, et elle doit se voir.
+        shipment.MarkDeliveredByCourier(Guid.NewGuid()).IsFailure.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// LE RACCOURCI QUI COUPAIT LA LIVRAISON. NE PAS ROUVRIR.
+    ///
+    /// `MarkShipped` acceptait `Pending`. Un vendeur qui expédiait sans préparer ne
+    /// levait jamais `ShipmentPreparingDomainEvent`, donc aucune course n'était créée,
+    /// donc la commande était invisible du service de dispatch — en silence.
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public void Une_expedition_non_preparee_ne_peut_pas_etre_expediee()
+    {
+        var shipment = NewShipment();
+
+        var result = shipment.MarkShipped("DHL", "TRACK-123");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("shipping.invalid_transition");
+        shipment.Status.Should().Be(ShipmentStatus.Pending);
     }
 
     [Fact]
     public void Ship_requires_carrier_and_tracking()
     {
         var shipment = NewShipment();
+        shipment.MarkPreparing();
 
         shipment.MarkShipped("", "").IsFailure.Should().BeTrue();
     }
@@ -56,6 +150,7 @@ public class ShipmentAggregateTests
     public void Delivered_shipment_cannot_be_cancelled()
     {
         var shipment = NewShipment();
+        shipment.MarkPreparing();
         shipment.MarkShipped("DHL", "T1");
         shipment.MarkDelivered();
 

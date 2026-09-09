@@ -205,15 +205,30 @@ public sealed class JobProgressService
         Func<DeliveryJob, Task>? beforeSave = null)
     {
         var job = await _jobs.GetByIdAsync(jobId, cancellationToken);
-        if (job is null)
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // « INTROUVABLE » DANS LES DEUX CAS, ET J'AVAIS D'ABORD TRANCHÉ L'INVERSE.
+        //
+        // Ce passage répondait 404 `job.not_found` pour une course inexistante et 403
+        // `job.not_yours` pour une course réelle assignée à un concurrent. Un coursier
+        // parcourait les identifiants et cartographiait la table des courses — et le
+        // volume de livraisons est une donnée concurrentielle.
+        //
+        // L'argument que j'avais retenu pour garder le 403 — « prise par un autre » est
+        // l'information dont le coursier a besoin quand deux acceptent au même instant —
+        // NE VAUT QUE POUR `Accept`. Ici on est dans `MutateAsync`, le passage des six
+        // TRANSITIONS (ramassage, transit, livraison, incident, échec) : l'appelant n'a
+        // par construction jamais eu la course, il n'y a pas de course simultanée à
+        // expliquer, et il n'y a rien d'utile à lui dire.
+        //
+        // Ce qui rend le tout atteignable : `/api/courier` n'exige aucun rôle et les
+        // cinq hôtes partagent une clé de signature. N'importe quel jeton acheteur entre
+        // ici. La garde de propriété est donc la seule barrière, et elle ne doit pas
+        // parler.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (job is null || job.AssignedCourierId != courierId)
         {
             return Result.Failure(Error.NotFound("job.not_found", "Course introuvable."));
-        }
-
-        if (job.AssignedCourierId != courierId)
-        {
-            return Result.Failure(Error.Forbidden(
-                "job.not_yours", "Cette course est assignée à un autre coursier."));
         }
 
         // POSITION FRAÎCHE pour les transitions qui supposent un DÉPLACEMENT ; pas pour

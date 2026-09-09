@@ -87,4 +87,15 @@ public sealed record DispatchOrderCancelled(Guid OrderId, string Reason);
 /// sont deux Guid différents — l'un fait payer, l'autre authentifie.
 /// </param>
 /// <param name="Standing">« Pending », « Active » ou « Suspended ». Le service refuse toute autre valeur.</param>
-public sealed record DispatchCourierStanding(Guid CourierId, Guid UserId, string DisplayName, string Standing);
+/// <param name="OccurredOnUtc">
+/// Instant où la décision a été PRISE ici, repris de l'événement d'intégration — jamais
+/// recalculé à l'envoi.
+///
+/// Le service de dispatch s'en sert pour ordonner deux annonces contradictoires sans se
+/// fier à l'ordre d'arrivée : l'outbox réessaie avec un délai croissant, donc un
+/// « Active » en échec peut être livré APRÈS le « Suspended » qui l'a suivi. Le poser à
+/// DateTime.UtcNow au moment de l'envoi effacerait précisément l'information qui permet
+/// de trancher.
+/// </param>
+public sealed record DispatchCourierStanding(
+    Guid CourierId, Guid UserId, string DisplayName, string Standing, DateTime OccurredOnUtc);

@@ -29,10 +29,16 @@ public sealed class CourierService
     /// <summary>
     /// Recopie le statut annoncé par la marketplace. Crée le coursier s'il est inconnu :
     /// c'est ainsi qu'il entre dans le service, sans inscription séparée.
+    ///
+    /// UNE ANNONCE PÉRIMÉE EST UN SUCCÈS, PAS UNE ERREUR. Elle a été correctement reçue
+    /// et délibérément écartée — voir Courier.ApplyStanding. Répondre en échec ferait
+    /// réessayer l'outbox de la marketplace en boucle jusqu'à la lettre morte, pour un
+    /// message qu'on ne veut de toute façon pas appliquer.
     /// </summary>
+    /// <param name="announcedAtUtc">Instant d'ÉMISSION de l'annonce par la marketplace.</param>
     public async Task<Result> ApplyStandingAsync(
         Guid courierId, Guid userId, string displayName, CourierStanding standing,
-        CancellationToken cancellationToken = default)
+        DateTime announcedAtUtc, CancellationToken cancellationToken = default)
     {
         var courier = await _couriers.GetByIdAsync(new CourierId(courierId), cancellationToken);
 
@@ -51,7 +57,14 @@ public sealed class CourierService
             await _couriers.AddAsync(courier, cancellationToken);
         }
 
-        courier.ApplyStanding(standing);
+        if (!courier.ApplyStanding(standing, announcedAtUtc))
+        {
+            // Rien à écrire : SaveChanges est sauté, pas seulement inutile. Un coursier
+            // tout juste créé au-dessus n'entre pas ici — sa première annonce passe
+            // toujours, StandingAnnouncedAtUtc étant nul.
+            return Result.Success();
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }

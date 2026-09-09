@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Modules\Returns\Marketplace.Modules.Returns.Domain\Marketplace.Modules.Returns.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Returns\Marketplace.Modules.Returns.Application\Marketplace.Modules.Returns.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Contracts\Marketplace.Modules.Ordering.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

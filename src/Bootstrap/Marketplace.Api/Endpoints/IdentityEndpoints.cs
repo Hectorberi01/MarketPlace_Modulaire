@@ -56,18 +56,86 @@ public static class IdentityEndpoints
         group.MapPost("/refresh", RefreshAsync).WithName("RefreshToken").AllowAnonymous();
     }
 
-    /// <summary>Inscrit un nouvel utilisateur ; un e-mail de vérification est envoyé.</summary>
+    /// <summary>
+    /// Création de compte.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ORACLE FERMÉ CÔTÉ VENDEUR ÉTAIT RESTÉ OUVERT ICI, TROIS FICHIERS PLUS LOIN.
+    ///
+    /// La route rendait `409 identity.user.email_taken` sur une adresse prise et
+    /// `200 { id }` sur une adresse libre : EXISTENCE ET IDENTIFIANT INTERNE, en une
+    /// seule requête anonyme. C'est la paire exacte que `/seller/auth/register` a passé
+    /// cent lignes de commentaire à supprimer — sur une route d'inscription voisine, qui
+    /// appelle la même commande.
+    ///
+    /// La branche `identity.user.phone_taken` énumérait en plus les NUMÉROS, un
+    /// identifiant qu'aucune surface n'avait encore été durcie contre.
+    ///
+    /// Réponse constante désormais, et plus de Guid. Les erreurs de SAISIE, elles,
+    /// remontent telles quelles : elles portent sur ce que l'appelant vient de taper,
+    /// pas sur ce que la base contient, et les taire empêcherait de corriger un
+    /// formulaire. Le pipeline de validation s'exécute avant le handler, donc identique
+    /// dans les deux cas.
+    ///
+    /// AUCUN CODE N'EST RENVOYÉ QUAND L'ADRESSE EST DÉJÀ PRISE — contrairement au
+    /// parcours vendeur, qui en émet un. La différence est justifiée : là-bas, un
+    /// acheteur qui se lance doit PROUVER qu'il relève la boîte avant qu'on lui rattache
+    /// une boutique. Ici il n'y a rien à rattacher ; la bonne action est de se
+    /// connecter, et envoyer un e-mail à chaque sondage ne servirait qu'à harceler.
+    ///
+    /// CE QUI RESTE, ET QUI EST INHÉRENT : sonder une adresse LIBRE crée un vrai compte.
+    /// On peut donc squatter une adresse non inscrite — sa titulaire ne pourra plus
+    /// s'inscrire et recevra un code qu'elle n'a pas demandé. Fermer ça demanderait une
+    /// épreuve avant création (captcha, ou création différée jusqu'à la validation du
+    /// code). C'est une décision produit, pas une correction.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <remarks>
+    /// L'en-tête `Location` disparaît AVEC le corps. `Results.Created` publiait
+    /// « /api/identity/users/&lt;guid&gt; » : le même aveu, dans un en-tête plutôt que dans
+    /// un champ. Un 201 se justifiait tant que la réponse désignait une ressource créée ;
+    /// elle n'en désigne plus, donc 200.
+    /// </remarks>
     private static async Task<IResult> RegisterAsync(RegisterRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(
-            new RegisterUserCommand(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Password), ct);
-        return result.Match(id => Results.Created($"/api/identity/users/{id}", new { id }));
+        var created = await sender.Send(new RegisterUserCommand(
+            request.FirstName, request.LastName, request.Email,
+            request.PhoneNumber, request.Password), ct);
+
+        // Les deux conflits d'existence sont AVALÉS, y compris `phone_taken`. Le taire
+        // laisse un inscrit légitime dont le numéro est déjà pris attendre un code qui
+        // ne viendra pas — d'où la dernière phrase du message. Le dire rouvrirait
+        // l'énumération sur le numéro au lieu de l'adresse.
+        if (created.IsFailure && !IsExistingAccountConflict(created.Error.Code))
+        {
+            return created.Match(_ => Results.Ok());
+        }
+
+        return Results.Ok(new
+        {
+            registered = true,
+            requiresVerification = true,
+            message = "Si cette adresse n'a pas déjà de compte, un code à 6 chiffres vient "
+                    + "d'être envoyé. Si vous en avez déjà un, connectez-vous. Sans code d'ici "
+                    + "quelques minutes, vérifiez les informations saisies ou contactez l'assistance."
+        });
     }
+
+    /// <summary>
+    /// Ce code d'erreur signifie-t-il « ce compte existe déjà » ?
+    ///
+    /// Les deux valeurs viennent de `RegisterUserCommandHandler`, et sont listées
+    /// explicitement plutôt que déduites d'un préfixe : le jour où une troisième erreur
+    /// de conflit apparaîtra, il vaut mieux qu'elle remonte à l'appelant — visible, donc
+    /// corrigeable — plutôt qu'elle disparaisse dans la réponse uniforme.
+    /// </summary>
+    private static bool IsExistingAccountConflict(string code)
+        => code is "identity.user.email_taken" or "identity.user.phone_taken";
 
     /// <summary>Confirme l'adresse e-mail à partir du jeton reçu par lien.</summary>
     private static async Task<IResult> ConfirmEmailAsync(ConfirmEmailRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new ConfirmEmailCommand(request.UserId, request.Token), ct);
+        var result = await sender.Send(new ConfirmEmailCommand(request.Email, request.Token), ct);
         return result.Match(() => Results.NoContent());
     }
 
@@ -303,7 +371,9 @@ public static class IdentityEndpoints
     // ------------------------------------------------------- Contrats d'entrée
 
     public sealed record RegisterRequest(string FirstName, string LastName, string Email, string PhoneNumber, string Password);
-    public sealed record ConfirmEmailRequest(Guid UserId, string Token);
+    // L'ADRESSE, ET NON L'IDENTIFIANT — voir ConfirmEmailCommand : c'est ce qui permet à
+    // la route de renvoi de code de ne plus divulguer l'existence d'un compte.
+    public sealed record ConfirmEmailRequest(string Email, string Token);
     public sealed record LoginRequest(string Email, string Password, string? MfaCode);
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record LogoutRequest(string RefreshToken);

@@ -38,6 +38,11 @@ public sealed class ReturnsModuleInstaller : IModuleInstaller
 
         services.AddScoped<IReturnRequestRepository, ReturnRequestRepository>();
 
+        // Règles commerciales du retour (fenêtre après livraison). Singleton : elles ne
+        // changent pas d'une requête à l'autre, et un redémarrage est le moment normal
+        // de les faire évoluer.
+        services.AddSingleton<IReturnPolicySettings, ReturnPolicySettings>();
+
         // Deux événements distincts, et la distinction est TOUT le correctif :
         // « validé » (décision, aucun argent) et « versé » (argent parti, référence
         // FedaPay à l'appui). Seul le second engage la comptabilité.

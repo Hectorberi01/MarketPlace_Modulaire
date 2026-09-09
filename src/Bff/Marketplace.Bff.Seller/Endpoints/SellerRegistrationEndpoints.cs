@@ -17,7 +17,7 @@ namespace Marketplace.Bff.Seller.Endpoints;
 /// <summary>
 /// BFF Vendeur — AUTO-INSCRIPTION depuis l'app (/seller/auth/register + /verify).
 ///
-/// Le vendeur crée lui-même son compte. Deux cas, un seul parcours côté app :
+/// Le vendeur crée lui-même son compte. Deux cas côté serveur, UN SEUL côté réseau :
 ///
 ///  • E-mail inconnu → on crée le compte (rôle Buyer, PendingVerification) et on
 ///    envoie un CODE à 6 chiffres.
@@ -25,6 +25,14 @@ namespace Marketplace.Bff.Seller.Endpoints;
 ///    un code pour PROUVER qu'il relève bien cette boîte avant de lui rattacher une
 ///    boutique. Sans cette preuve, n'importe qui rattacherait une boutique au compte
 ///    d'autrui.
+///
+/// `/register` RÉPOND LA MÊME CHOSE DANS LES DEUX CAS, et dans les deux refus (compte
+/// suspendu, compte déjà vendeur) : la distinction se lisait sans authentification, et
+/// renseignait sur qui est vendeur et qui est suspendu. Les refus vivent désormais dans
+/// `/verify`, derrière le code — voir RegisterAsync.
+///
+/// Les deux étapes s'identifient par l'ADRESSE, jamais par un Guid : c'est ce qui permet
+/// à `/register` de ne rien rendre.
 ///
 /// La boutique n'est créée qu'à l'étape /verify, une fois le code validé — car
 /// l'onboarding vendeur EXIGE un e-mail vérifié. À la validation, le compte est
@@ -73,10 +81,24 @@ public static class SellerRegistrationEndpoints
             .Match(() => Results.Ok(new { reset = true }));
 
     /// <summary>
-    /// Renvoie un code de vérification à un compte EXISTANT non vérifié. Utilisé
-    /// depuis l'écran de connexion quand l'utilisateur a abandonné la vérification.
-    /// Renvoie l'UserId (nécessaire à l'écran de saisie du code) quand le compte
-    /// existe ; sinon un corps neutre — l'app affiche le même message dans tous les cas.
+    /// Renvoie un code de vérification à un compte existant non vérifié.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA RÉPONSE EST CONSTANTE. LE COMMENTAIRE PRÉCÉDENT AFFIRMAIT QU'ELLE L'ÉTAIT.
+    ///
+    /// Il disait « sinon un corps neutre — l'app affiche le même message dans tous les
+    /// cas ». Le corps n'était pas neutre : il portait `UserId: null` ou
+    /// `UserId: <guid>`. Que l'application affiche le même message ne change rien — c'est
+    /// la RÉPONSE HTTP qui est lue par celui qui énumère, pas l'écran.
+    ///
+    /// On y apprenait donc qu'une adresse a un compte, et on en obtenait le GUID interne.
+    /// Sans authentification, et en déclenchant un e-mail réel à chaque coup au but.
+    ///
+    /// Même correction que sur la surface client : `ConfirmEmailCommand` prend désormais
+    /// l'ADRESSE, que l'application connaît déjà. Plus rien n'a besoin d'être rendu.
+    /// `ForgotPasswordAsync`, dans ce même fichier, ignorait déjà son résultat pour cette
+    /// raison exacte.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static async Task<IResult> ResendCodeAsync(
         SellerResendRequest request,
@@ -84,21 +106,31 @@ public static class SellerRegistrationEndpoints
         IIdentityModuleApi identity,
         CancellationToken ct)
     {
+        // GARDE DE STATUT, MAIS PAS DE GARDE `EmailVerified` — et la différence avec la
+        // surface client est délibérée. Ici le code ne sert pas à confirmer une adresse :
+        // il sert à PROUVER qu'on relève la boîte avant qu'une boutique soit rattachée au
+        // compte. Un acheteur déjà vérifié qui se lance dans la vente en a donc besoin,
+        // et refuser de lui en renvoyer un le bloquerait à l'écran de saisie.
+        //
+        // Ce qui borne l'arrosage sur cette surface, c'est le délai minimal entre deux
+        // envois posé dans `RequestEmailVerificationCommandHandler`.
         var user = await identity.GetUserByEmailAsync(request.Email, ct);
-        if (user is null)
+        if (user is not null && IsEligibleForOnboarding(user.Status))
         {
-            return Results.Ok(new SellerResendResponse(UserId: null));
+            _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
         }
 
-        _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
-        return Results.Ok(new SellerResendResponse(UserId: user.Id));
+        return Results.Ok(new SellerResendResponse(
+            Sent: true,
+            Message: "Si un compte existe pour cette adresse et n'est pas encore vérifié, "
+                   + "un nouveau code vient d'être envoyé."));
     }
 
 
     /// <summary>
     /// Ce compte peut-il ouvrir une boutique ?
     ///
-    /// ⚠️ LISTE BLANCHE, et les noms viennent de l'énumération `UserStatus` :
+    /// LISTE BLANCHE, et les noms viennent de l'énumération `UserStatus` :
     /// `PendingVerification`, `Active`, `Suspended`, `Deleted`. Écrire « Pending » —
     /// le raccourci naturel — n'aurait correspondu à AUCUNE valeur, et aurait donc
     /// bloqué tous les comptes fraîchement inscrits, qui sont précisément ceux que ce
@@ -112,7 +144,45 @@ public static class SellerRegistrationEndpoints
         => string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase)
            || string.Equals(status, "PendingVerification", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Étape 1 : crée le compte (ou identifie l'existant) et envoie le code.</summary>
+    /// <summary>
+    /// Étape 1 : crée le compte s'il n'existe pas, envoie le code, et NE DIT RIEN D'AUTRE.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// QUATRE RÉPONSES DEVENUES UNE SEULE.
+    ///
+    /// Cette route anonyme distinguait quatre issues : adresse inconnue, adresse connue
+    /// et éligible (avec son Guid), 409 « déjà vendeur », 403 « non éligible ». On n'y
+    /// apprenait pas seulement qu'un compte existe : on apprenait QUE C'EST UN VENDEUR,
+    /// et QU'IL EST SUSPENDU. De la donnée concurrentielle et personnelle, servie sans
+    /// authentification, à qui voulait boucler sur une liste d'adresses.
+    ///
+    /// Elle répond désormais la MÊME CHOSE dans tous les cas. Les refus 409 et 403
+    /// existent toujours — ils ont été déplacés dans `/verify`, DERRIÈRE le code reçu par
+    /// e-mail. Le vendeur légitime les lit, parce qu'il relève sa boîte ; celui qui
+    /// sonde ne les atteint jamais.
+    ///
+    /// ON ENVOIE `RegisterUserCommand` D'ABORD, MÊME QUAND LE COMPTE EXISTE PEUT-ÊTRE.
+    ///
+    /// C'était l'inverse — lecture par adresse, puis branche — et cet ordre-là rouvrait
+    /// l'oracle par la porte de service : la validation d'entrée (mot de passe trop
+    /// court, nom vide) ne s'exécutait que dans la branche « adresse inconnue ». Il
+    /// suffisait donc de soumettre un mot de passe volontairement invalide : une erreur
+    /// de validation signifiait « adresse libre », une réponse uniforme « adresse prise ».
+    /// En passant systématiquement par la commande, le pipeline de validation s'exécute
+    /// dans les deux cas, et les mêmes entrées produisent les mêmes erreurs.
+    ///
+    /// CONSÉQUENCE POUR L'APP : LE TÉLÉPHONE DEVIENT OBLIGATOIRE DANS LES DEUX CAS.
+    /// `RegisterUserCommandValidator` l'exige, et la commande part maintenant même quand
+    /// le compte existe déjà. Un formulaire qui omettait le numéro pour un acheteur qui
+    /// se lance recevra une erreur de validation là où il passait avant.
+    ///
+    /// `identity.user.phone_taken` EST AVALÉ COMME LE RESTE, ET C'EST UN ARBITRAGE.
+    /// Le dire renseignerait sur l'existence d'un compte derrière un numéro — même faille,
+    /// autre identifiant. Le taire laisse un inscrit légitime attendre un code qui ne
+    /// viendra pas, d'où la dernière phrase du message. Si le support voit passer ce cas,
+    /// c'est un arbitrage à revoir, pas un bug.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static async Task<IResult> RegisterAsync(
         SellerSelfRegisterRequest request,
         ISender sender,
@@ -120,76 +190,113 @@ public static class SellerRegistrationEndpoints
         ISellerModuleApi sellers,
         CancellationToken ct)
     {
+        var created = await sender.Send(new RegisterUserCommand(
+            request.FirstName, request.LastName, request.Email,
+            request.PhoneNumber ?? string.Empty, request.Password, CreatedByAdmin: false), ct);
+
+        if (created.IsSuccess)
+        {
+            // Compte neuf : `RegisterUserCommand` a déjà publié
+            // `EmailVerificationRequestedIntegrationEvent`, donc le code part tout seul.
+            return UniformRegisterResponse();
+        }
+
+        // Une erreur qui ne parle PAS de l'existence d'un compte parle de la saisie —
+        // mot de passe trop court, e-mail malformé, nom vide. Celle-là se rend telle
+        // quelle : elle porte sur ce que l'appelant vient de taper, pas sur ce que la
+        // base contient, et la taire empêcherait de corriger un formulaire.
+        if (!IsExistingAccountConflict(created.Error.Code))
+        {
+            return created.Match(_ => Results.Ok());
+        }
+
+        // À partir d'ici le compte existe. Tout ce qui suit est SILENCIEUX : on décide
+        // seulement s'il y a lieu d'envoyer un code, jamais ce qu'on répond.
         var existing = await identity.GetUserByEmailAsync(request.Email, ct);
 
-        if (existing is null)
+        if (existing is not null && IsEligibleForOnboarding(existing.Status))
         {
-            return (await sender.Send(new RegisterUserCommand(
-                    request.FirstName, request.LastName, request.Email,
-                    request.PhoneNumber ?? string.Empty, request.Password, CreatedByAdmin: false), ct))
-                .Match(userId => Results.Ok(new SellerRegisterResponse(userId, IsNewAccount: true)));
+            var shop = await sellers.GetSellerByUserIdAsync(existing.Id, ct);
+            if (shop is null)
+            {
+                // Un acheteur qui se lance : on émet un code pour PROUVER qu'il relève
+                // bien cette boîte avant de lui rattacher une boutique. Sans cette
+                // preuve, n'importe qui rattacherait une boutique au compte d'autrui.
+                _ = await sender.Send(new RequestEmailVerificationCommand(existing.Id), ct);
+            }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
-        // UN COMPTE SUSPENDU OU FERMÉ NE PASSE PAS PAR ICI.
-        //
-        // Le seul contrôle était « ce compte a-t-il déjà une boutique ? ». Le STATUT
-        // n'était jamais regardé — et la suite du parcours, elle, appelle
-        // `ApproveUserCommand`, qui fait passer le compte à `Active` DEPUIS N'IMPORTE
-        // QUEL état, suspension comprise.
-        //
-        // Autrement dit : un vendeur suspendu pour fraude, qui garde l'accès à sa boîte
-        // mail, se réactivait tout seul en deux requêtes anonymes — nouveau rôle
-        // Seller, nouvelle boutique, aucun KYB, aucune intervention humaine. La
-        // sanction administrative ne valait rien.
-        //
-        // On répond ici, AVANT d'envoyer le moindre code : rien ne doit inviter à
-        // poursuivre un parcours qui se refermera de toute façon.
-        //
-        // Le message reste vague à dessein — « contactez l'assistance » — pour ne pas
-        // renseigner sur le motif ni confirmer le statut à un appelant anonyme.
-        // ─────────────────────────────────────────────────────────────────────────
-        if (!IsEligibleForOnboarding(existing.Status))
-        {
-            return Results.Problem(
-                title: "identity.user.not_eligible",
-                detail: "Ce compte ne peut pas ouvrir de boutique. Contactez l'assistance.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        var shop = await sellers.GetSellerByUserIdAsync(existing.Id, ct);
-        if (shop is not null)
-        {
-            return Results.Problem(
-                title: "sellers.seller.already_seller",
-                detail: "Ce compte est déjà rattaché à une boutique.",
-                statusCode: StatusCodes.Status409Conflict);
-        }
-
-        return (await sender.Send(new RequestEmailVerificationCommand(existing.Id), ct))
-            .Match(() => Results.Ok(new SellerRegisterResponse(existing.Id, IsNewAccount: false)));
+        // Compte suspendu, ou déjà rattaché à une boutique : AUCUN e-mail. Inviter à
+        // poursuivre un parcours qui se refermera de toute façon n'aide personne, et
+        // chaque envoi déclenché par un inconnu est un e-mail de trop dans la boîte de
+        // la victime.
+        return UniformRegisterResponse();
     }
 
-    /// <summary>Étape 2 : valide le code, crée la boutique, attribue le rôle, active le compte.</summary>
+    /// <summary>
+    /// La réponse unique de `/register`. Elle ne varie sur RIEN — ni corps, ni code HTTP.
+    /// Le message couvre les trois issues sans en désigner aucune.
+    /// </summary>
+    private static IResult UniformRegisterResponse()
+        => Results.Ok(new SellerRegisterResponse(
+            Registered: true,
+            Message: "Si cette adresse peut ouvrir une boutique, un code à 6 chiffres vient "
+                   + "d'être envoyé. Si vous avez déjà une boutique, connectez-vous. Sans code "
+                   + "d'ici quelques minutes, vérifiez l'adresse saisie ou contactez l'assistance."));
+
+    /// <summary>
+    /// Ce code d'erreur signifie-t-il « ce compte existe déjà » ?
+    ///
+    /// Les deux valeurs viennent de `RegisterUserCommandHandler`. Elles sont listées
+    /// explicitement plutôt que déduites du préfixe : le jour où une troisième erreur de
+    /// conflit apparaîtra, il vaut mieux qu'elle remonte à l'appelant — visible, donc
+    /// corrigeable — plutôt qu'elle disparaisse dans la réponse uniforme.
+    /// </summary>
+    private static bool IsExistingAccountConflict(string code)
+        => code is "identity.user.email_taken" or "identity.user.phone_taken";
+
+    /// <summary>
+    /// Étape 2 : valide le code, PUIS contrôle l'éligibilité, puis crée la boutique.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ORDRE A CHANGÉ, ET IL EST DÉLIBÉRÉ.
+    ///
+    /// Le contrôle de statut passait AVANT la vérification du code. Il gardait bien le
+    /// rôle et l'activation — c'était son rôle — mais il répondait 403 à un appelant qui
+    /// n'avait rien prouvé, donc il renseignait. Il s'exécute maintenant APRÈS : le
+    /// refus est identique, il est simplement réservé à qui a prouvé qu'il relève la
+    /// boîte.
+    ///
+    /// CE QUI N'A PAS CHANGÉ : le contrôle est toujours là, toujours avant
+    /// `AssignRoleCommand` et `ApproveUserCommand`. C'est ce qui compte, parce
+    /// qu'`ApproveUserCommand` fait passer un compte à `Active` DEPUIS N'IMPORTE QUEL
+    /// état, suspension comprise. Sans cette barrière, un vendeur suspendu pour fraude
+    /// qui garde l'accès à sa boîte mail se réactivait tout seul en deux requêtes
+    /// anonymes — nouveau rôle, nouvelle boutique, aucun KYB.
+    ///
+    /// L'IDENTIFIANT N'EST PLUS DANS LE CORPS. `/verify` prenait un Guid, donc il était
+    /// attaquable avec un Guid récolté ailleurs, muni d'un code obtenu avant la
+    /// suspension. Il prend l'adresse : il faut désormais les deux, et les deux
+    /// viennent de la même boîte.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static async Task<IResult> VerifyAsync(
         SellerVerifyRequest request,
         ISender sender,
         IIdentityModuleApi identity,
+        ISellerModuleApi sellers,
         CancellationToken ct)
     {
-        // ─────────────────────────────────────────────────────────────────────────
-        // LE CONTRÔLE DE STATUT EST REFAIT ICI, ET CE N'EST PAS REDONDANT.
-        //
-        // `/register` et `/verify` sont deux endpoints ANONYMES distincts. Rien
-        // n'oblige un appelant à passer par le premier : il suffit d'un identifiant de
-        // compte et d'un code valide — obtenus lors d'une inscription antérieure,
-        // avant la suspension — pour attaquer `/verify` directement.
-        //
-        // Or c'est `/verify` qui attribue le rôle Seller et appelle `ApproveUserCommand`.
-        // Poser la barrière uniquement à l'entrée revenait à fermer la porte en
-        // laissant la fenêtre ouverte.
-        // ─────────────────────────────────────────────────────────────────────────
-        var account = await identity.GetUserAsync(request.UserId, ct);
+        // 1. Code (strict : preuve de possession de la boîte). Adresse inconnue et code
+        //    faux renvoient la MÊME erreur — voir VerifyEmailCodeCommandHandler.
+        var verified = await sender.Send(new VerifyEmailCodeCommand(request.Email, request.Code), ct);
+        if (verified.IsFailure)
+        {
+            return verified.Match(() => Results.Ok());
+        }
+
+        // 2. Le compte est prouvé : on peut le nommer, et donc refuser en clair.
+        var account = await identity.GetUserByEmailAsync(request.Email, ct);
         if (account is null || !IsEligibleForOnboarding(account.Status))
         {
             return Results.Problem(
@@ -198,19 +305,23 @@ public static class SellerRegistrationEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
-        // 1. Code (strict : preuve de possession de la boîte).
-        var verified = await sender.Send(new VerifyEmailCodeCommand(request.UserId, request.Code), ct);
-        if (verified.IsFailure)
+        var userId = account.Id;
+
+        var existingShop = await sellers.GetSellerByUserIdAsync(userId, ct);
+        if (existingShop is not null)
         {
-            return verified.Match(() => Results.Ok());
+            return Results.Problem(
+                title: "sellers.seller.already_seller",
+                detail: "Ce compte est déjà rattaché à une boutique.",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
-        // 2. Boutique AVANT rôle/activation : c'est l'étape qui peut légitimement
+        // 3. Boutique AVANT rôle/activation : c'est l'étape qui peut légitimement
         //    échouer (nom de boutique déjà pris). L'e-mail est désormais vérifié,
         //    donc RegisterSeller l'accepte.
         var metadata = request.Company?.ToDomain();
         var sellerResult = await sender.Send(
-            new RegisterSellerCommand(request.UserId, request.ShopName, 0.10m, metadata), ct);
+            new RegisterSellerCommand(userId, request.ShopName, 0.10m, metadata), ct);
         if (sellerResult.IsFailure)
         {
             return sellerResult.Match(_ => Results.Ok());
@@ -218,7 +329,7 @@ public static class SellerRegistrationEndpoints
 
         var sellerId = sellerResult.Value;
 
-        // 3. Rôle Seller — sans lui, impossible de se connecter à /seller/*.
+        // 4. Rôle Seller — sans lui, impossible de se connecter à /seller/*.
         var rolesResult = await sender.Send(new ListRolesQuery(), ct);
         if (rolesResult.IsFailure)
         {
@@ -238,21 +349,21 @@ public static class SellerRegistrationEndpoints
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
-        var roleResult = await sender.Send(new AssignRoleCommand(request.UserId, sellerRole.Id), ct);
+        var roleResult = await sender.Send(new AssignRoleCommand(userId, sellerRole.Id), ct);
         if (roleResult.IsFailure)
         {
             return roleResult.Match(() => Results.Ok());
         }
 
-        // 4. Activation du compte : l'e-mail est prouvé, le vendeur doit pouvoir
+        // 5. Activation du compte : l'e-mail est prouvé, le vendeur doit pouvoir
         //    entrer et compléter son KYB. La publication produit reste gatée ailleurs.
-        var approveResult = await sender.Send(new ApproveUserCommand(request.UserId), ct);
+        var approveResult = await sender.Send(new ApproveUserCommand(userId), ct);
         if (approveResult.IsFailure)
         {
             return approveResult.Match(() => Results.Ok());
         }
 
-        return Results.Ok(new SellerVerifyResponse(sellerId, request.UserId));
+        return Results.Ok(new SellerVerifyResponse(sellerId, userId));
     }
 
     // ── Contrats ────────────────────────────────────────────────────────────────
@@ -266,11 +377,12 @@ public static class SellerRegistrationEndpoints
         string? PhoneNumber);
 
     /// <summary>
-    /// Corps de l'étape 2. Le nom de boutique et les infos société sont fournis ici,
-    /// une fois le code en main : la boutique n'existe qu'après validation.
+    /// Corps de l'étape 2. L'ADRESSE, pas l'identifiant — voir VerifyEmailCodeCommand.
+    /// Le nom de boutique et les infos société sont fournis ici, une fois le code en
+    /// main : la boutique n'existe qu'après validation.
     /// </summary>
     public sealed record SellerVerifyRequest(
-        Guid UserId,
+        string Email,
         string Code,
         string ShopName,
         SellerCompanyInfoDto? Company);
@@ -298,7 +410,14 @@ public static class SellerRegistrationEndpoints
                    Activity, ManagerName, Phone);
     }
 
-    public sealed record SellerRegisterResponse(Guid UserId, bool IsNewAccount)
+    /// <summary>
+    /// Réponse de `/register`. NI IDENTIFIANT, NI INDICATION D'EXISTENCE.
+    ///
+    /// `IsNewAccount` a disparu avec `UserId` : c'était le même aveu sous un autre nom.
+    /// Le champ `Registered` ne dit rien non plus — il vaut toujours vrai. Il n'est là
+    /// que pour donner une forme stable à l'app.
+    /// </summary>
+    public sealed record SellerRegisterResponse(bool Registered, string Message)
     {
         /// <summary>Toujours vrai : l'app doit ensuite demander le code puis /verify.</summary>
         public bool RequiresVerification => true;
@@ -309,7 +428,10 @@ public static class SellerRegistrationEndpoints
     /// <summary>Demande de réinitialisation : juste l'e-mail.</summary>
     public sealed record SellerResendRequest(string Email);
 
-    public sealed record SellerResendResponse(Guid? UserId);
+    /// <summary>
+    /// Réponse CONSTANTE : ni identifiant, ni indication d'existence. Voir ResendCodeAsync.
+    /// </summary>
+    public sealed record SellerResendResponse(bool Sent, string Message);
 
     public sealed record SellerForgotRequest(string Email);
 

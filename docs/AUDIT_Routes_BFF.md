@@ -32,6 +32,10 @@ comptes, harceler par e-mail, et réactiver un coursier suspendu.
 
 ## 1. Ce qui doit être corrigé
 
+> **Les quatre points de cette section sont corrigés (9 septembre 2026).** Le détail des
+> corrections, et surtout de ce qu'elles cassent côté applications, est en fin de section.
+
+
 ### 1.1 `POST /client/auth/email/resend` — énumération **et** bombardement e-mail
 
 `ClientAuthEndpoints.cs` — route anonyme.
@@ -92,6 +96,44 @@ l'identifiant de commande, `orders/cancelled` est bénigne. La troisième mord :
 cinq minutes. Le même correctif vaut pour le sens inverse
 (`PartnerServiceSignature`, côté marketplace), qui a exactement la même forme.
 
+### 1.5 Ce qui a été fait, et ce que les applications doivent changer
+
+Une seule cause derrière 1.1, 1.2 et 1.3 : les trois routes rendaient un identifiant
+parce que l'écran suivant en avait besoin. Tant que la confirmation exigeait un Guid,
+le renvoi devait le divulguer. Le lien a été coupé — la confirmation prend désormais
+l'ADRESSE, que l'application vient de faire saisir — et les trois routes n'ont plus rien
+à rendre.
+
+| Route | Avant | Après |
+|---|---|---|
+| `POST /client/auth/email/resend` | `{ userId }` ou `{ userId: null }` | corps constant |
+| `POST /seller/auth/verify/resend` | idem | corps constant |
+| `POST /seller/auth/register` | 4 réponses distinctes | corps constant, 409/403 déplacés dans `/verify` |
+| `POST /client/auth/email/confirm` | `{ userId, token }` | `{ email, token }` |
+| `POST /seller/auth/verify` | `{ userId, code, … }` | `{ email, code, … }` |
+
+**Ruptures de contrat** — cohérentes avec la bascule `/client` en rupture nette :
+les deux routes de confirmation prennent l'adresse, et `/seller/auth/register` exige
+désormais le téléphone dans TOUS les cas (la commande d'inscription part maintenant même
+quand le compte existe, pour que la validation d'entrée s'exécute des deux côtés — sans
+quoi un mot de passe volontairement invalide rouvrait l'oracle).
+
+**Arbitrage à surveiller** : `identity.user.phone_taken` est avalé comme le reste. Un
+inscrit légitime dont le numéro est déjà pris attend un code qui ne viendra pas. Le dire
+rouvrirait l'énumération sur le numéro au lieu de l'adresse.
+
+Pour 1.4, deux couches plutôt qu'une : un **horodatage dans la chaîne signée**
+(`X-Signature-Timestamp`, fenêtre de cinq minutes, dans les deux sens), et un **verrou
+monotone** sur le statut du coursier — `Courier.ApplyStanding` refuse une annonce qui
+n'est pas strictement plus récente que la dernière appliquée. La fenêtre seule laissait
+cinq minutes de rejeu ; le verrou les ferme, et corrige au passage un vrai bug : l'outbox
+réessaie avec un délai croissant, donc un « Active » en échec pouvait être livré APRÈS
+le « Suspended » qui l'a suivi, sans que personne n'attaque quoi que ce soit.
+
+Nouvelle colonne `StandingAnnouncedAtUtc` sur le coursier côté dispatch : **une migration
+est nécessaire**. Nullable et sans valeur par défaut — donner « maintenant » aux lignes
+existantes ferait ignorer la prochaine annonce légitime.
+
 ---
 
 ## 2. Incohérences à trancher : 403 contre 404
@@ -111,8 +153,35 @@ La première est la plus nette : dans `ClientOrderEndpoints.cs`, c'est **la seul
 `/{id}` du fichier** qui ne charge pas la commande possédée avant d'agir. Trois lignes
 plus haut et trois lignes plus bas, ses voisines le font.
 
-**Correction** : appeler `LoadOwnedOrderAsync` sur la première, mapper les trois autres
-sur 404.
+**Correction appliquée (9 septembre 2026)** — les cinq sites répondent désormais
+exactement comme le cas « introuvable » voisin, code d'erreur compris.
+
+**Le code compte autant que le statut.** `ApiResults.Problem` place `error.Code` dans le
+champ `title` du ProblemDetails : un 404 `messaging.not_participant` aurait dit tout haut
+ce que le passage en 404 prétendait taire. Chaque refus reprend donc, mot pour mot, le
+code ET le message du refus « ressource inexistante » de son propre fichier.
+
+| Site | Nouveau refus |
+|---|---|
+| `RequestReturnCommandHandler` | `returns.order.not_found` (+ `LoadOwnedOrderAsync` reposé au bord) |
+| `Conversation` (5 méthodes) + `ArchiveConversationCommandHandler` + `GetConversationQueryHandler` | `messaging.not_found` |
+| `MarkNotificationReadCommandHandler` | `notifications.not_found` |
+| `OpenDisputeCommandHandler` | `disputes.order.not_found` |
+| `SubmitReviewCommandHandler` | `reviews.order.not_found` |
+
+**Un cinquième site, non relevé par cet audit.** `SubmitReviewCommandHandler`
+(`reviews.not_owner`) a la forme exacte des deux autres handlers de commande et n'était
+pas dans le tableau : l'audit listait des ROUTES, et cette route-là n'a pas été ouverte.
+Un balayage des `Error.Forbidden` restants les aurait trouvés tous les cinq d'emblée.
+
+**Correction annexe, même famille.** `Conversation.SendMessage` contrôlait l'OUVERTURE de
+la conversation avant la participation : un inconnu apprenait si une conversation est
+ouverte ou close avant qu'on lui refuse l'accès. L'ordre est inversé.
+
+**Deux 403 conservés, délibérément** : `messaging.not_author` (l'appelant est participant,
+il voit déjà le message) et `job.not_yours` côté dispatch — deux coursiers qui acceptent
+la même course au même instant est une course normale, pas une attaque, et « prise par un
+autre » est l'information dont le coursier a besoin. La population y est close et vérifiée.
 
 ---
 

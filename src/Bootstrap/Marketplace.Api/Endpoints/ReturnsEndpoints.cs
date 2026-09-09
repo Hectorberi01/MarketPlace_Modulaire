@@ -48,7 +48,27 @@ public static class ReturnsEndpoints
         // GetAsync, calqué sur celui d'OrderingEndpoints.
         mine.MapGet("/{id:guid}", GetAsync).WithName("GetReturn");
 
-        var backOffice = app.MapAdminGroup("/api/returns").WithTags("Returns");
+        // ═════════════════════════════════════════════════════════════════════════
+        // ADMIN SEUL, ET LE `MapAdminGroup` NE SUFFISAIT PAS À LE DIRE.
+        //
+        // `MapAdminGroup` exige `RequireRole(Admin, Moderator)` — son nom laisse croire
+        // à un groupe administrateur, il ouvre en réalité au back-office entier.
+        //
+        // Or `/{id}/refund` déclenche `ApproveReturnRefundCommand`, qui publie
+        // `ReturnRefundApprovedIntegrationEvent`, que `CreditCustomerWalletOn...` consomme
+        // en CRÉDITANT LA CAGNOTTE D'UN CLIENT aux frais de la plateforme. Un modérateur
+        // enchaînait `approve → received → refund` sur n'importe quel retour.
+        //
+        // C'est le raisonnement qui avait retiré `/admin/outbox` aux modérateurs, et la
+        // parade était déjà écrite deux fichiers plus loin : `SettlementEndpoints` et
+        // `BillingEndpoints` rechaînent ce `RequireRole("Admin")`. Celui-ci l'oubliait.
+        //
+        // Le durcissement porte sur TOUT le groupe, pas sur la seule route qui paie :
+        // `approve` et `received` sont les deux marches qui y mènent, et les isoler
+        // reviendrait à garder la porte en laissant l'escalier.
+        // ═════════════════════════════════════════════════════════════════════════
+        var backOffice = app.MapAdminGroup("/api/returns").WithTags("Returns")
+            .RequireAuthorization(p => p.RequireRole("Admin"));
 
         backOffice.MapGet("/seller/{sellerId:guid}", ListSellerAsync).WithName("ListSellerReturns");
         backOffice.MapPost("/{id:guid}/approve", ApproveAsync).WithName("ApproveReturn");
@@ -98,7 +118,14 @@ public static class ReturnsEndpoints
         var result = await sender.Send(new GetReturnQuery(id), ct);
         if (result.IsFailure)
         {
-            return result.Match(item => Results.Ok(item));
+            // LES DEUX BRANCHES RÉPONDENT LA MÊME CHOSE, ET C'EST TOUT L'OBJET.
+            //
+            // Celle-ci rendait un ProblemDetails avec le code d'erreur dans `title`,
+            // l'autre un 404 nu. Même statut, corps différents : la ressource absente et
+            // la ressource d'autrui restaient distinguables, donc l'anti-IDOR d'en
+            // dessous ne servait à rien. `PaymentsEndpoints.InitiateAsync` fait déjà
+            // ainsi, avec le raisonnement en commentaire.
+            return Results.NotFound();
         }
 
         // ANTI-IDOR. Sans ce contrôle, n'importe quel compte lisait le retour de

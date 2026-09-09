@@ -42,8 +42,11 @@ le service coursier demeure autonome, avec sa base, son temps réel et son app.
 **Contrats effectivement en place**
 
 *Entrant (service → marketplace)* — `POST /api/delivery/courses/completed`, signé
-HMAC-SHA256 sur le corps brut (`X-Delivery-Signature`, secret `Delivery:WebhookSecret`),
-**fermé par défaut** : hors développement, pas de secret configuré = appel rejeté.
+HMAC-SHA256 sur `horodatage.corps` (`X-Delivery-Signature` + `X-Signature-Timestamp`,
+secret `Delivery:WebhookSecret`), **fermé par défaut** : hors développement, pas de
+secret configuré = appel rejeté. L'horodatage est en secondes Unix et entre dans la
+chaîne signée ; au-delà de cinq minutes d'écart, dans un sens ou dans l'autre, l'appel
+est refusé — sans lui, un corps signé capturé une fois restait payable indéfiniment.
 Corps : `{ courierId, orderId, deliveryJobId, amount, currency }`. `deliveryJobId` est la
 clé d'idempotence — un rejeu ne paie pas deux fois.
 

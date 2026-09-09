@@ -20,9 +20,7 @@ public enum CategoryStatus
 /// </summary>
 public sealed class Category : AggregateRoot<CategoryId>
 {
-    private Category()
-    {
-    }
+    private Category() { }
 
     private Category(
         CategoryId id,

@@ -37,6 +37,9 @@ public sealed class MarketplaceClient : IMarketplaceClient
     /// <summary>En-tête attendu par la marketplace (voir DeliveryEndpoints).</summary>
     private const string SignatureHeader = "X-Delivery-Signature";
 
+    // L'horodatage voyage sous InboundSignature.TimestampHeader — même nom d'en-tête
+    // dans les deux sens, parce que c'est la même convention, pas le même secret.
+
     private const string CourseCompletedPath = "/api/delivery/courses/completed";
 
     private readonly HttpClient _http;
@@ -75,7 +78,12 @@ public sealed class MarketplaceClient : IMarketplaceClient
         var secret = _configuration[SecretKey];
         if (!string.IsNullOrWhiteSpace(secret))
         {
-            request.Headers.Add(SignatureHeader, Security.InboundSignature.Compute(body, secret));
+            // Horodatage ET signature, posés ensemble. Signés à l'INSTANT DE L'ENVOI :
+            // le drain réessaie un message pendant des minutes, et c'est la fraîcheur de
+            // l'APPEL qu'on atteste, pas celle de la mise en file.
+            var (timestamp, signature) = Security.InboundSignature.Sign(body, secret);
+            request.Headers.Add(Security.InboundSignature.TimestampHeader, timestamp);
+            request.Headers.Add(SignatureHeader, signature);
         }
 
         using var response = await _http.SendAsync(request, cancellationToken);

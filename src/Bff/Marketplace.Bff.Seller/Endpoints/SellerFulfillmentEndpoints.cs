@@ -104,6 +104,10 @@ public static class SellerFulfillmentEndpoints
                 carrier = s.Carrier,
                 trackingNumber = s.TrackingNumber,
                 trackingUrl = s.TrackingUrl,
+                // Sans lui, un colis porté par un coursier de la plateforme s'affiche
+                // avec un transporteur vide et un suivi vide — indiscernable d'un colis
+                // que personne n'a encore pris. Voir ShipmentDeliveryMode.
+                deliveryMode = s.DeliveryMode,
                 itemCount = s.Items.Sum(i => i.Quantity),
                 createdAt = s.CreatedAtUtc,
             });
@@ -118,9 +122,27 @@ public static class SellerFulfillmentEndpoints
         return $"CMD-{hex[..8]}";
     }
 
-    /// <summary>Le dashboard nomme le statut « Prepared » là où le domaine dit « Preparing ».</summary>
+    /// <summary>
+    /// Le tableau de bord nomme « ReadyForPickup » ce que le domaine appelle « Preparing ».
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ANCIENNE ÉTIQUETTE ÉTAIT « Prepared », ET ELLE MENTAIT SUR LE SENS DE L'ÉTAPE.
+    ///
+    /// Un participe passé décrit une tâche ACHEVÉE : le vendeur lisait « Préparée » et
+    /// comprenait qu'il n'y avait plus rien à attendre. Or c'est exactement l'inverse —
+    /// c'est le moment où la course est proposée aux coursiers, et donc l'état dans
+    /// lequel un colis ATTEND d'être ramassé.
+    ///
+    /// Cette étiquette a sa part dans le défaut corrigé côté domaine : elle faisait
+    /// lire la préparation comme une écriture comptable facultative, alors qu'elle est
+    /// le seul déclencheur de la livraison. Marquer préparé et ne rien voir venir se
+    /// comprenait comme une fin de parcours plutôt que comme une attente.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static string DashboardStatus(string backendStatus)
-        => string.Equals(backendStatus, "Preparing", StringComparison.OrdinalIgnoreCase) ? "Prepared" : backendStatus;
+        => string.Equals(backendStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+            ? "ReadyForPickup"
+            : backendStatus;
 
     private static async Task<IResult> GetAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {

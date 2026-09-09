@@ -65,7 +65,10 @@ internal sealed class GetConversationQueryHandler : IQueryHandler<GetConversatio
 
         if (!conversation.ParticipantIds.Contains(query.RequesterId))
         {
-            return Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation.");
+            // IDENTIQUE au refus ci-dessus, volontairement. C'était le chemin de lecture
+            // pur, donc l'oracle le plus commode : 404 pour un identifiant inventé, 403
+            // pour un identifiant réel. On énumérait les conversations en les essayant.
+            return Error.NotFound("messaging.not_found", "Conversation introuvable.");
         }
 
         return ConversationMapper.ToSummary(conversation, query.RequesterId);

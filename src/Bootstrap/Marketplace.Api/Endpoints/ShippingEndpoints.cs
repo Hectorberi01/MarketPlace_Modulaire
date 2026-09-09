@@ -36,7 +36,19 @@ public static class ShippingEndpoints
     /// <summary>Enregistre les routes des expéditions (back-office uniquement).</summary>
     public static IEndpointRouteBuilder MapShippingEndpoints(this IEndpointRouteBuilder app)
     {
-        var shipments = app.MapAdminGroup("/api/shipments").WithTags("Shipping");
+        // ═════════════════════════════════════════════════════════════════════════
+        // ADMIN SEUL. `MapAdminGroup` OUVRE AUSSI AUX MODÉRATEURS.
+        //
+        // `/{id}/deliver` fait lever `ShipmentDeliveredDomainEvent`, donc
+        // `ReleaseSellerEarningsOnShipmentDeliveredHandler` : LA SÉQUESTRE DU VENDEUR EST
+        // LIBÉRÉE. C'est un mouvement d'argent, pas un changement de statut.
+        //
+        // Le contraste rendait l'oubli visible : `POST /api/orders/{id}/deliver`, l'AUTRE
+        // chemin vers la même libération, portait déjà `RequireRole("Admin")`. Cette
+        // route-ci était son jumeau non gardé.
+        // ═════════════════════════════════════════════════════════════════════════
+        var shipments = app.MapAdminGroup("/api/shipments").WithTags("Shipping")
+            .RequireAuthorization(p => p.RequireRole("Admin"));
 
         shipments.MapGet("/{id:guid}", GetAsync).WithName("GetShipment");
         shipments.MapGet("/order/{orderId:guid}", ListByOrderAsync).WithName("ListShipmentsByOrder");

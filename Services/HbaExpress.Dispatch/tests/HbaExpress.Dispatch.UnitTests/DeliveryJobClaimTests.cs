@@ -85,13 +85,16 @@ public class DeliveryJobClaimTests
         var job = TestJobs.NewJob();
         job.Offer(new[] { CourierId.New() }, Now, Window);
 
-        // Distingué de « trop tard » à dessein : accepter une course qu'on ne vous a
-        // jamais proposée n'est pas une course de vitesse perdue, c'est une tentative
-        // qui mérite d'être visible dans les journaux.
+        // Le refus est INDISCERNABLE d'une course inexistante. Le commentaire précédent
+        // défendait la distinction — « une tentative qui mérite d'être visible » — et
+        // c'est vrai du JOURNAL, pas de la réponse : distinguer « pas proposée » de
+        // « introuvable » laissait un coursier cartographier la table des courses.
         var intruder = job.Accept(CourierId.New(), Now.AddSeconds(1));
 
         intruder.IsFailure.Should().BeTrue();
-        intruder.Error.Code.Should().Be("job.not_offered_to_you");
+        // « INTROUVABLE », et non « pas proposée » : le refus ne doit pas confirmer que
+        // la course existe. Voir DeliveryJob.Accept.
+        intruder.Error.Code.Should().Be("job.not_found");
     }
 
     [Fact]

@@ -65,7 +65,14 @@ public static class OrderingEndpoints
         var result = await sender.Send(new GetOrderQuery(id), ct);
         if (result.IsFailure)
         {
-            return result.Match(order => Results.Ok(order));
+            // LES DEUX BRANCHES RÉPONDENT LA MÊME CHOSE, ET C'EST TOUT L'OBJET.
+            //
+            // Celle-ci rendait un ProblemDetails avec le code d'erreur dans `title`,
+            // l'autre un 404 nu. Même statut, corps différents : la ressource absente et
+            // la ressource d'autrui restaient distinguables, donc l'anti-IDOR d'en
+            // dessous ne servait à rien. `PaymentsEndpoints.InitiateAsync` fait déjà
+            // ainsi, avec le raisonnement en commentaire.
+            return Results.NotFound();
         }
         // Anti-IDOR : seul le propriétaire (ou un admin) peut lire la commande.
         if (!principal.IsInRole("Admin") && CurrentUserId(principal) != result.Value.BuyerId)
@@ -81,7 +88,10 @@ public static class OrderingEndpoints
         var orderResult = await sender.Send(new GetOrderQuery(id), ct);
         if (orderResult.IsFailure)
         {
-            return orderResult.Match(order => Results.Ok(order));
+            // Même correction que sur la lecture ci-dessus — et elle compte davantage
+            // ici : c'est une MUTATION, donc un identifiant valide se confirme sans même
+            // avoir à lire la commande.
+            return Results.NotFound();
         }
         if (!principal.IsInRole("Admin") && CurrentUserId(principal) != orderResult.Value.BuyerId)
         {

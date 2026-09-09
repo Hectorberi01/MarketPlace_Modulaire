@@ -187,23 +187,44 @@ public sealed class DeliveryJob : AggregateRoot<DeliveryJobId>
     /// </summary>
     public Result Accept(CourierId courierId, DateTime nowUtc)
     {
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA PARTICIPATION SE CONTRÔLE AVANT L'ÉTAT. MÊME DÉFAUT QUE
+        // `Conversation.SendMessage`, MÊME CORRECTION.
+        //
+        // Le contrôle de statut passait en premier : un coursier à qui la course n'a
+        // JAMAIS été proposée apprenait son cycle de vie — offerte, prise, terminée. Il
+        // en résultait quatre réponses distinctes sur cette route, dont trois lisibles
+        // par quelqu'un qui n'aurait jamais dû savoir que la course existe.
+        //
+        // On sait maintenant d'abord si l'appelant a été invité. Tout ce qui suit ne
+        // s'adresse qu'à un invité — et à un invité, on peut tout dire.
+        // ═════════════════════════════════════════════════════════════════════════
+        var known = _offers.Any(o => o.CourierId == courierId);
+        if (!known)
+        {
+            // « INTROUVABLE », et non « pas proposée » : la seconde formulation confirme
+            // qu'une course existe à cet identifiant. Le journal, lui, garde la tentative.
+            return Result.Failure(Error.NotFound("job.not_found", "Course introuvable."));
+        }
+
         if (Status != DeliveryJobStatus.Offered)
         {
             // Message volontairement métier : c'est ce que l'application du coursier
             // affichera, et « course déjà prise » se comprend mieux qu'un conflit d'état.
+            //
+            // CE 403/409 EST CONSERVÉ, LUI. L'appelant a été invité : deux coursiers qui
+            // acceptent au même instant est une course normale, pas une attaque, et
+            // « déjà prise » est exactement ce qu'il a besoin de lire.
             return Result.Failure(Error.Conflict("job.already_taken", "Cette course a déjà été prise."));
         }
 
         var offer = _offers.FirstOrDefault(o => o.CourierId == courierId && o.IsLive(nowUtc));
         if (offer is null)
         {
-            // On distingue « pas invité » de « trop tard » : le premier est une tentative
-            // d'accepter une course qu'on ne nous a jamais proposée, et cela mérite d'être
-            // visible dans les journaux.
-            var known = _offers.Any(o => o.CourierId == courierId);
-            return Result.Failure(known
-                ? Error.Conflict("job.offer_expired", "Le délai pour accepter cette course est écoulé.")
-                : Error.Validation("job.not_offered_to_you", "Cette course ne vous a pas été proposée."));
+            // Invité, course encore offerte, mais l'offre nominative a expiré : le délai
+            // est écoulé pour lui pendant qu'il reste ouvert pour d'autres.
+            return Result.Failure(
+                Error.Conflict("job.offer_expired", "Le délai pour accepter cette course est écoulé."));
         }
 
         offer.Accept(nowUtc);
@@ -224,7 +245,11 @@ public sealed class DeliveryJob : AggregateRoot<DeliveryJobId>
         var offer = _offers.FirstOrDefault(o => o.CourierId == courierId && o.IsLive(nowUtc));
         if (offer is null)
         {
-            return Result.Failure(Error.Validation("job.not_offered_to_you", "Cette course ne vous a pas été proposée."));
+            // MÊME REFUS QUE `Accept` POUR UN NON-INVITÉ, et pour la même raison :
+            // `DeliveryJobService` répond 404 quand la course n'existe pas, donc un code
+            // distinct ici confirmerait qu'elle existe. Refuser une course qu'on ne nous
+            // a pas proposée n'appelle aucune explication.
+            return Result.Failure(Error.NotFound("job.not_found", "Course introuvable."));
         }
 
         offer.Decline(nowUtc);

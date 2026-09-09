@@ -25,19 +25,37 @@ internal sealed class VerifyEmailCodeCommandHandler : ICommandHandler<VerifyEmai
         _unitOfWork = unitOfWork;
     }
 
+    /// <summary>
+    /// LA MÊME ERREUR POUR TOUS LES REFUS, ET C'EST LE POINT.
+    ///
+    /// Adresse inconnue, code faux, code expiré, code déjà consommé : quatre causes, une
+    /// seule réponse. Un « compte introuvable » distinct rouvrirait exactement l'oracle
+    /// qu'on vient de fermer en amont — il suffirait d'envoyer un code bidon et de lire
+    /// le message pour savoir si l'adresse existe.
+    /// </summary>
+    private static Error InvalidVerification => Error.Validation(
+        "identity.email.verification_invalid",
+        "Code de vérification invalide ou expiré. Demandez-en un nouveau.");
+
     public async Task<Result> Handle(VerifyEmailCodeCommand command, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.GetByIdAsync(new UserId(command.UserId), cancellationToken);
+        var user = await _userRepository.GetByEmailAsync(command.Email, cancellationToken);
+
+        // LE HACHAGE EST FAIT AVANT LE TEST, PAS APRÈS : sortir plus tôt sur une adresse
+        // inconnue rendrait le refus mesurable au chronomètre. Même oracle, autre canal.
+        var providedHash = _tokenGenerator.Hash(command.Code);
+
         if (user is null)
         {
-            return Result.Failure(Error.NotFound("identity.user.not_found", $"Compte {command.UserId} introuvable."));
+            return Result.Failure(InvalidVerification);
         }
 
-        var providedHash = _tokenGenerator.Hash(command.Code);
         var result = user.ConsumeEmailVerificationCode(providedHash, DateTime.UtcNow);
         if (result.IsFailure)
         {
-            return result;
+            // On REMPLACE l'erreur du domaine : sa précision servirait ici l'attaquant
+            // plus que l'utilisateur, qui n'a de toute façon qu'une action possible.
+            return Result.Failure(InvalidVerification);
         }
 
         // La confirmation de l'e-mail ACTIVE le compte en libre-service : c'est

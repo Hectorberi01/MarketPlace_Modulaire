@@ -55,7 +55,14 @@ public sealed record OrderSummary(
     decimal ShippingFee = 0m,
     // Part réglée par la cagnotte de l'acheteur. GrandTotal reste la VALEUR de la
     // commande ; c'est AmountDue qui est encaissé auprès du prestataire.
-    decimal WalletApplied = 0m)
+    decimal WalletApplied = 0m,
+    /// <summary>
+    /// Date de livraison, ou nul. C'est ce dont le module Returns a besoin pour savoir
+    /// si la fenêtre de retour est encore ouverte : sans elle, le délai devrait partir
+    /// de la date de commande, donc pénaliser l'acheteur pour la lenteur d'une
+    /// livraison qu'il ne contrôle pas.
+    /// </summary>
+    DateTime? DeliveredAtUtc = null)
 {
     /// <summary>
     /// Montant restant à encaisser. Calculé plutôt que transporté : deux champs qui

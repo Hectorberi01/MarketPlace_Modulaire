@@ -100,7 +100,13 @@ public sealed class DispatchServiceClient : IDispatchServiceClient
         var secret = _configuration[SecretKey];
         if (!string.IsNullOrWhiteSpace(secret))
         {
-            request.Headers.Add(SignatureHeader, PartnerServiceSignature.Compute(body, secret));
+            // Horodatage ET signature, posés ensemble : le service rejette un appel qui
+            // n'a que l'un des deux. On signe à l'INSTANT DE L'ENVOI, pas à celui de la
+            // mise en file — un message qui a attendu dans l'outbox et part maintenant
+            // est frais maintenant, et c'est la fraîcheur de l'APPEL qu'on atteste.
+            var (timestamp, signature) = PartnerServiceSignature.Sign(body, secret);
+            request.Headers.Add(PartnerServiceSignature.TimestampHeader, timestamp);
+            request.Headers.Add(SignatureHeader, signature);
         }
 
         using var response = await _http.SendAsync(request, cancellationToken);

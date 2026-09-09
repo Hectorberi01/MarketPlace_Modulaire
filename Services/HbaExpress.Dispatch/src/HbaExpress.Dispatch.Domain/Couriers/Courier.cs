@@ -88,6 +88,19 @@ public sealed class Courier : AggregateRoot<CourierId>
 
     public DateTime CreatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// Date d'ÉMISSION de la dernière annonce de statut appliquée — pas la date à
+    /// laquelle on l'a reçue.
+    ///
+    /// C'est la différence qui fait tout : recevoir plus tard ne veut pas dire décider
+    /// plus tard. Un message peut arriver après un autre parce qu'il a été rejoué, ou
+    /// simplement parce que le drain de l'outbox l'a réessayé plus longtemps.
+    ///
+    /// Nul tant qu'aucune annonce n'a été appliquée — un coursier créé par la toute
+    /// première annonce ne l'a pas encore.
+    /// </summary>
+    public DateTime? StandingAnnouncedAtUtc { get; private set; }
+
     public static Result<Courier> Register(
         Guid courierId, Guid userId, string displayName, VehicleType vehicle)
     {
@@ -113,9 +126,44 @@ public sealed class Courier : AggregateRoot<CourierId>
         return new Courier(new CourierId(courierId), userId, displayName.Trim(), vehicle);
     }
 
-    /// <summary>Recopie le droit de travailler décidé par la marketplace.</summary>
-    public void ApplyStanding(CourierStanding standing)
+    /// <summary>
+    /// Recopie le droit de travailler décidé par la marketplace, SI l'annonce est plus
+    /// récente que la dernière appliquée.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE VERROU MONOTONE — CE QUI FERME VRAIMENT LE REJEU DE SIGNATURE.
+    ///
+    /// Cette méthode recopiait le statut sans condition. C'est ce qu'on lui demande de
+    /// faire — ce service ne sait pas ce qu'est un dossier vérifié — mais ça rendait
+    /// l'annonce REJOUABLE : renvoyer un vieux « Active » capturé avant la suspension
+    /// réactivait le coursier, et l'annulation d'une sanction ne laissait aucune trace
+    /// d'intrusion, juste un statut qui remonte tout seul.
+    ///
+    /// L'horodatage signé (voir InboundSignature) ramène la fenêtre à cinq minutes. Ce
+    /// contrôle-ci la ferme entièrement : une annonce qui n'est pas STRICTEMENT plus
+    /// récente que la dernière appliquée est ignorée, quelle que soit la manière dont
+    /// elle est arrivée.
+    ///
+    /// CE N'EST PAS QU'UNE DÉFENSE. L'outbox réessaie avec un délai croissant : un
+    /// « Active » en échec pendant deux minutes peut légitimement être livré APRÈS le
+    /// « Suspended » qui l'a suivi. Sans ce contrôle, un coursier suspendu redevenait
+    /// actif sans que personne n'attaque quoi que ce soit.
+    ///
+    /// ÉGALITÉ REFUSÉE, ET C'EST VOULU. Deux annonces au même instant sont soit le même
+    /// message livré deux fois — auquel cas la seconde n'apporte rien — soit deux
+    /// décisions indiscernables, où appliquer l'une plutôt que l'autre serait arbitraire.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="announcedAtUtc">Instant d'ÉMISSION de l'annonce par la marketplace.</param>
+    /// <returns>Vrai si l'annonce a été appliquée, faux si elle a été écartée comme périmée.</returns>
+    public bool ApplyStanding(CourierStanding standing, DateTime announcedAtUtc)
     {
+        if (StandingAnnouncedAtUtc is not null && announcedAtUtc <= StandingAnnouncedAtUtc)
+        {
+            return false;
+        }
+
+        StandingAnnouncedAtUtc = announcedAtUtc;
         Standing = standing;
 
         // Un coursier suspendu est sorti de la file IMMÉDIATEMENT, sans attendre qu'il
@@ -125,6 +173,8 @@ public sealed class Courier : AggregateRoot<CourierId>
         {
             Availability = CourierAvailability.Offline;
         }
+
+        return true;
     }
 
     /// <summary>Le coursier se déclare disponible. Refusé s'il n'a pas le droit de travailler.</summary>

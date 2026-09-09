@@ -82,13 +82,44 @@ internal sealed class LoginCommandHandler : ICommandHandler<LoginCommand, LoginR
         // L'utilisateur légitime, lui, sait qu'il a supprimé son compte : le message
         // générique ne le désoriente pas.
         // ─────────────────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE COÛT DU BCRYPT EST PAYÉ DANS TOUS LES CAS, Y COMPRIS SUR ADRESSE INCONNUE.
+        //
+        // Le test était écrit `user is null || !_passwordHasher.Verify(...)`. Le `||`
+        // court-circuite : `Verify` ne s'exécutait JAMAIS pour une adresse inconnue. Le
+        // corps de réponse est pourtant rigoureusement uniforme
+        // (`identity.auth.invalid_credentials`) — c'est ce qui rendait la fuite
+        // invisible à la lecture. Adresse connue + mauvais mot de passe ≈ 300 ms de
+        // BCrypt à facteur 12 ; adresse inconnue ≈ 10 ms. On énumérait au chronomètre,
+        // sur les cinq hôtes.
+        //
+        // Le compte SUPPRIMÉ sortait lui aussi avant la vérification, avec le même
+        // effet : ce bloc est donc placé avant lui.
+        //
+        // On CALCULE un hachage qu'on jette plutôt que de vérifier contre un hash
+        // factice : `Hash` et `Verify` exécutent le même échéancier de clés au même
+        // facteur, et un hash constant écrit en dur serait une valeur à maintenir juste
+        // et invérifiable en lecture.
+        // ═════════════════════════════════════════════════════════════════════════
+        var passwordMatches = user is not null
+            && _passwordHasher.Verify(user.PasswordHash, command.Password);
+
+        if (user is null)
+        {
+            _ = _passwordHasher.Hash(command.Password);
+        }
+
         if (user is not null && user.Status == UserStatus.Deleted)
         {
             _security.LoginFailed(Method, "deleted", ClientType);
             return Result.Failure<LoginResponse>(InvalidCredentials);
         }
 
-        if (user is null || !_passwordHasher.Verify(user.PasswordHash, command.Password))
+        // `user is null` EST RÉPÉTÉ ICI, ET PAS PAR PRUDENCE : sans lui, l'analyse de
+        // nullabilité perd le lien entre le booléen et la variable, et tout le code qui
+        // suit — `user.Status`, `user.Id` — devient un déréférencement possiblement nul.
+        // Le court-circuit est sans effet sur le temps : le BCrypt est déjà payé.
+        if (user is null || !passwordMatches)
         {
             _security.LoginFailed(Method, "invalid_credentials", ClientType);
             return Result.Failure<LoginResponse>(InvalidCredentials);

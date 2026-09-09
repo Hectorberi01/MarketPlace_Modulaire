@@ -121,18 +121,37 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
     public async Task AddAsync(WalletTransaction transaction, CancellationToken cancellationToken = default)
         => await _dbContext.WalletTransactions.AddAsync(transaction, cancellationToken);
 
+    /// <summary>Nombre de lignes rendues quand l'appelant n'en demande pas explicitement.</summary>
+    private const int DefaultPageSize = 50;
+
+    /// <summary>
+    /// Plafond dur. Un relevé de cagnotte se lit par pages dans l'application ; personne
+    /// n'a besoin de plus en une fois, et l'appelant qui en demande plus ne rend service
+    /// à personne, à commencer par lui-même.
+    /// </summary>
+    private const int MaxPageSize = 200;
+
     public async Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(Guid ownerId, int take, CancellationToken cancellationToken = default)
         => await _dbContext.WalletTransactions
             .AsNoTracking()
             .Where(t => t.OwnerId == ownerId)
             .OrderByDescending(t => t.CreatedAtUtc)
-            .Take(take <= 0 ? 50 : take)
+            // BORNÉ DES DEUX CÔTÉS. Le plancher existait, le PLAFOND non : les quatre
+            // BFF passent la chaîne de requête telle quelle, donc
+            // `?take=100000000` matérialisait tout le grand livre de l'appelant. Pas une
+            // divulgation — le filtre `OwnerId` tient — mais un coût serveur laissé au
+            // choix du client.
+            //
+            // Le plafond est ICI plutôt que dans chaque endpoint : c'est le seul endroit
+            // que les quatre hôtes traversent, donc le seul qu'on ne peut pas oublier en
+            // ajoutant une cinquième surface.
+            .Take(Math.Clamp(take <= 0 ? DefaultPageSize : take, 1, MaxPageSize))
             .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Le grand livre a-t-il déjà une écriture pour cette référence ?
     ///
-    /// ⚠️ On interroge le CHANGE TRACKER autant que la base (pas d'AsNoTracking, et
+    /// On interroge le CHANGE TRACKER autant que la base (pas d'AsNoTracking, et
     /// `Local` d'abord) : dans une même transaction, les écritures précédentes ne sont
     /// pas encore commitées. Sans cela, deux handlers du même message se croiraient
     /// tous deux « premiers ».

@@ -65,16 +65,48 @@ public sealed class Conversation : AggregateRoot<ConversationId>
         return conversation;
     }
 
+    /// <summary>
+    /// LE REFUS EST « INTROUVABLE », PAS « INTERDIT ». ET LE CODE COMPTE AUTANT QUE LE
+    /// STATUT.
+    ///
+    /// Ces méthodes répondaient 403 `messaging.not_participant` quand l'appelant n'est
+    /// pas membre, et 404 `messaging.not_found` quand la conversation n'existe pas. Deux
+    /// réponses distinctes pour deux situations qu'un inconnu ne doit pas savoir
+    /// distinguer : il suffisait d'essayer des identifiants un par un pour cartographier
+    /// les conversations réelles de la plateforme.
+    ///
+    /// Le piège, c'est que passer en 404 sans changer le CODE n'aurait rien réglé :
+    /// `ApiResults` place le code d'erreur dans le champ `title` du ProblemDetails. Un
+    /// 404 `messaging.not_participant` dit exactement ce qu'il prétendait taire. Le code
+    /// ET le message sont donc ceux, mot pour mot, du cas « conversation inexistante »
+    /// produit par `ConversationMutationHandlerBase.MutateAsync`.
+    ///
+    /// C'est la règle que `ChatHub.JoinConversation` applique depuis toujours — même
+    /// exception pour un GUID invalide et pour une conversation dont on n'est pas membre.
+    /// Le module la respecte enfin partout.
+    ///
+    /// À NE PAS CONFONDRE avec `messaging.not_author` plus bas, qui reste un 403 : là,
+    /// l'appelant EST participant, il voit le message, et lui dire qu'il n'en est pas
+    /// l'auteur ne lui apprend rien qu'il ne puisse déjà lire.
+    /// </summary>
+    private static Error NotAParticipant => Error.NotFound("messaging.not_found", "Conversation introuvable.");
+
     public Result SendMessage(Guid senderId, string body, IEnumerable<string> attachments)
     {
+        // LE CONTRÔLE DE PARTICIPATION PASSE EN PREMIER, ET CE N'EST PAS COSMÉTIQUE.
+        //
+        // Il venait après le contrôle d'ouverture : un inconnu apprenait donc si une
+        // conversation est ouverte ou close avant qu'on lui refuse l'accès. Deux
+        // réponses différentes pour deux conversations dont il n'est membre d'aucune,
+        // c'est déjà de l'information.
+        if (_participants.All(p => p.UserId != senderId))
+        {
+            return Result.Failure(NotAParticipant);
+        }
+
         if (Status != ConversationStatus.Open)
         {
             return Result.Failure(Error.Conflict("messaging.not_open", "La conversation n'est pas ouverte."));
-        }
-
-        if (_participants.All(p => p.UserId != senderId))
-        {
-            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
         }
 
         // Une photo sans légende est un message légitime : on n'exige un corps de
@@ -99,7 +131,7 @@ public sealed class Conversation : AggregateRoot<ConversationId>
     {
         if (_participants.All(p => p.UserId != readerId))
         {
-            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+            return Result.Failure(NotAParticipant);
         }
 
         foreach (var message in _messages.Where(m => m.SenderId != readerId && m.ReadAtUtc is null))
@@ -118,7 +150,7 @@ public sealed class Conversation : AggregateRoot<ConversationId>
     {
         if (_participants.All(p => p.UserId != userId))
         {
-            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+            return Result.Failure(NotAParticipant);
         }
 
         if (!MessageReactions.IsAllowed(emoji))
@@ -150,7 +182,7 @@ public sealed class Conversation : AggregateRoot<ConversationId>
     {
         if (_participants.All(p => p.UserId != userId))
         {
-            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+            return Result.Failure(NotAParticipant);
         }
 
         var message = _messages.FirstOrDefault(m => m.Id == messageId);
@@ -177,7 +209,7 @@ public sealed class Conversation : AggregateRoot<ConversationId>
     {
         if (_participants.All(p => p.UserId != userId))
         {
-            return Result.Failure(Error.Forbidden("messaging.not_participant", "Vous n'êtes pas participant à cette conversation."));
+            return Result.Failure(NotAParticipant);
         }
 
         var message = _messages.FirstOrDefault(m => m.Id == messageId);

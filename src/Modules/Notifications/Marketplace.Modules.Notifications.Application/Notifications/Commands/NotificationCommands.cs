@@ -140,9 +140,20 @@ internal sealed class MarkNotificationReadCommandHandler : ICommandHandler<MarkN
             return Result.Failure(Error.NotFound("notifications.not_found", "Notification introuvable."));
         }
 
+        // « INTROUVABLE », PAS « INTERDIT » — LA MÊME RÈGLE QUE LE DELETE DE CE FICHIER.
+        //
+        // `DeleteOwnNotificationCommandHandler`, trente lignes plus haut, répond déjà
+        // `notifications.not_found` sur exactement le même prédicat, avec la raison en
+        // commentaire. Ici on répondait 403 : deux handlers voisins, une seule
+        // condition, deux décisions opposées. Celle-ci révélait qu'une notification
+        // existe — donc qu'il s'est passé quelque chose pour quelqu'un d'autre.
+        //
+        // Le code d'erreur est repris tel quel, pas seulement le statut : `ApiResults`
+        // le publie dans le `title` du ProblemDetails, où `notifications.not_owner`
+        // aurait dit tout haut ce que le 404 taisait.
         if (notification.RecipientUserId != command.RecipientUserId)
         {
-            return Result.Failure(Error.Forbidden("notifications.not_owner", "Cette notification ne vous appartient pas."));
+            return Result.Failure(Error.NotFound("notifications.not_found", "Notification introuvable."));
         }
 
         notification.MarkRead();

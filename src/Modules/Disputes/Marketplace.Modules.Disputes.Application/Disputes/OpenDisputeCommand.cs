@@ -47,10 +47,20 @@ internal sealed class OpenDisputeCommandHandler : ICommandHandler<OpenDisputeCom
             return Result.Failure<Guid>(Error.NotFound("disputes.order.not_found", "Commande introuvable."));
         }
 
+        // MÊME RÉPONSE QUE « COMMANDE INTROUVABLE », À LA VIRGULE PRÈS.
+        //
+        // Le refus était 403 `disputes.not_party` : il confirmait qu'une commande existe
+        // à cet identifiant. Comme la route est ouverte à tout compte authentifié, on
+        // énumérait les commandes de la plateforme en ouvrant des litiges au hasard —
+        // et le volume de commandes est une donnée concurrentielle.
+        //
+        // Le code est repris de la branche précédente, pas seulement le statut :
+        // `ApiResults` publie le code dans le `title`, donc un 404 `disputes.not_party`
+        // n'aurait rien caché.
         var isParty = order.BuyerId == command.RaisedBy || order.Lines.Any(l => l.SellerId == command.RaisedBy);
         if (!isParty)
         {
-            return Result.Failure<Guid>(Error.Forbidden("disputes.not_party", "Vous n'êtes pas partie à cette commande."));
+            return Result.Failure<Guid>(Error.NotFound("disputes.order.not_found", "Commande introuvable."));
         }
 
         var result = Dispute.Open(order.Id, command.RaisedBy, type, command.Message, command.PhotoUrl);

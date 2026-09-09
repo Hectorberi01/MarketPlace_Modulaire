@@ -126,7 +126,8 @@ public sealed class SendCourierActivatedToDispatchHandler
                 integrationEvent.CourierId,
                 integrationEvent.UserId,
                 string.IsNullOrWhiteSpace(integrationEvent.DisplayName) ? "Coursier" : integrationEvent.DisplayName,
-                "Active"),
+                "Active",
+                integrationEvent.OccurredOnUtc),
             cancellationToken);
 }
 
@@ -152,6 +153,7 @@ public sealed class SendCourierSuspendedToDispatchHandler
         CourierSuspendedIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
         => _dispatch.SendCourierStandingAsync(
             new DispatchCourierStanding(
-                integrationEvent.CourierId, integrationEvent.UserId, string.Empty, "Suspended"),
+                integrationEvent.CourierId, integrationEvent.UserId, string.Empty, "Suspended",
+                integrationEvent.OccurredOnUtc),
             cancellationToken);
 }

@@ -45,6 +45,20 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     public DateTime? ShippedAtUtc { get; private set; }
     public DateTime? DeliveredAtUtc { get; private set; }
 
+    /// <summary>
+    /// Qui a emporté le colis. NUL tant que personne ne l'a pris — et sur toutes les
+    /// expéditions antérieures à ce champ. Voir <see cref="ShipmentDeliveryMode"/>.
+    /// </summary>
+    public ShipmentDeliveryMode? DeliveryMode { get; private set; }
+
+    /// <summary>
+    /// La course du service de dispatch qui a porté cette expédition, quand le mode est
+    /// <c>Courier</c>. C'est ce qui permet, depuis une expédition, de remonter au
+    /// coursier, à son horodatage et à sa position — et c'est aussi la clé qui rend
+    /// <see cref="MarkDeliveredByCourier"/> idempotente face à un rejeu de l'annonce.
+    /// </summary>
+    public Guid? DeliveryJobId { get; private set; }
+
     public IReadOnlyCollection<ShipmentItem> Items => _items.AsReadOnly();
 
     public static Result<Shipment> Create(
@@ -90,9 +104,31 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     /// </summary>
     public Result MarkShipped(string carrier, string trackingNumber, string? trackingUrl = null)
     {
-        if (Status is not (ShipmentStatus.Pending or ShipmentStatus.Preparing))
+        // ═════════════════════════════════════════════════════════════════════════
+        // « EN PRÉPARATION » EST DÉSORMAIS OBLIGATOIRE. C'ÉTAIT UN RACCOURCI, ET IL
+        // COUPAIT LA LIVRAISON.
+        //
+        // Cette garde acceptait aussi `Pending`. Or `MarkPreparing` est ce qui lève
+        // `ShipmentPreparingDomainEvent`, qui publie `OrderReadyForDelivery`, qui crée
+        // la course chez le service de dispatch. Un vendeur qui appelait `/ship` sans
+        // passer par `/prepare` allait donc de « en attente » à « expédiée » sans
+        // qu'AUCUNE COURSE NE SOIT JAMAIS CRÉÉE. Rien ne le journalisait, et le tableau
+        // de bord renommait même l'état en « Préparée », ce qui faisait lire la
+        // préparation comme une écriture comptable facultative plutôt que comme le seul
+        // déclencheur de la livraison.
+        //
+        // Exiger la préparation n'est pas qu'une mise en ordre : dans le modèle à deux
+        // canaux, le transporteur tiers est le REPLI d'une course que personne n'a
+        // prise. On ne peut donc pas y arriver sans être passé par la préparation, qui
+        // est justement ce qui a proposé la course.
+        //
+        // CONSÉQUENCE POUR L'APP VENDEUR : le bouton « Expédier » exige maintenant que
+        // l'expédition ait été marquée préparée. C'est une rupture de comportement
+        // assumée — le raccourci qu'elle supprime est précisément le défaut.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (Status != ShipmentStatus.Preparing)
         {
-            return Result.Failure(Error.Conflict("shipping.invalid_transition", "L'expédition ne peut pas être expédiée dans cet état."));
+            return Result.Failure(Error.Conflict("shipping.invalid_transition", "Seule une expédition préparée peut être confiée à un transporteur."));
         }
 
         if (string.IsNullOrWhiteSpace(carrier) || string.IsNullOrWhiteSpace(trackingNumber))
@@ -100,6 +136,8 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
             return Result.Failure(Error.Validation("shipping.tracking_required", "Transporteur et numéro de suivi sont obligatoires."));
         }
 
+        // Le canal se décide ICI : un transporteur nommé, c'est le repli tiers.
+        DeliveryMode = ShipmentDeliveryMode.Carrier;
         Status = ShipmentStatus.Shipped;
         Carrier = carrier.Trim();
         TrackingNumber = trackingNumber.Trim();
@@ -109,6 +147,12 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         return Result.Success();
     }
 
+    /// <summary>
+    /// Livraison par TRANSPORTEUR TIERS : le colis était en transit, il est arrivé.
+    ///
+    /// Réservée au repli. La livraison par coursier de la plateforme passe par
+    /// <see cref="MarkDeliveredByCourier"/>, qui part d'un autre état.
+    /// </summary>
     public Result MarkDelivered()
     {
         if (Status != ShipmentStatus.Shipped)
@@ -118,6 +162,73 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
 
         Status = ShipmentStatus.Delivered;
         DeliveredAtUtc = DateTime.UtcNow;
+        Raise(new ShipmentDeliveredDomainEvent(Id.Value, OrderId, SellerId));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Livraison par un COURSIER DE LA PLATEFORME.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// C'EST LA TRANSITION QUI MANQUAIT, ET SON ABSENCE NE FAISAIT AUCUN BRUIT.
+    ///
+    /// Le coursier livrait, il était payé, et l'expédition restait « en préparation » :
+    /// `MarkDelivered` exige « en transit », et pour y arriver `MarkShipped` réclame un
+    /// transporteur et un numéro de suivi — des données qui n'existent pas pour une moto
+    /// en propre. La chaîne s'arrêtait là : pas de `ShipmentDeliveredDomainEvent`, donc
+    /// la commande jamais « livrée », donc la séquestre du vendeur jamais libérée.
+    ///
+    /// Chaque composant se comportait pourtant correctement — le coursier était payé, le
+    /// crédit était idempotent, l'expédition refusait une transition invalide. Mais
+    /// personne n'appelait cette transition, donc personne ne voyait le refus. Un défaut
+    /// qui échoue laisse une lettre morte ; celui-ci laissait une commande d'apparence
+    /// normale. C'est ce qui l'a rendu invisible aussi longtemps.
+    ///
+    /// ON PART DE « EN PRÉPARATION », PAS DE « EN TRANSIT ». Pour un coursier interne,
+    /// « en transit » n'a jamais lieu : il ramasse et il dépose dans la même course. Lui
+    /// faire traverser un état qui ne correspond à rien aurait demandé d'inventer un
+    /// transporteur et un numéro de suivi, c'est-à-dire d'écrire en base une fiction
+    /// pour satisfaire une machine à états écrite pour l'autre canal.
+    ///
+    /// IDEMPOTENTE SUR L'IDENTIFIANT DE COURSE. L'annonce vient d'un service distant
+    /// dont la file de sortie réessaie ; un rejeu doit être un succès silencieux. On
+    /// compare la course, et pas seulement l'état : une expédition déjà livrée par une
+    /// AUTRE course serait une incohérence qu'il vaut mieux voir échouer.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="deliveryJobId">La course du service de dispatch qui a porté le colis.</param>
+    public Result MarkDeliveredByCourier(Guid deliveryJobId)
+    {
+        if (deliveryJobId == Guid.Empty)
+        {
+            return Result.Failure(Error.Validation(
+                "shipping.delivery_job_required",
+                "L'identifiant de course est obligatoire pour une livraison par coursier."));
+        }
+
+        // Rejeu de la même course : succès, sans rien changer ni rien lever.
+        if (Status == ShipmentStatus.Delivered
+            && DeliveryMode == ShipmentDeliveryMode.Courier
+            && DeliveryJobId == deliveryJobId)
+        {
+            return Result.Success();
+        }
+
+        if (Status != ShipmentStatus.Preparing)
+        {
+            return Result.Failure(Error.Conflict(
+                "shipping.invalid_transition",
+                "Seule une expédition en préparation peut être livrée par un coursier."));
+        }
+
+        DeliveryMode = ShipmentDeliveryMode.Courier;
+        DeliveryJobId = deliveryJobId;
+        Status = ShipmentStatus.Delivered;
+        DeliveredAtUtc = DateTime.UtcNow;
+
+        // MÊME ÉVÉNEMENT que la livraison par transporteur, délibérément : ce qui suit —
+        // commande livrée, séquestre libérée, gains du vendeur rendus retirables — ne
+        // dépend pas de qui a porté le colis, et n'a aucune raison d'être dupliqué.
         Raise(new ShipmentDeliveredDomainEvent(Id.Value, OrderId, SellerId));
         return Result.Success();
     }

@@ -40,7 +40,7 @@ public sealed class Seller : AggregateRoot<SellerId>
     public KybStatus KybStatus { get; private set; }
 
     /// <summary>
-    /// ⚠️ Neutralisé : la commission est désormais un taux fixe plateforme
+    /// Neutralisé : la commission est désormais un taux fixe plateforme
     /// (Billing:DefaultCommissionRate). Ce champ n'est plus utilisé pour le calcul
     /// et n'est plus modifiable. Conservé en lecture seule (colonne EF, affichage
     /// dashboards/API) : ne pas supprimer pour éviter une migration.
@@ -113,7 +113,7 @@ public sealed class Seller : AggregateRoot<SellerId>
     }
 
     /// <summary>
-    /// ⚠️ Neutralisé : la commission est désormais un taux fixe plateforme
+    /// Neutralisé : la commission est désormais un taux fixe plateforme
     /// (Billing:DefaultCommissionRate). Ce champ n'est plus utilisé pour le calcul
     /// et n'est plus modifiable. Méthode conservée sans appelant (aucun endpoint /
     /// commande ne l'invoque) ; ne pas rebrancher.

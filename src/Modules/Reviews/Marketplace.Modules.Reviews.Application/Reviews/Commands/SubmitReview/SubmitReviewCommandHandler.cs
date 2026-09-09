@@ -35,9 +35,20 @@ internal sealed class SubmitReviewCommandHandler : ICommandHandler<SubmitReviewC
             return Result.Failure<Guid>(Error.NotFound("reviews.order.not_found", "Commande introuvable."));
         }
 
+        // MÊME RÉPONSE QUE « COMMANDE INTROUVABLE », À LA VIRGULE PRÈS.
+        //
+        // Ce site NE FIGURAIT PAS dans l'audit des routes — il a été trouvé en balayant
+        // les `Error.Forbidden` restants après avoir corrigé les quatre signalés. Il a
+        // exactement la forme des deux autres (`RequestReturnCommand`,
+        // `OpenDisputeCommand`) : même lecture par `IOrderingModuleApi`, même 404 suivi
+        // d'un 403, donc le même oracle sur l'existence d'une commande.
+        //
+        // Ce qui vaut d'être retenu : l'audit listait des ROUTES, et ce handler est
+        // atteint par une route qu'il n'avait pas relevée. Chercher par code d'erreur
+        // plutôt que par route aurait trouvé les cinq du premier coup.
         if (order.BuyerId != command.BuyerId)
         {
-            return Result.Failure<Guid>(Error.Forbidden("reviews.not_owner", "Cette commande n'appartient pas à l'acheteur."));
+            return Result.Failure<Guid>(Error.NotFound("reviews.order.not_found", "Commande introuvable."));
         }
 
         // Une commande PAYÉE peut être notée : « Confirmed » (payée, en cours) ou

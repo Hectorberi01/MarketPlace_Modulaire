@@ -28,9 +28,23 @@ internal sealed class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         builder.Property(s => s.ShippedAtUtc);
         builder.Property(s => s.DeliveredAtUtc);
 
+        // NULLABLE, ET SANS RÉTRO-REMPLISSAGE. Nul veut dire « personne n'a encore pris
+        // ce colis » — et c'est aussi ce que valent les expéditions antérieures à ce
+        // champ. Leur affecter un canal après coup serait une reconstitution, pas une
+        // donnée : on ne sait pas par quel canal elles sont parties.
+        //
+        // Stocké en TEXTE comme `Status`, pour la même raison : un entier en base rend
+        // toute lecture SQL dépendante de l'ordre de déclaration de l'énumération.
+        builder.Property(s => s.DeliveryMode).HasConversion<string>().HasMaxLength(20);
+
+        // Pas de clé étrangère : la course vit dans la base d'un AUTRE service. C'est un
+        // identifiant de corrélation, pas une relation — et c'est bien pour ça qu'il ne
+        // doit pas être contraint ici.
+        builder.Property(s => s.DeliveryJobId);
+
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
-        // ⚠️ CORRECTION D'UNE AFFIRMATION ANTÉRIEURE (voir doc 22). Ce commentaire disait
+        // CORRECTION D'UNE AFFIRMATION ANTÉRIEURE (voir doc 22). Ce commentaire disait
         // que, sans IsRequired(), EF « sèvrerait » les enfants retirés d'une collection
         // (UPDATE enfant SET FK = NULL) et produirait des orphelins. C'est FAUX ici : le
         // `OnDelete(DeleteBehavior.Cascade)` ci-dessous gouverne aussi le sort des orphelins,

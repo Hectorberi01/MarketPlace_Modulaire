@@ -68,6 +68,25 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
             return Result.Failure<Guid>(phoneResult.Error);
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE HACHAGE EST FAIT AVANT LES CONTRÔLES D'EXISTENCE, ET C'EST DÉLIBÉRÉ.
+        //
+        // Il venait après. Les appelants qui uniformisent leur réponse — les trois
+        // routes d'inscription — avaient donc un corps constant et un TEMPS DE RÉPONSE
+        // qui ne l'était pas : adresse libre, on payait ~300 ms de BCrypt (facteur 12) ;
+        // adresse prise, on retournait en ~10 ms. Un ordre de grandeur, très au-dessus
+        // de la gigue réseau, séparable en quelques échantillons. Le corps uniforme
+        // était défait au chronomètre.
+        //
+        // On paie donc le hachage dans tous les cas, y compris quand on sait déjà qu'on
+        // va refuser. C'est du temps CPU dépensé pour rien, et c'est exactement le but.
+        //
+        // COROLLAIRE OPÉRATIONNEL : une rafale d'inscriptions sur des adresses déjà
+        // prises coûte maintenant du BCrypt. Le limiteur `auth` est ce qui borne ça —
+        // 30 requêtes par minute et par IP.
+        // ═════════════════════════════════════════════════════════════════════════
+        var passwordHash = _passwordHasher.Hash(command.Password);
+
         if (await _userRepository.EmailExistsAsync(emailResult.Value.Value, cancellationToken))
         {
             return Error.Conflict("identity.user.email_taken", "Un compte existe déjà avec cet e-mail.");
@@ -78,7 +97,6 @@ internal sealed class RegisterUserCommandHandler : ICommandHandler<RegisterUserC
             return Error.Conflict("identity.user.phone_taken", "Un compte existe déjà avec ce numéro.");
         }
 
-        var passwordHash = _passwordHasher.Hash(command.Password);
         // Vérification e-mail par CODE numérique (6 chiffres) envoyé par e-mail.
         var (rawToken, tokenHash) = _tokenGenerator.GenerateNumericCode();
         var expiresOnUtc = DateTime.UtcNow.Add(_tokenSettings.EmailVerificationLifetime);

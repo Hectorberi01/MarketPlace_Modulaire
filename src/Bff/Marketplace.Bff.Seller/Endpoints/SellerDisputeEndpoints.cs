@@ -46,13 +46,13 @@ public static class SellerDisputeEndpoints
     /// seconde). L'alternative naturelle — vérifier l'implication litige par litige —
     /// appelait le module Expéditions autant de fois qu'il y a de litiges.
     ///
-    /// ⚠️ Le filtrage est fait PAR LE MODULE, en base. La première version passait par
+    /// Le filtrage est fait PAR LE MODULE, en base. La première version passait par
     /// `ListAllDisputesQuery` puis filtrait en mémoire : le plafond de 500 s'appliquait
     /// alors AVANT le filtre, donc aux litiges de toute la plateforme. Passé ce volume,
     /// un litige ouvert d'un vendeur pouvait sortir de la fenêtre et disparaître de son
     /// écran — remplacé par un « aucun litige » parfaitement rassurant.
     ///
-    /// ⚠️ MÊME CRITÈRE D'IMPLICATION QUE `IsInvolvedInOrderAsync` : « le vendeur a une
+    /// MÊME CRITÈRE D'IMPLICATION QUE `IsInvolvedInOrderAsync` : « le vendeur a une
     /// expédition sur cette commande ». Ce n'est pas un détail. Lister selon les LIGNES
     /// de commande aurait été plus large, et aurait affiché des litiges dont le détail
     /// répond 403 — un écran qui montre des lignes sur lesquelles on ne peut pas
@@ -117,7 +117,16 @@ public static class SellerDisputeEndpoints
         var dispute = await sender.Send(new GetDisputeQuery(id), ct);
         if (dispute.IsFailure)
         {
-            return dispute.Match(d => Results.Ok(d));
+            // MÊME RÉPONSE QUE « PAS CONCERNÉ », en dessous. Celle-ci rendait un
+            // ProblemDetails `disputes.not_found`, l'autre `{ error: "dispute_not_found" }` :
+            // deux corps distincts sous un même 404, donc n'importe quel compte à rôle
+            // Seller énumérait les litiges de la plateforme.
+            //
+            // Les fichiers voisins (offres, retours, expéditions, stock) contrôlent la
+            // propriété AVANT de charger, ce qui fait tomber les deux cas dans une seule
+            // réponse. Ici la propriété se déduit de la commande du litige, donc il faut
+            // le charger d'abord — d'où l'alignement explicite.
+            return SellerBff.NotFoundOrForbidden("dispute");
         }
         if (!await SellerBff.IsInvolvedInOrderAsync(sender, seller.Id, dispute.Value.OrderId, ct))
         {
@@ -143,7 +152,8 @@ public static class SellerDisputeEndpoints
         var dispute = await sender.Send(new GetDisputeQuery(id), ct);
         if (dispute.IsFailure)
         {
-            return dispute.Match(d => Results.Ok(d));
+            // Idem que sur la lecture ci-dessus.
+            return SellerBff.NotFoundOrForbidden("dispute");
         }
         if (!await SellerBff.IsInvolvedInOrderAsync(sender, seller.Id, dispute.Value.OrderId, ct))
         {

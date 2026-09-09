@@ -27,7 +27,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         // lève `DbUpdateConcurrencyException` — traduite en 409 (voir
         // ConcurrencyExceptionHandler).
         //
-        // ⚠️ AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
+        // AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
         //
         // ModuleDbContext dispatche les événements de domaine AVANT
         // base.SaveChangesAsync, et draine les événements d'intégration vers l'outbox.
@@ -55,6 +55,12 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.PromotionCode).HasMaxLength(64);
         builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(o => o.CreatedAtUtc).IsRequired();
+
+        // NULLABLE ET SANS RÉTRO-REMPLISSAGE. Nul veut dire « pas encore livrée » — et
+        // aussi « livrée avant que cette colonne existe ». Dater après coup les
+        // livraisons passées reviendrait à inventer le point de départ d'un délai de
+        // retour, c'est-à-dire à fermer une fenêtre sur une date fausse.
+        builder.Property(o => o.DeliveredAtUtc);
         builder.Property(o => o.Subtotal).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.TotalSellerDiscount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(o => o.TotalPlatformDiscount).HasColumnType("numeric(18,2)").IsRequired();
@@ -85,7 +91,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
-        // ⚠️ Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
+        // Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
         // ne sévrait PAS pour autant. Le `OnDelete(DeleteBehavior.Cascade)` ci-dessous
         // gouverne aussi le sort des ORPHELINS — avec Cascade, un enfant retiré de la
         // collection est SUPPRIMÉ, pas mis à NULL. Les données de production l'ont confirmé.
