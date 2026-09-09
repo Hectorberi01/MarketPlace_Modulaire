@@ -250,11 +250,34 @@ public sealed class Promotion : AggregateRoot<PromotionId>
         };
     }
 
-    /// <summary>Calcule le montant de réduction sur un montant donné.</summary>
-    public decimal ComputeDiscount(decimal amount)
+    /// <summary>
+    /// Calcule le montant de réduction sur un montant donné.
+    ///
+    /// ══════════════════════════════════════════════════════════════════════════════
+    /// C'EST ICI QUE NAISSAIENT LES CENTIMES QUI N'EXISTENT PAS.
+    ///
+    /// Le pourcentage était arrondi à DEUX décimales, quelle que soit la devise. En
+    /// franc CFA — qui n'a aucune subdivision — 10 % de 89 991 donnaient 8 999,10. Ce
+    /// dixième de franc n'était refusé par personne : il remontait dans le total de
+    /// ligne, puis dans le total de commande, jusqu'à la passerelle qui tronquait à
+    /// l'entier. La commande enregistrait 8 999,10 XOF, le prestataire encaissait
+    /// 8 999, et la commande était marquée payée pour un montant jamais perçu.
+    ///
+    /// La précision se lit désormais sur la DEVISE, via <see cref="Money.Round"/>. La
+    /// remise est donc arrondie une seule fois, sur la grille de la devise, et rien
+    /// en aval n'a plus à tronquer.
+    ///
+    /// La devise est un paramètre parce qu'une promotion n'en porte pas : elle
+    /// s'applique à des prix, et c'est le PRIX qui a une devise. Le défaut est retenu
+    /// à <see cref="Money.DefaultCurrency"/> pour les appelants qui n'en connaissent
+    /// pas encore ; <see cref="Pricing.PriceCalculator"/>, lui, transmet celle du prix
+    /// de base.
+    /// ══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal ComputeDiscount(decimal amount, string currency = Money.DefaultCurrency)
         => Type switch
         {
-            PromotionType.Percentage => decimal.Round(amount * Value / 100m, 2),
+            PromotionType.Percentage => Money.Round(amount * Value / 100m, currency),
             PromotionType.FixedAmount => Math.Min(Value, amount),
             PromotionType.FreeShipping => 0m,   // porté par Shipping, pas sur le prix article
             PromotionType.BuyXGetY => 0m,        // nécessite le détail panier (calculé en amont)

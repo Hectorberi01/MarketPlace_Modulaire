@@ -26,6 +26,7 @@ public sealed class DispatchMetrics : IDispatchMetrics, IDisposable
     private readonly Counter<long> _offersSent;
     private readonly Counter<long> _jobsAccepted;
     private readonly Counter<long> _jobsDelivered;
+    private readonly Counter<long> _jobsFailed;
     private readonly Counter<long> _jobsExpired;
     private readonly Counter<long> _outboundFailures;
     private readonly Counter<long> _outboundDeadLetters;
@@ -45,6 +46,10 @@ public sealed class DispatchMetrics : IDispatchMetrics, IDisposable
 
         _jobsDelivered = _meter.CreateCounter<long>(
             "dispatch_jobs_delivered", description: "Courses livrées.");
+
+        _jobsFailed = _meter.CreateCounter<long>(
+            "dispatch_jobs_failed",
+            description: "Courses déclarées en échec par leur coursier. C'est le TAUX qui compte, pas le zéro.");
 
         _jobsExpired = _meter.CreateCounter<long>(
             "dispatch_jobs_expired",
@@ -70,6 +75,8 @@ public sealed class DispatchMetrics : IDispatchMetrics, IDisposable
     public void JobAccepted() => _jobsAccepted.Add(1);
 
     public void JobDelivered() => _jobsDelivered.Add(1);
+
+    public void JobFailed() => _jobsFailed.Add(1);
 
     public void JobExpired() => _jobsExpired.Add(1);
 

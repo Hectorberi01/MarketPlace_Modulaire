@@ -12,6 +12,12 @@ namespace Marketplace.Modules.Notifications.Application.Notifications;
 /// Crée et « distribue » une notification. Point d'entrée unique des consumers
 /// d'events : centralise la création + la persistance in-app + l'envoi PUSH.
 /// Le push est best-effort : une panne FCM ne doit jamais empêcher la notif in-app.
+///
+/// DEUX PORTES, ET LE CHOIX N'EST PAS ANODIN. <see cref="NotifyAsync"/> crée à chaque
+/// appel : c'est ce qu'il faut pour un fait qui se répète légitimement (nouveau message,
+/// colis en transit). <see cref="NotifyOnceAsync"/> n'émet qu'une fois par fait, et
+/// c'est ce qu'il faut dès que l'événement source peut être REJOUÉ sans que le fait
+/// notifié, lui, se soit reproduit.
 /// </summary>
 public sealed class NotificationDispatcher
 {
@@ -50,11 +56,61 @@ public sealed class NotificationDispatcher
     /// remboursement, litige tranché. Le push seul ne suffit pas — application
     /// désinstallée, notifications refusées, téléphone changé.
     /// </param>
-    public async Task NotifyAsync(
+    public Task NotifyAsync(
         Guid recipientUserId, string subject, string body, string relatedType, Guid? relatedId, CancellationToken ct,
         bool alsoEmail = false)
+        => DispatchAsync(null, recipientUserId, subject, body, relatedType, relatedId, ct, alsoEmail);
+
+    /// <summary>
+    /// Notifie UNE SEULE FOIS pour un fait donné, même si son événement est rejoué.
+    ///
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI CETTE VARIANTE EXISTE.
+    ///
+    /// `NotifyAsync` crée inconditionnellement, et c'est correct pour la plupart des
+    /// notifications : un nouveau message, un changement de statut de colis, chacun est
+    /// un fait distinct. Mais le dispatch d'événements est « au moins une fois » et la
+    /// politique autorise dix tentatives : sur `OrderConfirmed`, Notifications est
+    /// dispatché AVANT Settlement, Loyalty et Analytics (`ModuleRegistry`), si bien
+    /// qu'une panne dans l'un de ces trois rejouait le message ENTIER — et renotifiait.
+    /// L'acheteur recevait jusqu'à dix fois « Votre paiement a été reçu », chaque vendeur
+    /// dix fois « Nouvelle commande à préparer », in-app, push ET e-mail.
+    ///
+    /// La clé identifie le FAIT et son DESTINATAIRE (voir
+    /// <see cref="NotificationDeduplicationKeys"/>), jamais la tentative. Le `SELECT`
+    /// ci-dessous est le chemin rapide : il évite d'écrire, de pousser et d'envoyer un
+    /// e-mail pour rien. La garantie, elle, est l'index UNIQUE partiel sur
+    /// `DeduplicationKey` : si deux tentatives concurrentes lisent toutes deux « rien »,
+    /// l'une des insertions échoue, son message est rejoué, et la tentative suivante voit
+    /// la ligne du gagnant et s'arrête. On ne rattrape donc PAS l'exception ici :
+    /// la laisser remonter est ce qui rend la course convergente.
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="deduplicationKey">Identifie le fait notifié — voir <see cref="NotificationDeduplicationKeys"/>.</param>
+    public Task NotifyOnceAsync(
+        string deduplicationKey,
+        Guid recipientUserId, string subject, string body, string relatedType, Guid? relatedId, CancellationToken ct,
+        bool alsoEmail = false)
+        => DispatchAsync(deduplicationKey, recipientUserId, subject, body, relatedType, relatedId, ct, alsoEmail);
+
+    private async Task DispatchAsync(
+        string? deduplicationKey,
+        Guid recipientUserId, string subject, string body, string relatedType, Guid? relatedId, CancellationToken ct,
+        bool alsoEmail)
     {
-        var result = Notification.Create(recipientUserId, NotificationChannel.InApp, subject, body, relatedType, relatedId);
+        if (deduplicationKey is not null
+            && await _repository.ExistsByDeduplicationKeyAsync(deduplicationKey, ct))
+        {
+            // Déjà notifié pour ce fait : on sort AVANT le push et l'e-mail. Sortir plus
+            // tard ne servirait à rien — c'est le doublon reçu par l'utilisateur qu'on
+            // veut éviter, pas seulement la ligne en base.
+            _logger.LogInformation(
+                "Notification déjà émise pour la clé « {DeduplicationKey} » — rejeu ignoré.", deduplicationKey);
+            return;
+        }
+
+        var result = Notification.Create(
+            recipientUserId, NotificationChannel.InApp, subject, body, relatedType, relatedId, deduplicationKey);
         if (result.IsFailure)
         {
             return;
@@ -63,7 +119,29 @@ public sealed class NotificationDispatcher
         var notification = result.Value;
         notification.MarkSent(); // canal in-app : distribué instantanément dans la boîte de réception
         await _repository.AddAsync(notification, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // ON NE RATTRAPE PAS L'ERREUR, ON NETTOIE LE CONTEXTE AVANT DE LA RELANCER.
+            //
+            // Si l'écriture échoue — typiquement la course perdue sur l'index unique —
+            // l'entité reste ATTACHÉE en état « ajoutée ». Le prochain `SaveChanges` du
+            // même scope la rejouerait et échouerait de nouveau : dans
+            // `SellerOrderConfirmedNotificationHandler`, qui boucle sur les vendeurs et
+            // journalise chaque échec pour ne pas priver les suivants, un seul conflit
+            // aurait ainsi empêché TOUS les vendeurs restants d'être prévenus. La retirer
+            // du contexte (une entité « ajoutée » retirée redevient simplement détachée)
+            // rend le scope réutilisable.
+            //
+            // L'exception, elle, continue de remonter : c'est elle qui laisse le message
+            // être rejoué, et la tentative suivante verra la ligne du gagnant.
+            _repository.Remove(notification);
+            throw;
+        }
 
         // Envoi push vers les appareils du destinataire (best-effort).
         await SendPushAsync(recipientUserId, subject, body, relatedType, relatedId, ct);
@@ -77,7 +155,7 @@ public sealed class NotificationDispatcher
     /// <summary>
     /// Double la notification par e-mail (adresse résolue via Identity).
     ///
-    /// ⚠️ BEST-EFFORT DÉLIBÉRÉ — contrairement aux e-mails de compte, qui doivent lever.
+    /// BEST-EFFORT DÉLIBÉRÉ — contrairement aux e-mails de compte, qui doivent lever.
     ///
     /// À ce stade, la notification in-app est DÉJÀ persistée et le push DÉJÀ parti. Si on
     /// laissait l'échec d'envoi remonter, l'outbox rejouerait le message entier : le

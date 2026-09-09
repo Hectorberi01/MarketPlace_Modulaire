@@ -6,9 +6,7 @@ namespace Marketplace.Modules.Analytics.Domain.Metrics;
 /// </summary>
 public sealed class ProcessedOrder
 {
-    private ProcessedOrder()
-    {
-    }
+    private ProcessedOrder() { }
 
     private ProcessedOrder(Guid orderId)
     {

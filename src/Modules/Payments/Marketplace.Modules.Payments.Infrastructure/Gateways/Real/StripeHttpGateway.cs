@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.Modules.Payments.Application.Abstractions.Gateways;
 
 namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Real;
@@ -19,12 +20,6 @@ namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Real;
 /// </summary>
 public sealed class StripeHttpGateway : HttpPaymentGatewayBase
 {
-    // Devises « zéro décimale » : le montant est l'entier tel quel (pas ×100).
-    private static readonly HashSet<string> ZeroDecimalCurrencies = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "XOF", "XAF", "XPF", "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV"
-    };
-
     private readonly StripeOptions _options;
 
     public StripeHttpGateway(IHttpClientFactory httpClientFactory, StripeOptions options)
@@ -127,11 +122,18 @@ public sealed class StripeHttpGateway : HttpPaymentGatewayBase
         }
     }
 
+    /// <summary>
+    /// SECRET MANQUANT : ON REJETTE. Cette méthode retournait `true` — un fail-open,
+    /// identique à celui de FedaPay et pour la même raison : cette passerelle
+    /// surcharge `ParseWebhookAsync` et ne passait donc jamais par le garde-fou
+    /// `GatewayWebhook.AllowUnsignedWhenSecretMissing`, pourtant écrit, commenté et
+    /// fermé en production.
+    /// </summary>
     private bool VerifyStripeSignature(string rawBody, string? signatureHeader)
     {
         if (string.IsNullOrEmpty(_options.WebhookSecret))
         {
-            return true; // sandbox permissif
+            return GatewayWebhook.AllowUnsignedWhenSecretMissing;
         }
 
         if (string.IsNullOrWhiteSpace(signatureHeader))
@@ -168,8 +170,16 @@ public sealed class StripeHttpGateway : HttpPaymentGatewayBase
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_options.WebhookSecret));
         var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))).ToLowerInvariant();
 
-        return signatures.Any(s => CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(s)));
+        if (!signatures.Any(s => CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(s))))
+        {
+            return false;
+        }
+
+        // L'horodatage était signé et jamais confronté à l'heure courante : un corps
+        // capturé restait rejouable indéfiniment. La fenêtre est vérifiée APRÈS la
+        // signature, sur la valeur parsée.
+        return GatewayWebhook.IsWithinClockSkew(timestamp);
     }
 
     protected override GatewayOutcome MapOutcome(string eventType) => eventType switch
@@ -207,10 +217,20 @@ public sealed class StripeHttpGateway : HttpPaymentGatewayBase
     private void Authorize(HttpRequestMessage request)
         => request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
+    /// <summary>
+    /// Montant en plus petite unité, attendu par Stripe. Les devises « zéro décimale »
+    /// passent telles quelles (pas de ×100).
+    ///
+    /// LA LISTE DE CES DEVISES A QUITTÉ CE FICHIER. Elle y était recopiée, comme dans
+    /// PayPal et dans les métriques : trois listes déjà divergentes pour une question
+    /// qui n'a qu'une réponse. Elle vit désormais dans <see cref="Money"/>, avec la
+    /// règle d'arrondi qui en découle.
+    /// </summary>
     private static string FormatAmount(decimal amount, string currency)
     {
-        var minor = ZeroDecimalCurrencies.Contains(currency) ? Math.Round(amount) : Math.Round(amount * 100m);
-        return ((long)minor).ToString(CultureInfo.InvariantCulture);
+        var rounded = Money.Round(amount, currency);
+        var minor = Money.IsZeroDecimal(currency) ? rounded : rounded * 100m;
+        return ((long)decimal.Round(minor)).ToString(CultureInfo.InvariantCulture);
     }
 
     private sealed record StripeObject(string? id, string? url, string? client_secret, string? status, string? payment_status);

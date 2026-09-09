@@ -59,7 +59,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         services.AddSingleton(fedapayOptions);
 
         // ─────────────────────────────────────────────────────────────────────────
-        // ⚠️ LE GARDE-FOU LE PLUS IMPORTANT DE TOUT LE PROJET.
+        // LE GARDE-FOU LE PLUS IMPORTANT DE TOUT LE PROJET.
         //
         // AVANT : chaque PSP non configuré retombait SILENCIEUSEMENT sur une passerelle
         // SIMULÉE. Or les clés sont vides par défaut dans appsettings.json. Un
@@ -138,6 +138,46 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
             },
             registerSimulated: () => services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>());
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // UNE PASSERELLE RÉELLE SANS SECRET DE WEBHOOK N'EST PAS CONFIGURÉE.
+        //
+        // `IsConfigured` ne teste que la clé d'API — c'est-à-dire la capacité à
+        // DEMANDER un encaissement. Rien ne testait la capacité à VÉRIFIER qu'il a eu
+        // lieu. Une clé renseignée avec un secret de webhook vide enregistrait donc la
+        // passerelle réelle, et celle-ci acceptait n'importe quel rappel non signé.
+        //
+        // Les deux garanties sont distinctes et toutes deux nécessaires. On les
+        // sépare plutôt que d'élargir `IsConfigured`, dont le sens — « peut encaisser »
+        // — reste juste et sert ailleurs.
+        //
+        // La seule protection existante vivait dans `docker-compose.prod.yml`, sous la
+        // forme d'un `${VAR:?}`. Un fichier de déploiement n'est pas un garde-fou de
+        // sécurité : il ne couvre pas le staging, il ne couvre pas un démarrage hors
+        // compose, et il affirmait par ailleurs l'inverse du comportement réel.
+        // ─────────────────────────────────────────────────────────────────────────
+        if (isProduction)
+        {
+            var unverifiable = new List<string>();
+
+            if (stripeOptions.IsConfigured && string.IsNullOrWhiteSpace(stripeOptions.WebhookSecret)) unverifiable.Add("Payments:Stripe:WebhookSecret");
+            if (paypalOptions.IsConfigured && string.IsNullOrWhiteSpace(paypalOptions.WebhookSecret)) unverifiable.Add("Payments:PayPal:WebhookSecret");
+            if (mtnOptions.IsConfigured && string.IsNullOrWhiteSpace(mtnOptions.WebhookSecret)) unverifiable.Add("Payments:MtnMomo:WebhookSecret");
+            if (moovOptions.IsConfigured && string.IsNullOrWhiteSpace(moovOptions.WebhookSecret)) unverifiable.Add("Payments:Moov:WebhookSecret");
+            if (fedapayOptions.IsConfigured && string.IsNullOrWhiteSpace(fedapayOptions.WebhookSecret)) unverifiable.Add("Payments:FedaPay:WebhookSecret");
+
+            if (unverifiable.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "PRESTATAIRE RÉEL SANS SECRET DE WEBHOOK.\n\n" +
+                    $"Manquant(s) : {string.Join(", ", unverifiable)}.\n\n" +
+                    "Sans ce secret, la route de rappel — anonyme et sans limitation de débit — ne peut " +
+                    "vérifier aucune signature. N'importe qui pourrait déclarer une commande payée : stock " +
+                    "décrémenté, expéditions créées, gains vendeur crédités, sans qu'un franc ait bougé. " +
+                    "Les versements sont exposés au même risque.\n\n" +
+                    "Le démarrage est refusé DÉLIBÉRÉMENT. Vérifiez l'injection des secrets.");
+            }
+        }
+
         // En production, une plateforme SANS aucun moyen d'encaisser n'est pas une
         // plateforme : c'est un catalogue. On refuse de démarrer plutôt que d'accepter
         // des commandes qu'on ne saura jamais faire payer.
@@ -157,7 +197,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         if (simulatedGateways.Count > 0)
         {
             Console.WriteLine(
-                $"[Payments] ⚠️  PASSERELLES SIMULÉES ACTIVES : {string.Join(", ", simulatedGateways)}. " +
+                $"[Payments] PASSERELLES SIMULÉES ACTIVES : {string.Join(", ", simulatedGateways)}. " +
                 "Ces prestataires acceptent TOUT paiement sans qu'aucun argent ne bouge. " +
                 (realGateways.Count > 0
                     ? $"Passerelles réelles : {string.Join(", ", realGateways)}."
@@ -368,7 +408,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
     /// car les modules s'installent avant que l'hôte ne soit construit. On lit donc la
     /// variable d'environnement standard, qu'ASP.NET expose dans la configuration.
     ///
-    /// ⚠️ FAIL-SAFE : les deux variables sont lues, et l'inconnu est traité comme
+    /// ATTENTION : FAIL-SAFE : les deux variables sont lues, et l'inconnu est traité comme
     /// « pas la production » — sinon un environnement mal nommé refuserait de démarrer
     /// en développement. Le risque assumé est l'inverse : une PROD dont
     /// ASPNETCORE_ENVIRONMENT serait mal renseigné retomberait sur des simulations.

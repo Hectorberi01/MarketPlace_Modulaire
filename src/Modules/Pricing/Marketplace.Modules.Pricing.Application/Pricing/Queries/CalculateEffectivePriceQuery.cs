@@ -9,7 +9,24 @@ namespace Marketplace.Modules.Pricing.Application.Pricing.Queries;
 
 /// <summary>
 /// Calcule le prix effectif d'une ligne : prix de base + promotions applicables,
-/// avec la trace des financeurs. C'est le cœur du module.
+/// avec la trace des financeurs.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// CE CHEMIN NE VOIT PAS LES REMISES À MONTANT FIXE, ET C'EST VOULU.
+///
+/// Il sert une route de SIMULATION (`PricingEndpoints`), pas le tunnel de commande —
+/// lequel passe par `IPricingModuleApi`, qui appelle en plus `CalculateCartDiscountAsync`
+/// une fois pour le panier.
+///
+/// `PriceCalculator.Calculate` exclut désormais les remises à montant fixe : appelées
+/// une fois par ligne, elles étaient retirées autant de fois qu'il y avait de lignes.
+/// Une simulation de ligne affichera donc un prix SANS le coupon d'ordre. C'est la
+/// réponse honnête : un coupon de panier n'a pas de valeur définie sur une ligne
+/// isolée, et en inventer une ferait mentir la simulation dans l'autre sens.
+///
+/// <paramref name="Subtotal"/> décrit le PANIER, pas la ligne : c'est lui que lisent
+/// les conditions d'éligibilité (« à partir de 50 000 d'achat »).
+/// ═════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed record CalculateEffectivePriceQuery(
     decimal BaseAmount,

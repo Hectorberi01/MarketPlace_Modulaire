@@ -67,7 +67,7 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         var fcmReady = false;
         if (fcm.IsConfigured)
         {
-            // ⚠️ Le push est OPTIONNEL : un compte de service FCM MALFORMÉ (clé privée
+            // LE PUSH EST OPTIONNEL : un compte de service FCM MALFORMÉ (clé privée
             // invalide, JSON tronqué, `\n` mal échappés…) ne doit PAS abattre toute la
             // plateforme. On tente de le brancher ; en cas d'échec on DÉGRADE proprement
             // vers NullPushSender en traçant la cause, au lieu de crasher au démarrage.
@@ -128,7 +128,7 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         }
         else if (IsProduction(configuration))
         {
-            // ⚠️ REFUS DE DÉMARRER. C'est volontairement brutal.
+            // REFUS DE DÉMARRER. C'est volontairement brutal.
             //
             // Sans e-mail en production : aucun compte ne peut être vérifié, et surtout
             // AUCUN mot de passe oublié ne peut être récupéré. Les utilisateurs se
@@ -173,6 +173,12 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         services.AddScoped<IIntegrationEventHandler<OrderCancelledIntegrationEvent>, OrderCancelledNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentShippedIntegrationEvent>, ShipmentShippedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<ShipmentDeliveredIntegrationEvent>, ShipmentDeliveredNotificationHandler>();
+
+        // COURSE EN ÉCHEC. Le VENDEUR, pas l'acheteur : le colis est resté chez lui, et
+        // c'est la seule personne qui puisse le faire repartir par un transporteur. Sans
+        // ce consommateur, l'échec serait enregistré sur l'expédition et journalisé, et
+        // personne d'actionnable ne l'apprendrait — la commande payée resterait immobile.
+        services.AddScoped<IIntegrationEventHandler<CourierDeliveryFailedIntegrationEvent>, CourierDeliveryFailedSellerNotificationHandler>();
 
         // REMBOURSEMENTS. UN SEUL MESSAGE, ENVOYÉ QUAND L'ARGENT EST LÀ.
         //

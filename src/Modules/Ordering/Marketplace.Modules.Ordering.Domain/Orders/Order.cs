@@ -296,8 +296,14 @@ public sealed class Order : AggregateRoot<OrderId>
     private void RecomputeTotals()
     {
         Subtotal = _lines.Sum(l => l.UnitBasePrice * l.Quantity);
-        TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount * l.Quantity);
-        TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount * l.Quantity);
+
+        // PLUS DE MULTIPLICATION PAR LA QUANTITÉ. Les remises de ligne sont désormais
+        // des montants de LIGNE, pas des montants unitaires : les multiplier une
+        // seconde fois gonflerait les totaux de remise affichés d'un facteur égal à la
+        // quantité, sans toucher au total payé — donc un écart invisible au checkout
+        // et faux sur toute facture.
+        TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount);
+        TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount);
         GrandTotal = _lines.Sum(l => l.LineTotal) + ShippingFee;
 
         // La taxe DÉCRIT une part du total : elle ne peut pas lui être supérieure. Si le

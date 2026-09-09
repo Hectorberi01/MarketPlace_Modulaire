@@ -200,7 +200,7 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                     b.Property<decimal>("CommissionRate")
                         .HasColumnType("numeric(6,4)");
 
-                    b.Property<decimal>("FinalUnitPrice")
+                    b.Property<decimal>("LineTotal")
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<Guid>("OfferId")

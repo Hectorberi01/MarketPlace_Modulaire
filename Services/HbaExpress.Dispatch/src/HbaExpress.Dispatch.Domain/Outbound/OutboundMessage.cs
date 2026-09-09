@@ -29,6 +29,26 @@ public sealed class OutboundMessage : Entity<Guid>
     /// <summary>Course livrée : la marketplace crédite le coursier de la somme annoncée.</summary>
     public const string CourierDeliveryCompletedType = "courier_delivery_completed";
 
+    /// <summary>
+    /// Course ÉCHOUÉE : acheteur introuvable, colis refusé, rien à remettre.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ÉCHEC EST UN FAIT AUSSI COÛTEUX QUE LA LIVRAISON, ET IL NE PARTAIT PAS.
+    ///
+    /// Ce type n'existait pas : une course échouée posait son statut en base et
+    /// s'arrêtait là. Personne côté marketplace n'apprenait rien — l'expédition restait
+    /// « en préparation » indéfiniment, la séquestre du vendeur n'était jamais tranchée,
+    /// la commande n'atteignait jamais d'état final. Le tout sans une erreur ni une
+    /// trace : du point de vue du service coursier, la course était close proprement.
+    ///
+    /// Il suit exactement le même chemin que la livraison — écrit dans la transaction qui
+    /// change le statut, envoyé plus tard par le drain, réessayé jusqu'à l'abandon
+    /// visible. Un échec qui n'arrive pas coûte moins d'argent qu'un paiement perdu, mais
+    /// il bloque une commande pour toujours ; ce n'est pas plus rattrapable.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public const string CourierDeliveryFailedType = "courier_delivery_failed";
+
     private OutboundMessage()
     {
     }

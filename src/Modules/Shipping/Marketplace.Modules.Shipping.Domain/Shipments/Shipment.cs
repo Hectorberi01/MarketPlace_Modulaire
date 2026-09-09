@@ -59,6 +59,36 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     /// </summary>
     public Guid? DeliveryJobId { get; private set; }
 
+    /// <summary>
+    /// La course qui a ÉCHOUÉ sur cette expédition, quand un coursier a renoncé.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA SEULE TRACE, CÔTÉ MARKETPLACE, QU'UN COURSIER A ESSAYÉ ET ABANDONNÉ.
+    ///
+    /// L'échec ne vivait que dans la base du service de dispatch. Ici, une expédition
+    /// abandonnée par un coursier était rigoureusement indiscernable d'une expédition
+    /// que le vendeur venait tout juste de préparer : même statut « en préparation »,
+    /// même absence de mode de livraison, même silence. L'exploitant qui cherchait
+    /// pourquoi une commande payée ne bougeait plus n'avait rien à lire.
+    ///
+    /// C'est AUSSI la clé d'idempotence de <see cref="MarkCourierDeliveryFailed"/> :
+    /// le drain du service coursier rejoue son annonce, et la comparaison de course est
+    /// ce qui distingue un rejeu — silencieux — d'un SECOND échec, qui lui doit
+    /// reprévenir le vendeur.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public Guid? FailedDeliveryJobId { get; private set; }
+
+    /// <summary>
+    /// Le motif tel que la COURSE le porte, déjà normalisé par le service de dispatch
+    /// (DeliveryJob.Fail : espaces coupés, vide remplacé par un libellé par défaut).
+    /// On ne le reformule pas : c'est ce que le vendeur et le support doivent lire.
+    /// </summary>
+    public string? CourierFailureReason { get; private set; }
+
+    /// <summary>Quand le coursier a renoncé, daté par le service de dispatch.</summary>
+    public DateTime? CourierFailedAtUtc { get; private set; }
+
     public IReadOnlyCollection<ShipmentItem> Items => _items.AsReadOnly();
 
     public static Result<Shipment> Create(
@@ -231,6 +261,111 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         // dépend pas de qui a porté le colis, et n'a aucune raison d'être dupliqué.
         Raise(new ShipmentDeliveredDomainEvent(Id.Value, OrderId, SellerId));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Longueur maximale conservée pour le motif d'échec.
+    ///
+    /// Le service de dispatch normalise le motif mais NE LE BORNE PAS : rien n'empêche
+    /// un coursier de coller trois cents lignes dans le champ « raison ». Sans plafond
+    /// ici, l'insertion échouerait sur la longueur de colonne, l'annonce serait rejouée,
+    /// abandonnée, et le vendeur ne saurait toujours rien — c'est-à-dire exactement le
+    /// défaut qu'on ferme. ON TRONQUE, ON NE REFUSE PAS : le fait à enregistrer est
+    /// l'échec, pas la prose.
+    /// </summary>
+    private const int MaxFailureReasonLength = 300;
+
+    /// <summary>
+    /// LE COURSIER A RENONCÉ : la course est close en échec, le colis n'est jamais parti.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// ON ANNOTE L'ÉTAT, ON NE L'AVANCE PAS — ET C'EST TOUT L'INTÉRÊT.
+    ///
+    /// L'expédition RESTE « en préparation ». Ce n'est pas un oubli : c'est l'état d'où
+    /// le vendeur peut repartir. Depuis « en préparation », <see cref="MarkShipped"/>
+    /// l'accepte et la confie à un transporteur tiers — le repli en cascade prévu au
+    /// CDC §5.7. Toute autre destination la condamnerait :
+    ///
+    ///  • « Livrée » serait un mensonge, et libérerait la séquestre du vendeur pour un
+    ///    colis que l'acheteur n'a jamais reçu.
+    ///  • « Annulée » est terminal (<see cref="Cancel"/> refuse d'en sortir) et
+    ///    supprimerait le repli transporteur pour une commande DÉJÀ PAYÉE : la vente
+    ///    serait perdue par une décision technique.
+    ///  • « En attente » ferait redescendre le vendeur d'un cran, et surtout ferait
+    ///    reperdre <see cref="MarkPreparing"/> — donc reproposerait la course.
+    ///
+    /// LE COURSIER N'EST PAS PAYÉ, ET RIEN ICI NE PEUT LE PAYER. Aucune livraison n'a eu
+    /// lieu ; l'annonce ne porte d'ailleurs aucun montant. Un éventuel dédommagement de
+    /// course tentée est une décision d'exploitation, pas une conséquence mécanique.
+    ///
+    /// IDEMPOTENTE SUR L'IDENTIFIANT DE COURSE, comme
+    /// <see cref="MarkDeliveredByCourier"/>. Le drain du service coursier réessaie
+    /// jusqu'à dix fois : rejouer la MÊME course ne doit rien réécrire et ne doit RIEN
+    /// LEVER, sans quoi le vendeur recevrait dix fois la même mauvaise nouvelle. Une
+    /// AUTRE course, en revanche, est un second échec réel — le repli a été retenté et
+    /// a échoué à son tour — et il doit être annoncé.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="deliveryJobId">La course du service de dispatch qui a échoué.</param>
+    /// <param name="reason">Motif porté par la course. Tronqué, jamais rejeté.</param>
+    /// <param name="failedAtUtc">Instant de l'abandon, daté par le service de dispatch.</param>
+    public Result MarkCourierDeliveryFailed(Guid deliveryJobId, string? reason, DateTime failedAtUtc)
+    {
+        if (deliveryJobId == Guid.Empty)
+        {
+            return Result.Failure(Error.Validation(
+                "shipping.delivery_job_required",
+                "L'identifiant de course est obligatoire pour un échec de livraison."));
+        }
+
+        // Rejeu de la même course : succès, sans rien changer ni rien lever.
+        if (FailedDeliveryJobId == deliveryJobId)
+        {
+            return Result.Success();
+        }
+
+        if (Status != ShipmentStatus.Preparing)
+        {
+            return Result.Failure(Error.Conflict(
+                "shipping.invalid_transition",
+                "Seule une expédition en préparation peut voir sa course échouer."));
+        }
+
+        // LE MOTIF EST CAPTURÉ DANS UNE LOCALE, PAS RELU SUR LA PROPRIÉTÉ.
+        // `CourierFailureReason` est déclarée facultative — elle l'est pour toutes les
+        // expéditions qui n'ont jamais connu d'échec — et la relire pour alimenter
+        // l'événement passerait un `string?` là où un `string` est attendu. La solution
+        // n'est pas de la déclarer obligatoire, ce qui serait faux, mais de garder ici la
+        // valeur dont on sait qu'elle n'est pas nulle.
+        var normalizedReason = NormalizeFailureReason(reason);
+
+        FailedDeliveryJobId = deliveryJobId;
+        CourierFailureReason = normalizedReason;
+        CourierFailedAtUtc = failedAtUtc;
+
+        // LE MODE DE LIVRAISON RESTE NUL, DÉLIBÉRÉMENT. Nul veut dire « personne n'a
+        // emporté ce colis », et c'est exactement la situation : le coursier a renoncé.
+        // L'inscrire en `Courier` affirmerait qu'il est parti par ce canal, et ferait
+        // lire l'expédition comme portée alors qu'elle est immobile en boutique.
+
+        Raise(new CourierDeliveryFailedDomainEvent(
+            Id.Value, OrderId, SellerId, deliveryJobId, normalizedReason));
+
+        return Result.Success();
+    }
+
+    /// <summary>Motif utilisable : jamais vide, jamais plus long que la colonne.</summary>
+    private static string NormalizeFailureReason(string? reason)
+    {
+        var trimmed = reason?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return "Échec de livraison.";
+        }
+
+        return trimmed.Length <= MaxFailureReasonLength
+            ? trimmed
+            : trimmed[..MaxFailureReasonLength];
     }
 
     public Result Cancel()

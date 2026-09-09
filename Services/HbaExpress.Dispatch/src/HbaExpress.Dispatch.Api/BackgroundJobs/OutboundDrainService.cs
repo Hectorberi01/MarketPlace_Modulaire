@@ -176,6 +176,13 @@ public sealed class OutboundDrainService : BackgroundService
             OutboundMessage.CourierDeliveryCompletedType =>
                 marketplace.SendCourierDeliveryCompletedAsync(message.Payload, cancellationToken),
 
+            // L'ÉCHEC PASSE PAR LA MÊME FILE QUE LA LIVRAISON, et il le fallait : c'est
+            // lui qui débloque une expédition restée « en préparation ». Oublier cette
+            // branche laisserait le message s'écrire en base et finir en abandon sur un
+            // « type inconnu » — la commande resterait figée exactement comme avant.
+            OutboundMessage.CourierDeliveryFailedType =>
+                marketplace.SendCourierDeliveryFailedAsync(message.Payload, cancellationToken),
+
             // UN TYPE INCONNU LÈVE, il n'est pas ignoré. Un message écrit par une version
             // du service et drainé par une autre qui ne le reconnaît plus doit finir en
             // abandon visible, pas disparaître dans un « default: return ».

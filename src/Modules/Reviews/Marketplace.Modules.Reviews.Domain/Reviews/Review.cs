@@ -68,7 +68,30 @@ public sealed class Review : AggregateRoot<ReviewId>
             (title ?? string.Empty).Trim(), body.Trim(), isVerifiedPurchase);
     }
 
-    /// <summary>Signale l'avis (en attente de décision de modération).</summary>
+    /// <summary>
+    /// Signale l'avis : le marque « en attente de revue », SANS le dépublier.
+    ///
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// SIGNALER N'EST PAS MODÉRER. C'EST TOUTE LA CORRECTION.
+    ///
+    /// Ce passage à `Flagged` retirait l'avis des lectures publiques, parce que les trois
+    /// requêtes de `ReviewRepository` ne gardaient que `Published`. Comme le signalement
+    /// est ouvert à tout compte authentifié (c'est voulu : chacun doit pouvoir remonter
+    /// un avis injurieux), n'importe qui pouvait effacer un avis — et un vendeur pouvait
+    /// effacer les siens, le BFF vendeur exposant la même commande.
+    ///
+    /// Un geste ouvert à tous ne peut avoir qu'un effet de SIGNAL, jamais de sanction.
+    /// `Flagged` ne dit donc plus « retiré », il dit « quelqu'un conteste cet avis, un
+    /// modérateur doit le regarder ». Le retrait effectif reste `Reject()`, réservé à
+    /// Admin/Modérateur — et c'est lui, et lui seul, qui émet
+    /// `ReviewRejectedDomainEvent` pour faire recalculer la note du vendeur. Signaler ne
+    /// change aucune note : c'est précisément ce qu'on veut, sinon le signalement
+    /// resterait une arme.
+    ///
+    /// Sans effet de retrait, l'opération est naturellement idempotente : signaler dix
+    /// fois le même avis ne fait rien de plus que la première.
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     public Result Flag()
     {
         if (Status == ReviewStatus.Rejected)
@@ -80,7 +103,11 @@ public sealed class Review : AggregateRoot<ReviewId>
         return Result.Success();
     }
 
-    /// <summary>Rejette l'avis (modération) — retiré de la note publique.</summary>
+    /// <summary>
+    /// Rejette l'avis (Admin / Modérateur) — SEUL geste qui le retire des lectures
+    /// publiques et de la note agrégée. Contrairement à <see cref="Flag"/>, il est
+    /// autorisé au niveau de la route (`/api/reviews/{id}/reject`).
+    /// </summary>
     public Result Reject()
     {
         if (Status == ReviewStatus.Rejected)

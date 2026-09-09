@@ -87,10 +87,19 @@ public sealed class CommissionRule : AggregateRoot<CommissionRuleId>
             rate, fixedFee, currency.Trim().ToUpperInvariant(), minFee, maxFee, effectiveFromUtc);
     }
 
-    /// <summary>Calcule la commission prélevée sur un montant brut, bornée si nécessaire.</summary>
+    /// <summary>
+    /// Calcule la commission prélevée sur un montant brut, bornée si nécessaire.
+    ///
+    /// L'ARRONDI SUIT LA DEVISE DE LA RÈGLE, plus deux décimales en dur. La règle porte
+    /// déjà sa <see cref="Currency"/> — le barème est libellé dans une devise, sinon
+    /// <see cref="FixedFee"/>, <see cref="MinFee"/> et <see cref="MaxFee"/> ne
+    /// voudraient rien dire. En franc CFA, l'arrondi à deux décimales fabriquait une
+    /// commission à centimes qui remontait telle quelle au grand livre, alors qu'aucune
+    /// écriture ne peut porter un dixième de franc.
+    /// </summary>
     public decimal ComputeCommission(decimal grossAmount)
     {
-        var commission = decimal.Round(grossAmount * Rate, 2) + FixedFee;
+        var commission = Money.Round(grossAmount * Rate, Currency) + FixedFee;
 
         if (MinFee is { } min && commission < min)
         {

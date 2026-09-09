@@ -53,6 +53,39 @@ public static class GatewayWebhook
     }
 
     /// <summary>
+    /// Tolérance d'horloge acceptée sur l'horodatage d'un webhook signé.
+    ///
+    /// Cinq minutes : assez large pour absorber une dérive d'horloge serveur et une
+    /// nouvelle tentative du prestataire, assez étroit pour qu'un corps capturé cesse
+    /// vite d'être rejouable. Même valeur que la signature du service coursier, et
+    /// c'est délibéré : deux fenêtres différentes seraient deux raisonnements à tenir.
+    /// </summary>
+    public static readonly TimeSpan MaxClockSkew = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// L'horodatage d'un webhook signé est-il dans la fenêtre acceptable ?
+    ///
+    /// Un horodatage ILLISIBLE est refusé, jamais ignoré : il n'y a aucune raison
+    /// légitime pour qu'un prestataire envoie autre chose qu'un temps Unix en
+    /// secondes, et « je ne comprends pas, donc j'accepte » est la forme la plus
+    /// courante du fail-open.
+    /// </summary>
+    public static bool IsWithinClockSkew(string? unixSeconds, DateTimeOffset? now = null)
+    {
+        if (!long.TryParse(unixSeconds, out var seconds))
+        {
+            return false;
+        }
+
+        var sent = DateTimeOffset.FromUnixTimeSeconds(seconds);
+        var reference = now ?? DateTimeOffset.UtcNow;
+
+        // Valeur absolue : une horloge prestataire EN AVANCE est aussi suspecte
+        // qu'un rejeu tardif, et l'accepter rendrait la fenêtre unilatérale.
+        return (reference - sent).Duration() <= MaxClockSkew;
+    }
+
+    /// <summary>
     /// Vérifie la signature puis normalise le payload : lit le type d'événement
     /// dans <paramref name="eventTypeField"/>, mappe le résultat et extrait la
     /// référence de corrélation.

@@ -40,39 +40,160 @@ internal static class CartPricer
         // ═════════════════════════════════════════════════════════════════════════
         var isFirstOrder = !await ordering.HasPlacedOrderAsync(cart.BuyerId, cancellationToken);
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE SOUS-TOTAL DU PANIER SE CALCULE AVANT LA BOUCLE, PAS PENDANT.
+        //
+        // Il alimente les CONDITIONS d'éligibilité (« à partir de 50 000 d'achat ») et
+        // la remise de panier. On passait auparavant le sous-total de la LIGNE, sous un
+        // champ nommé `Subtotal` : une promo à seuil était refusée sur un panier de
+        // 100 000 fait de dix lignes à 10 000, et accordée sur TOUTES les lignes dès
+        // qu'une seule franchissait le seuil. Deux erreurs symétriques, du même oubli.
+        // ═════════════════════════════════════════════════════════════════════════
+        var cartSubtotal = cart.Items.Sum(i => i.UnitBaseAmount * i.Quantity);
+        var totalQuantity = cart.Items.Sum(i => i.Quantity);
+
         foreach (var item in cart.Items)
         {
+            var lineAmount = item.UnitBaseAmount * item.Quantity;
+
             var request = new PriceRequest(
-                BaseAmount: item.UnitBaseAmount,
+                LineAmount: lineAmount,
                 Currency: item.Currency,
                 ProductId: item.ProductId,
                 CategoryId: item.CategoryId,
                 SellerId: item.SellerId,
                 Quantity: item.Quantity,
-                Subtotal: item.UnitBaseAmount * item.Quantity,
+                CartSubtotal: cartSubtotal,
+                TotalQuantity: totalQuantity,
                 Code: cart.PromotionCode,
                 IsFirstOrder: isFirstOrder);
 
             var b = await pricing.CalculatePriceAsync(request, cancellationToken);
 
-            var lineSeller = b.SellerDiscount * item.Quantity;
-            var linePlatform = b.PlatformDiscount * item.Quantity;
-            var lineTotal = b.FinalAmount * item.Quantity;
-
+            // ─────────────────────────────────────────────────────────────────────
+            // PLUS AUCUNE MULTIPLICATION PAR LA QUANTITÉ ICI.
+            //
+            // Pricing reçoit désormais le montant de la LIGNE et rend des montants de
+            // LIGNE. Multiplier le résultat, comme on le faisait, revenait à appliquer
+            // une remise à montant fixe une fois par article : 500 devenaient 1 500 sur
+            // une ligne de trois.
+            //
+            // Effet de bord bienvenu : un pourcentage n'est plus arrondi par unité puis
+            // multiplié, mais arrondi une seule fois sur la ligne.
+            // ─────────────────────────────────────────────────────────────────────
             lines.Add(new CartLineSummary(
                 item.OfferId, item.ProductId, item.CategoryId, item.SellerId, item.Sku,
                 item.ShipFromLocationId, item.Quantity, item.UnitBaseAmount,
-                b.SellerDiscount, b.PlatformDiscount, b.FinalAmount, lineTotal, item.Currency,
+                b.SellerDiscount, b.PlatformDiscount,
+                UnitPriceOf(b.FinalAmount, item.Quantity), b.FinalAmount, item.Currency,
                 item.CommissionRate, item.ProviderFeeRate));
 
-            subtotal += item.UnitBaseAmount * item.Quantity;
-            totalSeller += lineSeller;
-            totalPlatform += linePlatform;
-            grand += lineTotal;
+            subtotal += lineAmount;
+            totalSeller += b.SellerDiscount;
+            totalPlatform += b.PlatformDiscount;
+            grand += b.FinalAmount;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA REMISE DE PANIER : UN SEUL APPEL, PUIS UNE RÉPARTITION EN RESTE.
+        //
+        // Une remise à montant fixe est une remise d'ORDRE. Calculée ligne par ligne,
+        // elle est retirée autant de fois qu'il y a de lignes — c'était le défaut, et
+        // il se cumulait avec la multiplication par la quantité.
+        //
+        // La répartition proportionnelle est indispensable : le règlement vendeur lit
+        // `SellerDiscount` et `PlatformDiscount` SUR CHAQUE LIGNE, et une remise qui ne
+        // serait imputée nulle part ferait payer la plateforme sans qu'elle le sache.
+        // La DERNIÈRE ligne reçoit le reste plutôt qu'une part arrondie : c'est ce qui
+        // garantit que la somme des parts vaut exactement la remise, au franc près.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (lines.Count > 0 && cartSubtotal > 0m)
+        {
+            var cartDiscount = await pricing.CalculateCartDiscountAsync(
+                new CartDiscountRequest(cartSubtotal, cart.Currency, totalQuantity, cart.PromotionCode, isFirstOrder),
+                cancellationToken);
+
+            if (cartDiscount.Total > 0m)
+            {
+                // Plafonnée au total déjà remisé : les remises de ligne ont pu absorber
+                // une partie du panier, et cumuler sans borne rendrait un total négatif.
+                var seller = Math.Min(cartDiscount.SellerDiscount, grand);
+                var platform = Math.Min(cartDiscount.PlatformDiscount, grand - seller);
+
+                Distribute(lines, seller, platform, grand);
+
+                totalSeller += seller;
+                totalPlatform += platform;
+                grand -= seller + platform;
+            }
         }
 
         return new CartSummary(
             cart.Id.Value, cart.BuyerId, cart.Currency, cart.Status.ToString(),
             lines, subtotal, totalSeller, totalPlatform, grand, cart.PromotionCode);
+    }
+
+    /// <summary>
+    /// Prix unitaire AFFICHÉ, déduit du total de ligne.
+    ///
+    /// Purement indicatif : le montant qui fait foi est le total de ligne, seul à être
+    /// arrondi une fois. Reconstituer l'unitaire par division peut produire un chiffre
+    /// qui, remultiplié, ne redonne pas exactement la ligne — c'est normal, et c'est
+    /// pourquoi aucun calcul d'argent ne doit repartir de cette valeur.
+    /// </summary>
+    private static decimal UnitPriceOf(decimal lineAmount, int quantity)
+        => quantity <= 0 ? lineAmount : decimal.Round(lineAmount / quantity, 2);
+
+    /// <summary>
+    /// Répartit une remise de panier sur les lignes, au prorata de leur poids, la
+    /// dernière ligne prenant le RESTE.
+    ///
+    /// Le reste, et non un arrondi de plus : trois lignes égales et une remise de 500
+    /// donneraient 166,67 chacune, soit 500,01. Un centime créé de rien à chaque
+    /// commande, invisible et permanent.
+    /// </summary>
+    private static void Distribute(
+        List<CartLineSummary> lines, decimal sellerDiscount, decimal platformDiscount, decimal weightTotal)
+    {
+        if (weightTotal <= 0m)
+        {
+            return;
+        }
+
+        var sellerLeft = sellerDiscount;
+        var platformLeft = platformDiscount;
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            var isLast = i == lines.Count - 1;
+
+            var sellerPart = isLast
+                ? sellerLeft
+                : Math.Min(sellerLeft, decimal.Round(sellerDiscount * line.LineTotal / weightTotal, 2));
+            var platformPart = isLast
+                ? platformLeft
+                : Math.Min(platformLeft, decimal.Round(platformDiscount * line.LineTotal / weightTotal, 2));
+
+            // Une ligne ne peut pas devenir négative : ce qu'elle ne peut pas absorber
+            // reste dans l'enveloppe et retombe sur les suivantes.
+            var absorbable = line.LineTotal;
+            if (sellerPart + platformPart > absorbable)
+            {
+                sellerPart = Math.Min(sellerPart, absorbable);
+                platformPart = absorbable - sellerPart;
+            }
+
+            sellerLeft -= sellerPart;
+            platformLeft -= platformPart;
+
+            lines[i] = line with
+            {
+                SellerDiscount = line.SellerDiscount + sellerPart,
+                PlatformDiscount = line.PlatformDiscount + platformPart,
+                LineTotal = line.LineTotal - sellerPart - platformPart,
+                FinalUnitPrice = UnitPriceOf(line.LineTotal - sellerPart - platformPart, line.Quantity),
+            };
+        }
     }
 }

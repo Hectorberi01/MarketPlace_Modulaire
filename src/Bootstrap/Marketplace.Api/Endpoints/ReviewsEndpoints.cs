@@ -23,6 +23,27 @@ public static class ReviewsEndpoints
         reviews.MapGet("/product/{productId:guid}", ListByProductAsync).WithName("ListReviewsByProduct").AllowAnonymous();
         reviews.MapGet("/product/{productId:guid}/rating", GetRatingAsync).WithName("GetProductRating").AllowAnonymous();
 
+        // ════════════════════════════════════════════════════════════════════════
+        // `/flag` RESTE OUVERT À TOUT COMPTE AUTHENTIFIÉ — MAIS IL NE DÉPUBLIE PLUS.
+        //
+        // Cette route n'exigeait aucun rôle, là où ses deux voisines `/reject` et
+        // `/restore` exigent Admin/Modérateur, et `FlagReviewCommandHandler` ne
+        // contrôlait rien non plus. Comme `Review.Flag()` posait `Flagged` et que les
+        // trois lectures publiques ne gardaient que `Published`, l'écart de garde se
+        // payait cash : un compte créé la minute d'avant faisait tomber à zéro la note
+        // d'un produit ou d'une boutique, avis par avis.
+        //
+        // ALIGNER SUR LES VOISINES AURAIT ÉTÉ LE MAUVAIS RÉFLEXE. Signaler n'est pas
+        // modérer : c'est le geste par lequel un acheteur remonte un avis injurieux ou
+        // frauduleux. Le réserver aux modérateurs supprimerait le seul canal de
+        // remontée existant, pour corriger un défaut qui n'est pas ici.
+        //
+        // Le défaut était que le signalement AGISSAIT comme une sanction. Il a été
+        // corrigé à la source : `Flagged` marque désormais l'avis pour revue sans le
+        // retirer des lectures publiques (voir `ReviewRepository.PubliclyVisible`).
+        // Le geste redevenu inoffensif, il peut rester ouvert — et le retrait, lui,
+        // reste derrière `/reject`, sous rôle.
+        // ════════════════════════════════════════════════════════════════════════
         reviews.MapPost("/{id:guid}/flag", FlagAsync).WithName("FlagReview").RequireAuthorization();
         reviews.MapPost("/{id:guid}/reject", RejectAsync).WithName("RejectReview").RequireAuthorization(p => p.RequireRole("Admin", "Moderator"));
         reviews.MapPost("/{id:guid}/restore", RestoreAsync).WithName("RestoreReview").RequireAuthorization(p => p.RequireRole("Admin", "Moderator"));
@@ -64,7 +85,10 @@ public static class ReviewsEndpoints
         return result.Match(rating => Results.Ok(rating));
     }
 
-    /// <summary>Signale un avis (modération).</summary>
+    /// <summary>
+    /// Signale un avis : le marque pour revue de modération. NE LE DÉPUBLIE PAS — voir
+    /// l'encadré sur la route.
+    /// </summary>
     private static async Task<IResult> FlagAsync(Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new FlagReviewCommand(id), ct);
@@ -78,7 +102,7 @@ public static class ReviewsEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Restaure un avis signalé / rejeté (Admin / Modérateur).</summary>
+    /// <summary>Lève le signalement ou le rejet d'un avis (Admin / Modérateur).</summary>
     private static async Task<IResult> RestoreAsync(Guid id, ISender sender, CancellationToken ct)
     {
         var result = await sender.Send(new RestoreReviewCommand(id), ct);

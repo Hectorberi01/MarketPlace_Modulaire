@@ -12,16 +12,23 @@ namespace Marketplace.Api.Endpoints;
 /// API — L'ENTRÉE DU SERVICE COURSIER.
 ///
 /// ═════════════════════════════════════════════════════════════════════════════
-/// UNE SEULE ROUTE, ET ELLE FAIT SORTIR DE L'ARGENT.
+/// DEUX ROUTES : LES DEUX ISSUES D'UNE COURSE. L'UNE FAIT SORTIR DE L'ARGENT.
 ///
 /// Le service de dispatch est déployé à part (docs/CDC_Service_Livraison_Coursier.md) :
 /// il tient les courses, les positions et le temps réel, et la marketplace n'en sait
 /// rien. Quand une course est livrée, il l'annonce ici, avec la rémunération qu'il a
-/// calculée — c'est lui qui connaît la distance et les points de ramassage.
+/// calculée — c'est lui qui connaît la distance et les points de ramassage. Quand elle
+/// ÉCHOUE, il l'annonce aussi : sans quoi l'expédition reste « en préparation » pour
+/// toujours et personne, pas même le vendeur qui détient le colis, ne l'apprend.
 ///
-/// Cela veut dire, très concrètement, QUE L'APPELANT DE CETTE ROUTE DÉCIDE COMBIEN SORT
-/// DU PORTEFEUILLE DE LA PLATEFORME. D'où trois protections, et aucune n'est
-/// décorative :
+/// LES DEUX ANNONCES PASSENT PAR LE MÊME DISPOSITIF, MAIS N'ENGAGENT PAS LA MÊME CHOSE.
+/// « Livrée » décide combien sort du portefeuille de la plateforme ; « en échec » ne
+/// porte AUCUN montant et ne crédite rien — aucune livraison n'a eu lieu. Ce qui suit
+/// vaut donc pleinement pour la première, et reste exigé de la seconde parce qu'un
+/// faux échec est aussi une attaque : il fait notifier des vendeurs et immobilise des
+/// commandes payées.
+///
+/// D'où trois protections, et aucune n'est décorative :
 ///
 ///  • SIGNATURE HMAC obligatoire, fermée par défaut. Pas de secret configuré en
 ///    production = appel rejeté. Un webhook non signé qui crédite un portefeuille,
@@ -111,23 +118,53 @@ public static class DeliveryEndpoints
             .WithName("DeliveryCourseCompleted")
             .AllowAnonymous();
 
+        // L'AUTRE ISSUE. Cette route N'EXISTAIT PAS alors que le service coursier l'appelle :
+        // le drain recevait des 404, réessayait dix fois, puis abandonnait le message. La
+        // marketplace n'apprenait donc JAMAIS un échec de course, et l'expédition restait
+        // « en préparation » indéfiniment — sur une commande déjà payée.
+        delivery.MapPost("/courses/failed", CourseFailedAsync)
+            .WithName("DeliveryCourseFailed")
+            .AllowAnonymous();
+
         return app;
     }
 
     /// <summary>
-    /// Une course a été livrée : crédite le coursier de la rémunération annoncée.
+    /// Lit, AUTHENTIFIE et désérialise une annonce du service coursier. Rend soit la
+    /// réponse d'échec à renvoyer telle quelle, soit la charge utile.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// UN SEUL EXEMPLAIRE DU DISPOSITIF, PARCE QUE DEUX EXEMPLAIRES DÉRIVENT.
+    ///
+    /// Ce préambule était écrit dans le corps de l'unique route. À la deuxième, le
+    /// recopier aurait créé deux versions d'une vérification de signature — et la
+    /// question n'est pas de savoir SI elles divergent, mais quand : on ajoute une
+    /// fenêtre de fraîcheur ici, un contrôle de longueur là, et la route recopiée reste
+    /// en arrière. Une faiblesse de ce genre ne se voit à la lecture d'AUCUN des deux
+    /// fichiers, puisque chacun paraît complet.
+    ///
+    /// MÊME SECRET, MÊME EN-TÊTE, MÊME PLAFOND, MÊME 401 SANS DÉTAIL : ce n'est pas une
+    /// commodité d'écriture, c'est la garantie que les deux routes ne peuvent pas être
+    /// protégées différemment.
+    ///
+    /// Le corps est lu BRUT : la signature porte sur les octets reçus, pas sur un objet
+    /// re-sérialisé. Désérialiser d'abord puis re-sérialiser pour vérifier produirait une
+    /// chaîne différente (ordre des champs, espaces) et ferait échouer une signature
+    /// pourtant valide.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    private static async Task<IResult> CourseCompletedAsync(
-        HttpRequest http, ISender sender, IConfiguration configuration, CancellationToken ct)
+    /// <returns>
+    /// Exactement l'un des deux est non nul. Le compilateur ne peut pas l'exprimer, d'où
+    /// la double garde chez les appelants.
+    /// </returns>
+    private static async Task<(IResult? Rejection, TRequest? Request)> ReadSignedAsync<TRequest>(
+        HttpRequest http, IConfiguration configuration, CancellationToken ct)
+        where TRequest : class
     {
-        // Le corps est lu BRUT : la signature porte sur les octets reçus, pas sur un
-        // objet re-sérialisé. Désérialiser d'abord puis re-sérialiser pour vérifier
-        // produirait une chaîne différente (ordre des champs, espaces) et ferait échouer
-        // une signature pourtant valide.
         var rawBody = await ReadCappedBodyAsync(http, ct);
         if (rawBody is null)
         {
-            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            return (Results.StatusCode(StatusCodes.Status413PayloadTooLarge), null);
         }
 
         var secret = configuration[SecretKey];
@@ -136,28 +173,49 @@ public static class DeliveryEndpoints
 
         // Signature ET fraîcheur. Un corps signé capturé une fois — journal, proxy,
         // dépôt de logs — restait payable indéfiniment tant que rien n'horodatait
-        // l'appel. Cette route fait sortir de l'argent : c'est la moins bien placée
-        // pour accepter un message dont on ne sait pas quand il a été émis.
+        // l'appel. Ces routes font sortir de l'argent ou immobilisent une commande
+        // payée : ce sont les moins bien placées pour accepter un message dont on ne
+        // sait pas quand il a été émis.
         if (!PartnerServiceSignature.Verify(rawBody, timestamp, signature, secret))
         {
             // 401 sans détail : dire POURQUOI la signature est refusée aiderait surtout
             // celui qui essaie d'en fabriquer une.
-            return Results.Unauthorized();
+            return (Results.Unauthorized(), null);
         }
 
-        CourseCompletedRequest? request;
+        TRequest? request;
         try
         {
-            request = JsonSerializer.Deserialize<CourseCompletedRequest>(
+            request = JsonSerializer.Deserialize<TRequest>(
                 rawBody, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         }
         catch (JsonException)
         {
-            return Results.BadRequest(new { error = "invalid_payload" });
+            return (Results.BadRequest(new { error = "invalid_payload" }), null);
+        }
+
+        return request is null
+            ? (Results.BadRequest(new { error = "invalid_payload" }), null)
+            : (null, request);
+    }
+
+    /// <summary>
+    /// Une course a été livrée : crédite le coursier de la rémunération annoncée.
+    /// </summary>
+    private static async Task<IResult> CourseCompletedAsync(
+        HttpRequest http, ISender sender, IConfiguration configuration, CancellationToken ct)
+    {
+        var (rejection, request) = await ReadSignedAsync<CourseCompletedRequest>(http, configuration, ct);
+        if (rejection is not null)
+        {
+            return rejection;
         }
 
         if (request is null)
         {
+            // Inatteignable : ReadSignedAsync rend une réponse dès qu'il n'y a pas de
+            // charge. La garde est là pour que le contrat reste vrai si cette méthode
+            // change un jour, plutôt que de le supposer avec un « ! ».
             return Results.BadRequest(new { error = "invalid_payload" });
         }
 
@@ -199,6 +257,69 @@ public static class DeliveryEndpoints
     }
 
     /// <summary>
+    /// Une course a ÉCHOUÉ : le colis n'est jamais parti. On le consigne sur les
+    /// expéditions concernées et on prévient le vendeur. ON NE CRÉDITE RIEN.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CE QUE LA MARKETPLACE FAIT DE CETTE ANNONCE, ET POURQUOI PAS AUTRE CHOSE.
+    ///
+    /// Une seule commande est envoyée, et elle n'engage aucun mouvement d'argent. Trois
+    /// décisions la caractérisent :
+    ///
+    ///  • ON NE PAIE PAS LE COURSIER. Aucune livraison n'a eu lieu ; l'annonce ne porte
+    ///    d'ailleurs aucun montant, précisément pour qu'aucun code de ce côté-ci ne
+    ///    puisse en déduire un paiement. Un éventuel dédommagement de course tentée est
+    ///    une décision d'exploitation, pas une conséquence de webhook.
+    ///
+    ///  • L'EXPÉDITION RESTE « EN PRÉPARATION ». C'est l'état d'où le vendeur peut
+    ///    repartir : `Shipment.MarkShipped` l'accepte et confie la part à un transporteur
+    ///    tiers. La faire avancer ou l'annuler condamnerait une commande DÉJÀ PAYÉE.
+    ///
+    ///  • LE VENDEUR EST PRÉVENU, par événement d'intégration consommé par
+    ///    Notifications. C'est le seul point qui rend la correction utile : lui seul
+    ///    détient le colis et peut le faire repartir.
+    ///
+    /// IDEMPOTENCE, PARCE QUE LE DRAIN REJOUE JUSQU'À DIX FOIS. Elle est portée par
+    /// l'identifiant de course, à deux endroits : sur l'expédition
+    /// (`Shipment.FailedDeliveryJobId`), qui absorbe les rejeux de CET appel, et sur la
+    /// notification (`NotifyOnceAsync`), qui absorbe ceux de l'outbox — lesquels
+    /// surviennent après la transaction et échappent donc au premier verrou.
+    ///
+    /// 204 EN CAS DE SUCCÈS, comme la livraison : le drain arrête de réessayer. Un échec
+    /// répond en erreur pour qu'il réessaie, puis mette en lettre morte — et la lettre
+    /// morte est journalisée en Critical par l'outbox du service coursier.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> CourseFailedAsync(
+        HttpRequest http, ISender sender, IConfiguration configuration, CancellationToken ct)
+    {
+        var (rejection, request) = await ReadSignedAsync<CourseFailedRequest>(http, configuration, ct);
+        if (rejection is not null)
+        {
+            return rejection;
+        }
+
+        if (request is null)
+        {
+            return Results.BadRequest(new { error = "invalid_payload" });
+        }
+
+        var result = await sender.Send(
+            new MarkOrderCourierDeliveryFailedCommand(
+                request.CourierId,
+                request.OrderId,
+                request.DeliveryJobId,
+                // Le motif est normalisé par l'agrégat, pas ici : un motif absent ne doit
+                // JAMAIS empêcher l'enregistrement de l'échec, sinon on retombe dans le
+                // silence qu'on corrige.
+                request.Reason ?? string.Empty,
+                request.FailedAtUtc),
+            ct);
+
+        return result.Match(() => Results.NoContent());
+    }
+
+    /// <summary>
     /// Annonce d'une course livrée.
     /// </summary>
     /// <param name="DeliveryJobId">
@@ -215,4 +336,36 @@ public static class DeliveryEndpoints
         Guid DeliveryJobId,
         decimal Amount,
         string? Currency = null);
+
+    /// <summary>
+    /// Annonce d'une course en échec. Miroir exact de `CourierDeliveryFailedPayload` du
+    /// service de dispatch — c'est un CONTRAT ENTRE DEUX DÉPLOIEMENTS, et il ne se change
+    /// que des deux côtés à la fois.
+    /// </summary>
+    /// <param name="CourierId">
+    /// Qui a renoncé. Ne décide de rien ici : il n'est pas payé, et il n'est pas
+    /// sanctionné par une route. Il est journalisé, sans quoi un coursier qui abandonne
+    /// systématiquement ses courses n'apparaîtrait nulle part.
+    /// </param>
+    /// <param name="OrderId">
+    /// LA COMMANDE À DÉBLOQUER. C'est par elle qu'on retrouve les expéditions figées :
+    /// l'annonce ne porte aucun identifiant d'expédition, parce qu'une course couvre la
+    /// commande entière.
+    /// </param>
+    /// <param name="DeliveryJobId">
+    /// LA CLÉ D'IDEMPOTENCE, comme pour la livraison : deux annonces du même échec ne
+    /// produisent qu'un seul traitement et une seule notification vendeur.
+    /// </param>
+    /// <param name="Reason">
+    /// Le motif tel que la course le porte, déjà normalisé par le service de dispatch.
+    /// Nullable ici parce qu'un corps JSON peut toujours l'omettre : c'est l'agrégat qui
+    /// garantit un libellé exploitable, pas la confiance dans l'appelant.
+    /// </param>
+    /// <param name="FailedAtUtc">Instant de l'abandon, daté par le service de dispatch.</param>
+    public sealed record CourseFailedRequest(
+        Guid CourierId,
+        Guid OrderId,
+        Guid DeliveryJobId,
+        string? Reason,
+        DateTime FailedAtUtc);
 }

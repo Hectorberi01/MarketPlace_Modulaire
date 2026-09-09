@@ -19,4 +19,13 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- Les vérificateurs de signature des passerelles sont `internal` : ils ne font
+         pas partie du contrat du module. Ils doivent pourtant être testés DIRECTEMENT
+         — le test qui prétendait les verrouiller exerçait en réalité le helper
+         générique, que ces passerelles ne traversent jamais. -->
+    <InternalsVisibleTo Include="Payments.UnitTests" />
+  </ItemGroup>
+
 </Project>

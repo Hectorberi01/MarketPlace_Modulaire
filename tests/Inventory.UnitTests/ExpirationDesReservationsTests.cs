@@ -71,9 +71,13 @@ public class ExpirationDesReservationsTests
     /// L'EXPIRATION DANS `ConfirmReservation`.
     ///
     /// Un paiement Mobile Money peut aboutir après la fenêtre. La commande est payée :
-    /// le stock physique doit partir. Si la confirmation échouait,
-    /// `ConfirmOrderPaymentCommandHandler` — qui ignore le résultat — la laisserait
-    /// échouer EN SILENCE : client débité, stock jamais décrémenté.
+    /// le stock physique doit partir.
+    ///
+    /// Si la confirmation échouait ici, le handler de paiement REFUSERAIT désormais de
+    /// confirmer la commande — il lit le résultat, ce qu'il ne faisait pas quand ce
+    /// test a été écrit. Un client débité verrait sa commande rester en attente. Le
+    /// filtre d'expiration reste donc exclu de cette méthode, pour la même raison
+    /// qu'avant, mais la conséquence a changé de nature : bruyante au lieu de muette.
     /// ═══════════════════════════════════════════════════════════════════════════
     /// </summary>
     [Fact]

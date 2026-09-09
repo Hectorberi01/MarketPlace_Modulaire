@@ -42,6 +42,12 @@ public sealed class MarketplaceClient : IMarketplaceClient
 
     private const string CourseCompletedPath = "/api/delivery/courses/completed";
 
+    /// <summary>
+    /// L'échec de course. MÊME SECRET, MÊME SIGNATURE, MÊME CONVENTION D'ADRESSE que la
+    /// livraison : c'est le même canal, avec un fait différent à annoncer.
+    /// </summary>
+    private const string CourseFailedPath = "/api/delivery/courses/failed";
+
     private readonly HttpClient _http;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MarketplaceClient> _logger;
@@ -56,6 +62,10 @@ public sealed class MarketplaceClient : IMarketplaceClient
     public Task SendCourierDeliveryCompletedAsync(
         string payloadJson, CancellationToken cancellationToken = default)
         => PostAsync(CourseCompletedPath, payloadJson, cancellationToken);
+
+    public Task SendCourierDeliveryFailedAsync(
+        string payloadJson, CancellationToken cancellationToken = default)
+        => PostAsync(CourseFailedPath, payloadJson, cancellationToken);
 
     private async Task PostAsync(string path, string body, CancellationToken cancellationToken)
     {

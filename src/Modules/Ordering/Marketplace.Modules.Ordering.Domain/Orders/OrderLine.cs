@@ -16,7 +16,7 @@ public sealed record OrderLineDraft(
     decimal UnitBasePrice,
     decimal SellerDiscount,
     decimal PlatformDiscount,
-    decimal FinalUnitPrice,
+    decimal LineTotal,
     decimal CommissionRate,
     decimal ProviderFeeRate);
 
@@ -43,7 +43,7 @@ public sealed class OrderLine : Entity<Guid>
         UnitBasePrice = draft.UnitBasePrice;
         SellerDiscount = draft.SellerDiscount;
         PlatformDiscount = draft.PlatformDiscount;
-        FinalUnitPrice = draft.FinalUnitPrice;
+        LineTotal = draft.LineTotal;
         CommissionRate = draft.CommissionRate;
         ProviderFeeRate = draft.ProviderFeeRate;
     }
@@ -57,7 +57,30 @@ public sealed class OrderLine : Entity<Guid>
     public decimal UnitBasePrice { get; private set; }
     public decimal SellerDiscount { get; private set; }
     public decimal PlatformDiscount { get; private set; }
-    public decimal FinalUnitPrice { get; private set; }
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// MONTANT DE LA LIGNE, REMISES DÉDUITES. STOCKÉ, ET NON CALCULÉ.
+    ///
+    /// C'était `FinalUnitPrice * Quantity`, et les remises étaient elles aussi
+    /// UNITAIRES. Ce modèle ne peut pas porter une remise de panier : une remise à
+    /// montant fixe — « −500 sur votre commande » — n'a pas d'équivalent unitaire, et
+    /// la répartir en la divisant par la quantité crée un arrondi par article, donc un
+    /// écart entre le total affiché à l'acheteur et le total facturé.
+    ///
+    /// Le montant de ligne devient donc la valeur de référence, arrondie UNE fois, et
+    /// le prix unitaire un affichage déduit. C'est le même principe que partout
+    /// ailleurs dans ce dépôt : la valeur qui engage est stockée, celle qui informe
+    /// est calculée.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal LineTotal { get; private set; }
+
+    /// <summary>
+    /// Prix unitaire AFFICHÉ, remises comprises. Purement indicatif : remultiplié par
+    /// la quantité, il peut manquer <see cref="LineTotal"/> de quelques centimes quand
+    /// une remise de panier ne tombe pas juste. Aucun calcul d'argent ne doit en partir.
+    /// </summary>
+    public decimal FinalUnitPrice => Quantity <= 0 ? LineTotal : decimal.Round(LineTotal / Quantity, 2);
 
     // ---- Barème figé --------------------------------------------------------------
     //
@@ -80,5 +103,5 @@ public sealed class OrderLine : Entity<Guid>
     public decimal ProviderFeeRate { get; private set; }
 
     /// <summary>Total payé pour la ligne (prix final unitaire × quantité).</summary>
-    public decimal LineTotal => FinalUnitPrice * Quantity;
+
 }

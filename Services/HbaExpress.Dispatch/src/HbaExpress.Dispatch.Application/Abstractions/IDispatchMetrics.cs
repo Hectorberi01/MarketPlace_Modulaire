@@ -38,6 +38,18 @@ public interface IDispatchMetrics
     void JobDelivered();
 
     /// <summary>
+    /// Une course DÉCLARÉE EN ÉCHEC par son coursier : acheteur introuvable, colis
+    /// refusé, rien à remettre.
+    ///
+    /// Elle n'était comptée nulle part, et rien d'autre ne la signalait : l'échec ne
+    /// produisait ni message sortant ni journal. Un pic d'échecs — une commune mal
+    /// desservie, un quartier introuvable, un mode opératoire abusif — était donc
+    /// strictement invisible. Ce compteur n'a pas vocation à rester à zéro : quelques
+    /// échecs sont normaux, c'est leur TAUX qui se surveille.
+    /// </summary>
+    void JobFailed();
+
+    /// <summary>
     /// Une course ABANDONNÉE faute de coursier. Doit rester à zéro tant que le repli en
     /// cascade n'existe pas : il n'y a personne derrière.
     /// </summary>
@@ -81,6 +93,10 @@ public sealed class NullDispatchMetrics : IDispatchMetrics
     }
 
     public void JobDelivered()
+    {
+    }
+
+    public void JobFailed()
     {
     }
 

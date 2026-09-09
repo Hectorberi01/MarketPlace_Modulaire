@@ -240,8 +240,9 @@ public static class SellerOrderEndpoints
         {
             Lines = lines,
             Subtotal = subtotal,
-            TotalSellerDiscount = lines.Sum(l => l.SellerDiscount * l.Quantity),
-            TotalPlatformDiscount = lines.Sum(l => l.PlatformDiscount * l.Quantity),
+            // Montants de LIGNE : plus de multiplication par la quantité.
+            TotalSellerDiscount = lines.Sum(l => l.SellerDiscount),
+            TotalPlatformDiscount = lines.Sum(l => l.PlatformDiscount),
             GrandTotal = subtotal
         };
     }

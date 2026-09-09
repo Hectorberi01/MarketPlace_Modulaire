@@ -19,5 +19,6 @@ internal static class ShipmentMapper
         s.ShippedAtUtc,
         s.DeliveredAtUtc,
         s.DeliveryMode?.ToString(),
+        s.CourierFailureReason,
         s.Items.Select(i => new ShipmentItemSummary(i.Sku, i.Quantity)).ToList());
 }

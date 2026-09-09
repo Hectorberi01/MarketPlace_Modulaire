@@ -138,6 +138,10 @@ public interface ICustomerRefundRepository
     /// </summary>
     Task<decimal> SumActiveCashForOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
-    /// <summary>Remboursements clients encore « en cours » (pour la réconciliation).</summary>
-    Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Remboursements clients encore « en cours » (pour la réconciliation), BORNÉS EN
+    /// BASE. Le lot était auparavant tronqué en mémoire après avoir tout matérialisé —
+    /// ce qui, sur une file qui ne se vide pas, revient à ne pas le borner du tout.
+    /// </summary>
+    Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(int take, CancellationToken cancellationToken = default);
 }

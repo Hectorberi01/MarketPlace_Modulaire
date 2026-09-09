@@ -109,11 +109,13 @@ public sealed class ReverseEarningsOnReturnRefundedHandler : IIntegrationEventHa
             return;
         }
 
+        // Même précision qu'à l'accrual : la devise du remboursement, pas l'unité en dur.
         var (commission, providerFee, sellerNet) = GrossSplit.Prorate(
             e.RefundAmount,
             accruedGross,
             earnings.Sum(x => x.CommissionAmount),
-            earnings.Sum(x => x.ProviderFeeAmount));
+            earnings.Sum(x => x.ProviderFeeAmount),
+            e.Currency);
 
         // La référence est le REMBOURSEMENT, pas la commande : deux retours sur la même
         // commande doivent rester distinguables au grand livre — et c'est cette

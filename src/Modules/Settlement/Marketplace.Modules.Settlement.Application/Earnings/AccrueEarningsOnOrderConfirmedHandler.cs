@@ -58,7 +58,12 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
 
         foreach (var line in order.Lines)
         {
-            var gross = (line.UnitBasePrice - line.SellerDiscount) * line.Quantity;
+            // La remise vendeur est un montant de LIGNE : elle se soustrait au total de
+            // ligne, elle ne se multiplie plus par la quantité. La formule précédente
+            // — `(prix unitaire − remise) × quantité` — supposait une remise unitaire,
+            // et une remise de panier répartie sur cette ligne l'aurait alors reprise
+            // au vendeur autant de fois qu'il y avait d'articles.
+            var gross = (line.UnitBasePrice * line.Quantity) - line.SellerDiscount;
             if (gross < 0m)
             {
                 gross = 0m;
@@ -78,8 +83,10 @@ public sealed class AccrueEarningsOnOrderConfirmedHandler : IIntegrationEventHan
             // La ligne porte désormais son propre barème. Un changement de taux
             // n'affecte plus que ce qui est vendu après lui.
             // ═════════════════════════════════════════════════════════════════════
+            // La devise de la commande décide de la précision des deux parts : le
+            // partage arrondissait à l'unité en dur, ce qui n'est juste qu'en franc CFA.
             var (commission, providerFee, _) =
-                GrossSplit.Split(gross, line.CommissionRate, line.ProviderFeeRate);
+                GrossSplit.Split(gross, line.CommissionRate, line.ProviderFeeRate, order.Currency);
 
             var earning = SellerEarning.Create(
                 order.Id, line.OfferId, line.SellerId, line.ProductId, gross, commission, providerFee, order.Currency);

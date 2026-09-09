@@ -17,6 +17,11 @@ internal sealed class NotificationRepository : INotificationRepository
     public async Task<Notification?> GetByIdAsync(NotificationId id, CancellationToken cancellationToken = default)
         => await _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
 
+    public async Task<bool> ExistsByDeduplicationKeyAsync(string deduplicationKey, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications
+            .AsNoTracking()
+            .AnyAsync(n => n.DeduplicationKey == deduplicationKey, cancellationToken);
+
     public async Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, CancellationToken cancellationToken = default)
         => await _dbContext.Notifications
             .Where(n => n.RecipientUserId == recipientUserId)

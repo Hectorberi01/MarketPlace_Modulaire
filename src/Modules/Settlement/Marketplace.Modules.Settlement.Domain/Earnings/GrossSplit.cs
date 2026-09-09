@@ -1,3 +1,5 @@
+using Marketplace.BuildingBlocks.Domain.Primitives;
+
 namespace Marketplace.Modules.Settlement.Domain.Earnings;
 
 /// <summary>
@@ -30,8 +32,15 @@ public static class GrossSplit
     /// un barème d'aujourd'hui à un prix calculé hier fait toucher au vendeur un net
     /// différent de celui qu'il a fixé.
     /// </summary>
+    /// <param name="currency">
+    /// Devise du brut. Elle décide de la PRÉCISION des deux parts arrondies : ce calcul
+    /// arrondissait à l'unité en dur, ce qui est juste en franc CFA et faux partout
+    /// ailleurs — en euro, il rabotait les centimes de la commission et les déversait
+    /// dans le net vendeur, puisque le net est le reste. Le défaut vaut
+    /// <see cref="Money.DefaultCurrency"/>, la devise de la place.
+    /// </param>
     public static (decimal Commission, decimal ProviderFee, decimal Net) Split(
-        decimal gross, decimal commissionRate, decimal providerFeeRate)
+        decimal gross, decimal commissionRate, decimal providerFeeRate, string currency = Money.DefaultCurrency)
     {
         if (gross <= 0m)
         {
@@ -40,8 +49,8 @@ public static class GrossSplit
 
         var total = commissionRate + providerFeeRate;
 
-        var commission = Math.Round(gross * commissionRate / (1 + total));
-        var providerFee = Math.Round(gross * providerFeeRate / (1 + total));
+        var commission = Money.Round(gross * commissionRate / (1 + total), currency);
+        var providerFee = Money.Round(gross * providerFeeRate / (1 + total), currency);
 
         return (commission, providerFee, gross - commission - providerFee);
     }
@@ -54,8 +63,12 @@ public static class GrossSplit
     /// barème a changé entre la vente et le retour — recalculer à partir de taux
     /// reprendrait au vendeur un montant qui ne correspond à rien de ce qu'il a reçu.
     /// </summary>
+    /// <param name="currency">
+    /// Devise de l'écriture contre-passée : même rôle que dans <see cref="Split"/>.
+    /// </param>
     public static (decimal Commission, decimal ProviderFee, decimal Net) Prorate(
-        decimal refundAmount, decimal accruedGross, decimal accruedCommission, decimal accruedProviderFee)
+        decimal refundAmount, decimal accruedGross, decimal accruedCommission, decimal accruedProviderFee,
+        string currency = Money.DefaultCurrency)
     {
         if (refundAmount <= 0m || accruedGross <= 0m)
         {
@@ -65,8 +78,8 @@ public static class GrossSplit
         // Un remboursement ne peut pas excéder ce qui a été comptabilisé.
         var ratio = Math.Min(refundAmount / accruedGross, 1m);
 
-        var commission = Math.Round(accruedCommission * ratio);
-        var providerFee = Math.Round(accruedProviderFee * ratio);
+        var commission = Money.Round(accruedCommission * ratio, currency);
+        var providerFee = Money.Round(accruedProviderFee * ratio, currency);
 
         return (commission, providerFee, refundAmount - commission - providerFee);
     }

@@ -53,9 +53,12 @@ x-app-env: &app-env
   #     première fois — le commentaire précédent le racontait, tout en laissant le
   #     défaut fautif en place.
   #
-  #   • WebhookSecret vide + `AllowUnsignedWhenSecretMissing = false` en production
-  #     (Program.cs) = tous les rappels FedaPay REJETÉS. Les acheteurs sont débités
-  #     et aucune commande n'est jamais confirmée. Panne totale, parfaitement muette.
+  #   • WebhookSecret vide en production = LE DÉMARRAGE EST REFUSÉ (garde-fou dans
+  #     PaymentsModuleInstaller). Ce commentaire affirmait auparavant que les rappels
+  #     seraient « rejetés » ; c'était l'inverse — `VerifyFedaPaySignature` retournait
+  #     `true` sur secret vide, donc TOUS les rappels étaient acceptés, signés ou non.
+  #     Le `:?` ci-dessous était la seule protection réelle, et il ne couvrait ni le
+  #     staging ni un démarrage hors compose. Le garde-fou vit désormais dans le code.
   #
   # `:?` fait échouer le `docker compose up` si la variable manque. Bruyant au
   # déploiement plutôt que silencieux en exploitation.
@@ -90,7 +93,7 @@ x-app-env: &app-env
   # Vider REMBG_URL désactive proprement la fonction : l'image reste inchangée et les
   # interfaces cessent de promettre un détourage (drapeau de capacité).
   #
-  # ⚠️ MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
+  # MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
   # (« bria-rmbg ») : ses poids sont en CC BY-NC 4.0, donc interdits sur une place de
   # marché. Le code refuse d'ailleurs de les activer.
   # ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +154,7 @@ x-app-common: &app-common
 
 services:
   # ---------------- Détourage d'image (local, sans service tiers) ----------------
-  # ⚠️ AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ :
+  # AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ :
   # il n'a NI authentification NI limitation de débit, et son endpoint GET
   # /api/remove va chercher une URL pour le compte de l'appelant. La 2.0.75 y a ajouté
   # un filtrage des adresses privées, mais un endpoint d'inférence libre reste une
@@ -180,7 +183,7 @@ services:
       # simultanées — c'est le rôle de `--threads` dans la commande ci-dessus.
       OMP_NUM_THREADS: "${REMBG_THREADS:-2}"
     volumes:
-      # ⚠️ MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
+      # MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
       #
       # L'image amont exécute `rembg d u2net` à la construction : u2net.onnx est déjà
       # dans une couche, à cet endroit. Le déplacer avec U2NET_HOME écartait ce
@@ -324,7 +327,7 @@ services:
       # sans même transmettre la requête. C'est une défense en profondeur : même si un
       # `RequireAuthorization()` était oublié demain, la route ne serait pas atteignable.
       #
-      # ⚠️ SI VOUS AJOUTEZ UN ENDPOINT QUI DOIT ÊTRE APPELÉ DE L'EXTÉRIEUR (un nouveau
+      # SI VOUS AJOUTEZ UN ENDPOINT QUI DOIT ÊTRE APPELÉ DE L'EXTÉRIEUR (un nouveau
       # PSP, par exemple), il faut l'ajouter ICI, sinon il répondra 404 — et le
       # symptôme (« le PSP ne nous rappelle jamais ») ne pointera pas vers ce fichier.
       # ─────────────────────────────────────────────────────────────────────────
@@ -459,7 +462,7 @@ services:
 
   # --- CONSOLE ADMIN (Next.js, image poussée par le dépôt HbaEpress_admin) -------
   # ---------------- Console VENDEUR (Next.js) ----------------
-  # ⚠️ ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
+  # ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
   #
   # Ansible lance `docker compose up -d --no-build` sur TOUTE la pile. Si l'image
   # `seller-console` n'existe pas encore sur GHCR, ce déploiement ÉCHOUE — et il

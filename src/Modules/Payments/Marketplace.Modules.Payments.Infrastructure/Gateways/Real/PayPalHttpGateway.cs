@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.Modules.Payments.Application.Abstractions.Gateways;
 
 namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Real;
@@ -22,11 +23,6 @@ namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Real;
 /// </summary>
 public sealed class PayPalHttpGateway : HttpPaymentGatewayBase
 {
-    private static readonly HashSet<string> ZeroDecimalCurrencies = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "XOF", "XAF", "XPF", "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV"
-    };
-
     private readonly PayPalOptions _options;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _cachedToken;
@@ -178,10 +174,15 @@ public sealed class PayPalHttpGateway : HttpPaymentGatewayBase
             ? id.GetString()
             : null;
 
+    /// <summary>
+    /// Montant au format PayPal (chaîne) : entier pour une devise sans subdivision,
+    /// deux décimales sinon. La liste des devises « zéro décimale » était recopiée en
+    /// tête de ce fichier ; elle vit maintenant dans <see cref="Money"/>, seule
+    /// détentrice de la précision de chaque devise.
+    /// </summary>
     private static string FormatAmount(decimal amount, string currency)
-        => ZeroDecimalCurrencies.Contains(currency)
-            ? ((long)Math.Round(amount)).ToString(CultureInfo.InvariantCulture)
-            : Math.Round(amount, 2).ToString("0.00", CultureInfo.InvariantCulture);
+        => Money.Round(amount, currency)
+            .ToString("F" + Money.DecimalsFor(currency), CultureInfo.InvariantCulture);
 
     private sealed record AccessTokenResponse(string access_token, string token_type, int expires_in);
 

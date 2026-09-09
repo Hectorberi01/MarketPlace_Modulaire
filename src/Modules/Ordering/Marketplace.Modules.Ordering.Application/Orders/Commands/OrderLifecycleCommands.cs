@@ -73,6 +73,19 @@ internal sealed class ConfirmOrderPaymentCommandHandler : ICommandHandler<Confir
             return Result.Failure(Error.NotFound("ordering.not_found", "Commande introuvable."));
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // REJEU : LA COMMANDE EST DÉJÀ CONFIRMÉE, C'EST UN SUCCÈS.
+        //
+        // L'outbox livre AU MOINS UNE FOIS. Sans cette garde, un second passage
+        // échouait sur `MarkPaid` — et cet échec devenant désormais une exception qui
+        // fait rejouer puis mettre en lettre morte, un rejeu parfaitement normal
+        // finirait en alerte. La garde doit précéder la remontée d'erreur, pas la suivre.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (order.Status is OrderStatus.Confirmed or OrderStatus.Delivered)
+        {
+            return Result.Success();
+        }
+
         var paid = order.MarkPaid();
         if (paid.IsFailure)
         {
@@ -88,10 +101,38 @@ internal sealed class ConfirmOrderPaymentCommandHandler : ICommandHandler<Confir
                 order.BuyerId, order.Id.Value, order.WalletApplied, order.Currency, cancellationToken);
         }
 
-        // Solde des réservations -> décrément du stock physique.
+        // ═════════════════════════════════════════════════════════════════════════
+        // SOLDE DES RÉSERVATIONS. LE RÉSULTAT SE LIT, IL NE SE JETTE PLUS.
+        //
+        // `ConfirmReservationAsync` renvoie un booléen, et ce booléen est significatif :
+        // il vaut faux quand l'article a disparu ou qu'aucune réservation ne subsiste
+        // pour cette commande. Il était ignoré ici comme ailleurs — la commande passait
+        // `Confirmed`, l'expédition était créée, le vendeur crédité, SANS QUE `OnHand`
+        // AIT ÉTÉ DÉCRÉMENTÉ. La marchandise était vendue deux fois.
+        //
+        // Le défaut était connu : deux commentaires du dépôt le décrivaient comme un
+        // fait acquis, et un test le documentait. Le code s'était organisé autour du
+        // bug au lieu de le corriger.
+        //
+        // ON ÉCHOUE PLUTÔT QUE DE CONFIRMER. L'échec fait remonter le message à
+        // l'outbox, qui rejouera puis mettra en lettre morte — un humain verra une
+        // commande payée non confirmée, ce qui se répare. Une survente, non : elle se
+        // découvre au moment de préparer le colis, quand l'argent est encaissé et le
+        // stock introuvable.
+        // ═════════════════════════════════════════════════════════════════════════
         foreach (var line in order.Lines)
         {
-            await _inventoryModuleApi.ConfirmReservationAsync(line.Sku, line.ShipFromLocationId, order.Id.Value, cancellationToken);
+            var settled = await _inventoryModuleApi.ConfirmReservationAsync(
+                line.Sku, line.ShipFromLocationId, order.Id.Value, cancellationToken);
+
+            if (!settled)
+            {
+                return Result.Failure(Error.Conflict(
+                    "ordering.reservation_not_settled",
+                    $"Le stock de « {line.Sku} » n'a pas pu être soldé pour cette commande. "
+                    + "La commande N'EST PAS confirmée : la confirmer sans décrémenter le stock "
+                    + "reviendrait à vendre deux fois le même article."));
+            }
         }
 
         var confirmed = order.Confirm();
@@ -130,6 +171,13 @@ internal sealed class CancelOrderCommandHandler : ICommandHandler<CancelOrderCom
         if (order is null)
         {
             return Result.Failure(Error.NotFound("ordering.not_found", "Commande introuvable."));
+        }
+
+        // Même raison que pour la confirmation : un rejeu d'outbox sur une commande
+        // déjà annulée est un succès, pas une anomalie à faire remonter.
+        if (order.Status == OrderStatus.Cancelled)
+        {
+            return Result.Success();
         }
 
         var cancel = order.Cancel(string.IsNullOrWhiteSpace(command.Reason) ? "Annulée par l'utilisateur." : command.Reason);

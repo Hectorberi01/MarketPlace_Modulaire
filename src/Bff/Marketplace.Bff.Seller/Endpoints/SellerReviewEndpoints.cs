@@ -12,6 +12,13 @@ namespace Marketplace.Bff.Seller.Endpoints;
 /// BFF Vendeur — avis. Restreint aux produits de la boutique du jeton ; le
 /// signalement vérifie que l'avis cible un produit du vendeur (anti-IDOR). La
 /// réponse publique à un avis n'est pas encore une capacité du module Reviews.
+///
+/// LE CONTRÔLE DE PROPRIÉTÉ NE SUFFISAIT PAS À RENDRE LE SIGNALEMENT INOFFENSIF :
+/// tant que `Flagged` retirait l'avis des lectures publiques, `OwnsReviewAsync`
+/// autorisait précisément ce qu'il fallait interdire — un vendeur effaçant les
+/// mauvais avis de ses propres produits. Le signalement ne dépublie plus (voir
+/// `ReviewRepository.PubliclyVisible`) ; le vendeur alerte la modération, il ne la
+/// remplace pas.
 /// </summary>
 public static class SellerReviewEndpoints
 {

@@ -1,4 +1,5 @@
 using FluentValidation;
+using Microsoft.Extensions.Logging;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Ordering.Contracts;
@@ -184,6 +185,35 @@ internal sealed class InitiateCustomerRefundCommandHandler : ICommandHandler<Ini
             // jamais laisser un payout parti sans écriture comptable en regard.
             await _wallets.AccrueCustomerRefundAsync(refund.Amount, refund.Currency, refund.Id.Value, cancellationToken);
 
+            // ═════════════════════════════════════════════════════════════════════
+            // ON RÉCLAME LA LIGNE AVANT D'APPELER LE PRESTATAIRE. L'ORDRE EST TOUT.
+            //
+            // Le versement partait auparavant AVANT le moindre `SaveChanges`, et le
+            // plafond ne voyait donc rien de ce qui était en vol. Deux conséquences,
+            // la seconde pire que la première :
+            //
+            // 1. CONCURRENCE. Deux administrateurs sur la même commande lisaient tous
+            //    deux le même « restant », passaient tous deux le contrôle, et
+            //    déclenchaient tous deux le versement.
+            //
+            // 2. ÉCHEC DE SAUVEGARDE. Le portefeuille plateforme porte un jeton de
+            //    concurrence que l'écriture ci-dessus salit. Un conflit sur ce jeton
+            //    annulait TOUT — ni ligne de remboursement, ni écriture de grand
+            //    livre, ni débit plateforme — alors que l'argent était déjà parti
+            //    chez le prestataire. Le plafond ne l'aurait jamais vu, et l'admin
+            //    qui relançait sur le 409 en envoyait un troisième.
+            //
+            // Ce `SaveChanges` fige la ligne en « Processing » AVANT tout appel
+            // sortant. La correction existait déjà, à quinze lignes d'ici, sur les
+            // retraits ; elle n'avait pas été portée sur ce rail.
+            //
+            // LE COÛT ASSUMÉ : si le processus meurt entre ce commit et la réponse du
+            // prestataire, il reste une ligne « Processing » sans référence PSP. La
+            // réconciliation la détecte désormais et alerte — voir
+            // `ReconcileCustomerRefundsCommandHandler`.
+            // ═════════════════════════════════════════════════════════════════════
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             var outcome = await _payouts.SendMobileMoneyPayoutAsync(
                 new PayoutInstructionContract(
                     Amount: refund.Amount,
@@ -268,34 +298,72 @@ public sealed record ReconcileCustomerRefundsCommand(int BatchSize = 50) : IComm
 
 internal sealed class ReconcileCustomerRefundsCommandHandler : ICommandHandler<ReconcileCustomerRefundsCommand, int>
 {
+    /// <summary>
+    /// Au-delà de ce délai, un remboursement « en cours » sans référence PSP n'est plus
+    /// une requête en vol : c'est une ligne ÉCHOUÉE, et la plateforme est débitée d'un
+    /// argent que le client n'a pas reçu. Même valeur que pour les retraits — deux
+    /// seuils différents seraient deux raisonnements à tenir.
+    /// </summary>
+    private static readonly TimeSpan StrandedAfter = TimeSpan.FromHours(1);
+
     private readonly ICustomerRefundRepository _refunds;
     private readonly IPayoutModuleApi _payouts;
     private readonly WalletMutations _wallets;
     private readonly ISettlementUnitOfWork _unitOfWork;
+    private readonly ILogger<ReconcileCustomerRefundsCommandHandler> _logger;
 
     public ReconcileCustomerRefundsCommandHandler(
         ICustomerRefundRepository refunds,
         IPayoutModuleApi payouts,
         WalletMutations wallets,
-        ISettlementUnitOfWork unitOfWork)
+        ISettlementUnitOfWork unitOfWork,
+        ILogger<ReconcileCustomerRefundsCommandHandler> logger)
     {
         _refunds = refunds;
         _payouts = payouts;
         _wallets = wallets;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result<int>> Handle(ReconcileCustomerRefundsCommand command, CancellationToken cancellationToken)
     {
-        var processing = await _refunds.ListProcessingAsync(cancellationToken);
+        // Le lot est borné EN BASE, pas en mémoire. Un `Take` appliqué après la
+        // requête matérialisait toutes les lignes bloquées à chaque cycle de deux
+        // minutes — et comme le `continue` muet ci-dessous les empêchait de sortir de
+        // « Processing », la table de travail ne faisait que grossir.
+        var processing = await _refunds.ListProcessingAsync(command.BatchSize, cancellationToken);
         var settled = 0;
 
-        foreach (var refund in processing.Take(command.BatchSize))
+        foreach (var refund in processing)
         {
-            // Sans référence PSP (timeout avant l'identifiant), on ne peut rien interroger
-            // ni rembourser à l'aveugle : arbitrage humain.
             if (string.IsNullOrWhiteSpace(refund.ProviderRef))
             {
+                // ─────────────────────────────────────────────────────────────────
+                // CE `continue` ÉTAIT MUET, ET C'EST CE QUI LE RENDAIT DANGEREUX.
+                //
+                // Sans référence PSP, on ne peut rien interroger ni rembourser à
+                // l'aveugle : l'arbitrage reste humain, et sauter la ligne est le bon
+                // geste. Mais le faire en silence signifiait que la ligne était
+                // repassée et réignorée toutes les deux minutes, indéfiniment, pendant
+                // que la plateforme restait débitée et le client non payé — sans une
+                // seule alerte, et sans aucun écran qui la montre.
+                //
+                // Depuis que la ligne est réclamée AVANT l'appel au prestataire, ce
+                // cas est devenu ATTENDU : c'est le coût assumé de cet ordre. Il doit
+                // donc crier, sinon la correction en aurait créé un autre.
+                // ─────────────────────────────────────────────────────────────────
+                var age = DateTime.UtcNow - (refund.SentToPspAtUtc ?? refund.CreatedAtUtc);
+                if (age > StrandedAfter)
+                {
+                    _logger.LogCritical(
+                        "REMBOURSEMENT IMMOBILISÉ : {RefundId} ({Amount} {Currency}, commande {OrderId}, "
+                        + "client {BuyerId}) est « en cours » depuis {Hours:0.0} h SANS référence prestataire. "
+                        + "La plateforme est débitée et le client n'est ni payé ni rétabli. Arbitrage manuel requis.",
+                        refund.Id.Value, refund.Amount, refund.Currency, refund.OrderId,
+                        refund.BuyerId, age.TotalHours);
+                }
+
                 continue;
             }
 

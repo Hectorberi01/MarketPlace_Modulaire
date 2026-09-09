@@ -10,7 +10,7 @@ using Xunit;
 namespace Payments.UnitTests;
 
 /// <summary>
-/// ⚠️ Cette classe manipule <see cref="GatewayWebhook.AllowUnsignedWhenSecretMissing"/>,
+/// ATTENTION : Cette classe manipule <see cref="GatewayWebhook.AllowUnsignedWhenSecretMissing"/>,
 /// qui est un état STATIQUE MUTABLE. xUnit exécute les classes de test en parallèle :
 /// sans collection dédiée, une autre classe de ce projet (MobileMoneyGatewayTests,
 /// PaymentGatewayTests) pourrait lire le drapeau pendant qu'on le bascule, et échouer
@@ -123,7 +123,14 @@ public class HttpGatewayTests : IDisposable
     }
 
     /// <summary>
-    /// LE test qui compte vraiment, et qui manquait.
+    /// Le garde-fou du helper GÉNÉRIQUE.
+    ///
+    /// ATTENTION À CE QUE CE TEST NE COUVRE PAS. Il a longtemps été présenté ici comme
+    /// « LE test qui compte vraiment » — il ne l'était pas : FedaPay et Stripe
+    /// surchargent `ParseWebhookAsync` et ne traversent JAMAIS ce helper. Leurs
+    /// propres vérificateurs acceptaient tout sur secret vide, et ce test ne pouvait
+    /// pas le voir. Les deux passerelles réellement déployées sont désormais testées
+    /// par leur nom dans `SignatureDesPasserellesTests`.
     ///
     /// En production, aucun secret n'est parfois configuré — par oubli, par erreur de
     /// vault, par variable d'environnement mal nommée. Ce jour-là, le webhook DOIT

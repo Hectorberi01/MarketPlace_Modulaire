@@ -13,9 +13,10 @@ namespace Marketplace.Modules.Offers.Application.Offers.Commands.DeleteOffer;
 /// propres lignes (SKU, prix payé, identifiant d'offre) à la commande et ne relit
 /// jamais l'offre ensuite.
 ///
-/// ⚠️ EN REVANCHE, LES PANIERS EN COURS NE SONT PAS NETTOYÉS. `CartItem` porte un
-/// `OfferId` et un prix figés à l'ajout ; ni `CartPricer` ni `CheckoutCartCommandHandler`
-/// ne revalident l'offre. Une commande peut donc naître sur une offre supprimée, au
+/// EN REVANCHE, LES PANIERS EN COURS NE SONT PAS NETTOYÉS. `CartItem` porte un
+/// `OfferId` et un prix figés à l'ajout, et rien sur le chemin d'achat ne revalide
+/// l'offre : ni `CartPricer` à la valorisation, ni le placement de commande dans le
+/// BFF Client. Une commande peut donc naître sur une offre supprimée, au
 /// prix d'avant. Ce trou PRÉEXISTE à cette commande — une offre simplement mise en
 /// pause produit déjà le même effet — mais il reste à combler côté Cart/Ordering, pas
 /// ici : le module Offers n'a pas à connaître les paniers.

@@ -106,24 +106,6 @@ namespace Marketplace.Modules.Notifications.Infrastructure.Migrations
                     b.ToTable("device_tokens", "notifications");
                 });
 
-            modelBuilder.Entity("Marketplace.Modules.Notifications.Domain.Preferences.NotificationPreference", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<List<string>>("MutedCategories")
-                        .IsRequired()
-                        .HasColumnType("text[]")
-                        .HasColumnName("muted_categories");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("UserId");
-
-                    b.ToTable("notification_preferences", "notifications");
-                });
-
             modelBuilder.Entity("Marketplace.Modules.Notifications.Domain.Notifications.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -141,6 +123,10 @@ namespace Marketplace.Modules.Notifications.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeduplicationKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("ReadAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -171,9 +157,31 @@ namespace Marketplace.Modules.Notifications.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeduplicationKey")
+                        .IsUnique()
+                        .HasFilter("\"DeduplicationKey\" IS NOT NULL");
+
                     b.HasIndex("RecipientUserId", "Status");
 
                     b.ToTable("notifications", "notifications");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Notifications.Domain.Preferences.NotificationPreference", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<List<string>>("MutedCategories")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("muted_categories");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("notification_preferences", "notifications");
                 });
 #pragma warning restore 612, 618
         }

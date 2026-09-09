@@ -77,6 +77,35 @@ public sealed class PickupPoint : Entity<Guid>
     /// </summary>
     public string? Incident { get; private set; }
 
+    /// <summary>
+    /// Il n'y a PLUS RIEN À ATTENDRE de ce point : soit le coursier a le colis, soit il a
+    /// constaté sur place qu'il ne l'aurait pas.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// DEUX NOTIONS QUE LE CODE CONFONDAIT, ET LA CONFUSION FIGEAIT LA COURSE.
+    ///
+    /// Le seul état lisible était <see cref="IsPickedUp"/>, et DeliveryJob.StartTransit
+    /// exigeait qu'il soit vrai PARTOUT. Un vendeur absent laissait donc son point à
+    /// false pour toujours : la course ne pouvait plus partir, et les parts DÉJÀ
+    /// RAMASSÉES des autres vendeurs n'étaient jamais livrées. La seule sortie restante
+    /// était l'échec de la course entière.
+    ///
+    /// « TRAITÉ » N'EST PAS « RAMASSÉ », ET IL NE FAUT SURTOUT PAS LES FUSIONNER.
+    /// Marquer le point ramassé pour débloquer le départ mentirait sur ce que le coursier
+    /// transporte, et transformerait un incident de ramassage en litige de livraison.
+    /// D'où deux propriétés : IsPickedUp dit ce qu'il A dans son sac, celle-ci dit qu'il
+    /// n'a plus rien à faire ici.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <remarks>
+    /// CALCULÉE, SANS COLONNE : rien à migrer, et aucun troisième état à garder cohérent
+    /// avec les deux champs dont elle se déduit. EF ne la mappe pas — elle n'a ni
+    /// accesseur en écriture ni champ de stockage — et PickupPointConfiguration l'ignore
+    /// explicitement, comme le fait déjà DeliveryJobConfiguration pour ses propres
+    /// propriétés calculées.
+    /// </remarks>
+    public bool IsResolved => IsPickedUp || Incident is not null;
+
     public IReadOnlyList<Parcel> Parcels => _parcels.AsReadOnly();
 
     internal void MarkPickedUp(DateTime nowUtc)
@@ -86,6 +115,11 @@ public sealed class PickupPoint : Entity<Guid>
         Incident = null;
     }
 
+    /// <summary>
+    /// Constat sur place. LE POINT N'EST PAS MARQUÉ RAMASSÉ — le coursier n'a pas le
+    /// colis, et l'écrire serait faux. Il devient seulement « traité » au sens de
+    /// <see cref="IsResolved"/>, ce qui suffit à laisser la course repartir avec le reste.
+    /// </summary>
     internal void ReportIncident(string reason) => Incident = reason;
 }
 

@@ -42,6 +42,20 @@ internal sealed class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         // doit pas être contraint ici.
         builder.Property(s => s.DeliveryJobId);
 
+        // ÉCHEC DE COURSE : trois colonnes NULLABLES, pour la même raison que ci-dessus.
+        // Nul veut dire « aucun coursier n'a renoncé sur cette expédition », ce qui est
+        // le cas de l'immense majorité d'entre elles et de TOUTES celles antérieures à
+        // ces champs.
+        //
+        // La longueur du motif est celle que le domaine garantit
+        // (Shipment.MaxFailureReasonLength). Les deux doivent rester d'accord : le
+        // domaine tronque à 300, la colonne en accepte 300. Les désaccorder ferait
+        // échouer l'insertion sur un motif bavard, l'annonce serait rejouée puis
+        // abandonnée, et le vendeur ne saurait rien — le défaut même qu'on ferme.
+        builder.Property(s => s.FailedDeliveryJobId);
+        builder.Property(s => s.CourierFailureReason).HasMaxLength(300);
+        builder.Property(s => s.CourierFailedAtUtc);
+
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
         // CORRECTION D'UNE AFFIRMATION ANTÉRIEURE (voir doc 22). Ce commentaire disait

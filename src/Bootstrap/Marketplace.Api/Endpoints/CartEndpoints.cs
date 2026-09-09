@@ -10,6 +10,11 @@ namespace Marketplace.Api.Endpoints;
 /// <summary>
 /// Endpoints HTTP du module Cart : le panier de l'acheteur connecté. Les lignes
 /// sont valorisées à la lecture via Pricing (prix de base + promotions).
+///
+/// LA VALIDATION DU PANIER N'EST PAS ICI. Elle vit dans le BFF Client
+/// (`POST /client/checkout/pay`), qui crée la commande ; le panier est ensuite fermé
+/// PAR RÉACTION à l'événement `OrderPlaced`. Les routes ci-dessous ne font que LIRE
+/// et MODIFIER un panier ouvert — voir le commentaire sur le groupe de routes.
 /// </summary>
 public static class CartEndpoints
 {
@@ -23,7 +28,32 @@ public static class CartEndpoints
         cart.MapPut("/items/{offerId:guid}", UpdateItemAsync).WithName("UpdateCartItem");
         cart.MapDelete("/items/{offerId:guid}", RemoveItemAsync).WithName("RemoveCartItem");
         cart.MapDelete("/", ClearAsync).WithName("ClearCart");
-        cart.MapPost("/checkout", CheckoutAsync).WithName("CheckoutCart");
+
+        // ════════════════════════════════════════════════════════════════════════
+        // LA VALIDATION DU PANIER N'EST PLUS ICI. `POST /api/cart/checkout` A ÉTÉ SUPPRIMÉ.
+        //
+        // Cette route DÉTRUISAIT le panier de l'acheteur sans rien créer en échange. Elle
+        // envoyait `CheckoutCartCommand`, dont le seul effet était `Cart.MarkCheckedOut()` :
+        // le panier passait `CheckedOut`, et la seule lecture du panier actif filtre sur
+        // `Active` (`CartRepository.GetActiveByBuyerAsync`). Or `Cart` n'expose AUCUNE
+        // méthode de réouverture, et `CartCheckedOutIntegrationEvent` n'a aucun consommateur
+        // dans le dépôt — ses deux seules occurrences sont le contrat et le publieur. Un
+        // appel, et l'acheteur perdait ses articles DÉFINITIVEMENT, sans qu'aucune commande
+        // n'existe et sans le moindre recours : ni réouverture, ni réaction en aval.
+        //
+        // POURQUOI SUPPRIMER PLUTÔT QUE RÉPARER.
+        //
+        // « Valider son panier » n'est pas un geste isolé : c'est le premier pas d'un achat,
+        // qui doit créer la commande et engager le paiement dans le même mouvement. Une
+        // route qui ferme le panier SANS commande ne peut être que perdante — au mieux elle
+        // ne sert à rien, au pire elle vole le panier. Il n'y a donc rien à réparer : il
+        // n'existe aucun état sain où fermer un panier à vide ait un sens.
+        //
+        // Le vrai parcours d'achat est `POST /client/checkout/pay` (BFF Client) : il crée la
+        // commande, et le panier est fermé ENSUITE, par réaction à `OrderPlaced`
+        // (`CloseCartOnOrderPlacedHandler`). La fermeture reste ainsi une CONSÉQUENCE de la
+        // commande, jamais une action que l'acheteur puisse déclencher seule.
+        // ════════════════════════════════════════════════════════════════════════
 
         return app;
     }
@@ -86,18 +116,6 @@ public static class CartEndpoints
 
         var result = await sender.Send(new ClearCartCommand(buyerId), ct);
         return result.Match(() => Results.NoContent());
-    }
-
-    /// <summary>Valide le panier (checkout) et renvoie l'identifiant du panier figé.</summary>
-    private static async Task<IResult> CheckoutAsync(ClaimsPrincipal principal, ISender sender, CancellationToken ct)
-    {
-        if (CurrentUserId(principal) is not { } buyerId)
-        {
-            return Results.Unauthorized();
-        }
-
-        var result = await sender.Send(new CheckoutCartCommand(buyerId), ct);
-        return result.Match(cartId => Results.Ok(new { cartId }));
     }
 
     private static Guid? CurrentUserId(ClaimsPrincipal principal)

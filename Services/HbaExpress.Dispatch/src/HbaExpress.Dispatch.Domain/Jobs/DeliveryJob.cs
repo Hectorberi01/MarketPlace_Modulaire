@@ -306,7 +306,17 @@ public sealed class DeliveryJob : AggregateRoot<DeliveryJobId>
         return Result.Success();
     }
 
-    /// <summary>Un vendeur n'a pas pu remettre le colis : on note et on continue les autres.</summary>
+    /// <summary>
+    /// Un vendeur n'a pas pu remettre le colis : on le note, et la course continue avec
+    /// les autres.
+    ///
+    /// CETTE PHRASE ÉTAIT FAUSSE JUSQU'ICI, et c'est ce qui rendait le défaut invisible à
+    /// la lecture. L'incident était bien écrit sur le point, mais celui-ci restait NON
+    /// ramassé, et <see cref="StartTransit"/> exigeait que TOUS les points le soient : on
+    /// ne continuait rien du tout. Le point est désormais « traité » au sens de
+    /// PickupPoint.IsResolved — le départ est débloqué sans jamais prétendre que le colis
+    /// est dans le sac.
+    /// </summary>
     public Result ReportPickupIncident(Guid pickupPointId, string reason)
     {
         var point = _pickups.FirstOrDefault(p => p.Id == pickupPointId);
@@ -320,9 +330,27 @@ public sealed class DeliveryJob : AggregateRoot<DeliveryJobId>
     }
 
     /// <summary>
-    /// En route vers l'acheteur. EXIGE QUE TOUS LES RAMASSAGES SOIENT FAITS — partir avec
-    /// un colis manquant, c'est livrer une commande incomplète et transformer un incident
-    /// de ramassage en litige de livraison.
+    /// En route vers l'acheteur. EXIGE QUE CHAQUE RAMASSAGE SOIT TRAITÉ — colis en main,
+    /// ou incident constaté sur place.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA CONDITION ÉTAIT « TOUS RAMASSÉS », ET UN SEUL VENDEUR DÉFAILLANT FIGEAIT TOUT.
+    ///
+    /// Un point en incident reste à IsPickedUp == false pour toujours. La course ne
+    /// pouvait donc plus partir, et sa seule sortie était Fail : rien de livré, alors que
+    /// le coursier avait déjà dans son sac les parts des AUTRES vendeurs. Un vendeur
+    /// absent faisait perdre la commande entière.
+    ///
+    /// ON PART MAINTENANT AVEC CE QU'ON A. Le risque que l'ancienne règle voulait éviter
+    /// — livrer incomplet sans que personne ne le sache — n'est pas ignoré pour autant :
+    /// l'incident est écrit sur le point, il voyage avec la course, et le sort de la part
+    /// non ramassée se tranche côté marketplace, pas sur le trottoir.
+    ///
+    /// PARTIR LES MAINS VIDES, EN REVANCHE, N'A AUCUN SENS. Si TOUS les points sont en
+    /// incident, le coursier n'a rien à remettre : ce n'est pas un transit, c'est un
+    /// échec de course (voir <see cref="Fail"/>), et le refus ci-dessous le dit avec son
+    /// propre code plutôt que de laisser partir une livraison vide.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     public Result StartTransit()
     {
@@ -331,10 +359,18 @@ public sealed class DeliveryJob : AggregateRoot<DeliveryJobId>
             return Result.Failure(Error.Conflict("job.not_picking_up", "La course n'est pas en cours de ramassage."));
         }
 
-        if (_pickups.Any(p => !p.IsPickedUp))
+        if (_pickups.Any(p => !p.IsResolved))
         {
             return Result.Failure(Error.Conflict(
-                "job.pickups_incomplete", "Tous les ramassages doivent être effectués avant de partir livrer."));
+                "job.pickups_incomplete",
+                "Chaque ramassage doit être effectué ou signalé en incident avant de partir livrer."));
+        }
+
+        if (_pickups.All(p => !p.IsPickedUp))
+        {
+            return Result.Failure(Error.Conflict(
+                "job.nothing_to_deliver",
+                "Aucun colis n'a pu être ramassé : il n'y a rien à livrer. Déclarez la course en échec."));
         }
 
         Status = DeliveryJobStatus.InTransit;

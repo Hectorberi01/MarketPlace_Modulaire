@@ -165,10 +165,26 @@ internal sealed class OrderLineConfiguration : IEntityTypeConfiguration<OrderLin
         builder.Property(l => l.CommissionRate).HasColumnType("numeric(6,4)").IsRequired();
         builder.Property(l => l.ProviderFeeRate).HasColumnType("numeric(6,4)").IsRequired();
         builder.Property(l => l.PlatformDiscount).HasColumnType("numeric(18,2)").IsRequired();
-        builder.Property(l => l.FinalUnitPrice).HasColumnType("numeric(18,2)").IsRequired();
 
-        // LineTotal est calculé (FinalUnitPrice * Quantity).
-        builder.Ignore(l => l.LineTotal);
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES DEUX COLONNES ONT ÉCHANGÉ LEUR RÔLE.
+        //
+        // `LineTotal` était calculé (`FinalUnitPrice * Quantity`) et `FinalUnitPrice`
+        // stocké. C'est l'inverse désormais : le montant de LIGNE est la valeur de
+        // référence, arrondie une fois, et le prix unitaire un affichage déduit.
+        //
+        // La raison est une remise de panier : « −500 sur votre commande » n'a pas
+        // d'équivalent unitaire, et la diviser par la quantité crée un arrondi par
+        // article — donc un écart entre le total affiché à l'acheteur et le total
+        // facturé, que le contrôle `expectedTotal` transformerait en refus de paiement.
+        //
+        // MIGRATION AVEC REPRISE DE DONNÉES : la colonne `LineTotal` doit être
+        // alimentée depuis `FinalUnitPrice * Quantity`, et les deux colonnes de remise
+        // multipliées par la quantité — elles étaient unitaires. Sans cette reprise,
+        // toutes les commandes existantes deviennent fausses.
+        // ─────────────────────────────────────────────────────────────────────────
+        builder.Property(l => l.LineTotal).HasColumnType("numeric(18,2)").IsRequired();
+        builder.Ignore(l => l.FinalUnitPrice);
 
         builder.HasIndex("OrderId");
         builder.HasIndex(l => l.SellerId);

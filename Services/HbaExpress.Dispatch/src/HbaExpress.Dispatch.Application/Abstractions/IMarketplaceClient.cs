@@ -16,4 +16,14 @@ public interface IMarketplaceClient
     /// LÈVE en cas d'échec — c'est le drain qui décide du réessai et de l'abandon.
     /// </summary>
     Task SendCourierDeliveryCompletedAsync(string payloadJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Annonce une course ÉCHOUÉE : la marketplace débloque l'expédition restée en
+    /// préparation et décide de la suite (nouvelle tentative, remboursement, litige).
+    ///
+    /// Ce sens n'existait pas, et son absence figeait une commande pour toujours. Comme
+    /// pour la livraison : LÈVE en cas d'échec — c'est le drain qui décide du réessai et
+    /// de l'abandon.
+    /// </summary>
+    Task SendCourierDeliveryFailedAsync(string payloadJson, CancellationToken cancellationToken = default);
 }

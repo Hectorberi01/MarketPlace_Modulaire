@@ -36,6 +36,16 @@ public sealed record ShipmentSummary(
     /// coursier » de « pas encore expédié ». Les deux se lisaient comme un écran vide.
     /// </summary>
     string? DeliveryMode,
+    /// <summary>
+    /// Pourquoi le dernier coursier a renoncé — nul si aucune course n'a échoué.
+    ///
+    /// SANS CE CHAMP, LA NOTIFICATION ENVOYÉE AU VENDEUR N'A NULLE PART OÙ ATTERRIR.
+    /// On lui écrit que son colis n'est pas parti et qu'il doit l'expédier par un
+    /// transporteur ; s'il ouvre son tableau de bord, il retrouve une expédition « en
+    /// préparation » exactement identique à celle d'avant l'incident. Un message d'alerte
+    /// qui ne se vérifie nulle part finit par être pris pour une erreur du système.
+    /// </summary>
+    string? CourierFailureReason,
     IReadOnlyList<ShipmentItemSummary> Items);
 
 /// <summary>

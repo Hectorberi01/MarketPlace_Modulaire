@@ -89,6 +89,15 @@ public sealed class WalletMutations
     public const string CourierDeliveryReferenceType = "courier_delivery";
 
     /// <summary>
+    /// Reversement d'un LOT payé au vendeur, hors du circuit de retrait.
+    ///
+    /// Référence distincte de « order » et de « withdrawal » : un même vendeur peut
+    /// avoir, sur la même période, des gains libérés, un retrait, et un reversement de
+    /// lot. Trois mouvements, trois verrous d'idempotence.
+    /// </summary>
+    public const string BatchPayoutReferenceType = "batch_payout";
+
+    /// <summary>
     /// Part d'un remboursement DIRECT rendue en cagnotte plutôt qu'en espèces.
     ///
     /// Une quatrième référence, et non la réutilisation de « return_refund » : celle-là
@@ -199,6 +208,52 @@ public sealed class WalletMutations
 
     public async Task<bool> RefundAlreadyReversedAsync(Guid returnRequestId, CancellationToken ct)
         => await _ledger.ExistsForReferenceAsync(RefundReferenceType, returnRequestId, ct);
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE REVERSEMENT D'UN LOT DÉBITE LE SOLDE DISPONIBLE DU VENDEUR.
+    ///
+    /// Sans ce débit, la plateforme payait DEUX FOIS le même gain. Le gain libéré à
+    /// la livraison créditait le disponible, et le MÊME gain alimentait un lot de
+    /// reversement dont la clôture ne touchait aucun portefeuille : après un lot payé,
+    /// le solde retirable du vendeur était intact. Il demandait un retrait, l'admin
+    /// l'approuvait, et l'argent partait une seconde fois. Aucun contrôle ne
+    /// rapprochait les deux circuits — ils s'ignoraient purement et simplement.
+    ///
+    /// Le débit les réunit : les deux rails puisent désormais dans le MÊME solde, et
+    /// c'est `Withdrawal.Create` — qui refuse un retrait supérieur au disponible — qui
+    /// ferme le second passage, sans qu'aucun code nouveau ne l'énonce.
+    ///
+    /// LE NÉGATIF EST AUTORISÉ, ET C'EST VOULU. Ce reversement enregistre un virement
+    /// que l'administrateur a DÉJÀ fait à la main. Refuser le débit ne rappellerait pas
+    /// l'argent : cela effacerait simplement la trace de sa sortie, et laisserait la
+    /// perte à la charge de la plateforme sans ligne pour l'expliquer. Un solde négatif
+    /// est ici la seule écriture honnête — et c'est l'appelant qui doit crier.
+    ///
+    /// Renvoie le solde disponible APRÈS débit, pour que l'appelant sache s'il vient
+    /// de constater un double paiement.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public async Task<decimal> DebitSellerBatchPayoutAsync(
+        Guid sellerId, decimal netAmount, string currency, Guid payoutId, CancellationToken ct)
+    {
+        var wallet = await GetOrCreateAsync(WalletOwnerType.Seller, sellerId, currency, ct);
+
+        if (netAmount <= 0m)
+        {
+            return wallet.Balance(WalletAccount.Available);
+        }
+
+        await DebitAsync(
+            WalletOwnerType.Seller, sellerId, WalletAccount.Available, netAmount, currency,
+            "batch_payout", BatchPayoutReferenceType, payoutId, ct);
+
+        return wallet.Balance(WalletAccount.Available);
+    }
+
+    /// <summary>Ce reversement de lot a-t-il DÉJÀ débité le vendeur ? (verrou de rejeu)</summary>
+    public Task<bool> BatchPayoutAlreadyDebitedAsync(Guid payoutId, CancellationToken ct)
+        => _ledger.ExistsForReferenceAsync(BatchPayoutReferenceType, payoutId, ct);
 
     /// <summary>
     /// CONTRE-PASSATION : reprend au vendeur le gain d'une vente remboursée.

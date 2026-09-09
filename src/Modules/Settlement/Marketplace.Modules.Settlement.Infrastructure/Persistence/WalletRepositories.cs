@@ -88,6 +88,12 @@ internal sealed class WithdrawalRepository : IWithdrawalRepository
 
 internal sealed class CustomerRefundRepository : ICustomerRefundRepository
 {
+    // Bornes propres à ce dépôt. `WalletTransactionRepository` en a de son côté :
+    // les partager exigerait un type commun pour deux constantes, et le couplage
+    // coûterait plus que la répétition.
+    private const int DefaultBatchSize = 50;
+    private const int MaxBatchSize = 200;
+
     private readonly SettlementDbContext _dbContext;
 
     public CustomerRefundRepository(SettlementDbContext dbContext) => _dbContext = dbContext;
@@ -117,11 +123,12 @@ internal sealed class CustomerRefundRepository : ICustomerRefundRepository
     // peut donc pas apparaître ici. Il est explicite quand même : c'est la garantie que
     // la réconciliation n'ira jamais interroger FedaPay sur un versement qui n'a jamais
     // existé, y compris si quelqu'un fait un jour repasser une ligne en « Processing ».
-    public async Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(int take, CancellationToken cancellationToken = default)
         => await _dbContext.CustomerRefunds
             .Where(r => r.Status == CustomerRefundStatus.Processing
                         && r.Channel == CustomerRefundChannel.Cash)
             .OrderBy(r => r.CreatedAtUtc)
+            .Take(Math.Clamp(take <= 0 ? DefaultBatchSize : take, 1, MaxBatchSize))
             .ToListAsync(cancellationToken);
 }
 

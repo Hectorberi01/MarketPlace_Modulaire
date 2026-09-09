@@ -44,6 +44,13 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
 
     private async Task<GatewaySession> CreateHostedAsync(GatewayChargeContext context, CancellationToken ct)
     {
+        // LA DEVISE VIENT DE LA COMMANDE, ET ELLE DOIT ÊTRE CELLE DU COMPTE MARCHAND.
+        // Le payload envoyait `_options.Currency` — l'étiquette de la configuration —
+        // avec `context.Amount`, le montant de la commande. Voir l'encadré de
+        // `EnsureCurrencyIsSupported` : c'est ce couple dépareillé qui faisait payer
+        // 50 XOF une commande de 50,00 EUR.
+        var currency = EnsureCurrencyIsSupported(Provider, context.Currency, _options.Currency);
+
         // FedaPay valide callback_url comme une URL http(s) : on ne lui transmet
         // jamais un schéma applicatif (marketplace://…). On préfère l'URL configurée
         // (https) si présente, sinon on omet le champ (le retour est géré par la
@@ -55,8 +62,10 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
             Content = JsonContent.Create(new
             {
                 description = $"Commande {context.OrderId}",
-                amount = (long)Math.Round(context.Amount),
-                currency = new { iso = _options.Currency },
+                // Le champ « amount » de FedaPay est un ENTIER : la garde refuse une devise
+                // à décimales au lieu de la tronquer.
+                amount = ToWholeUnits(Provider, context.Amount, currency),
+                currency = new { iso = currency },
                 callback_url = callbackUrl,
                 custom_metadata = new
                 {
@@ -166,18 +175,36 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
     }
 
     /// <summary>
-    /// Vérifie la signature du webhook FedaPay. Le header « x-fedapay-signature »
-    /// est au format « t=<timestamp>,s=<hmac_hex> » (comme Stripe) : la signature
-    /// est le HMAC-SHA256 hex de « <t>.<corps_brut> » avec le secret du endpoint.
-    /// Secret vide = sandbox permissif (accepté sans vérif, pour les tests).
-    /// Repli : si le header est une signature hex brute (sans « t= »), on retombe
-    /// sur la vérification générique HMAC(corps).
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// VÉRIFICATION DE LA SIGNATURE DU WEBHOOK FEDAPAY.
+    ///
+    /// Le header « x-fedapay-signature » est au format « t=&lt;horodatage&gt;,s=&lt;hmac_hex&gt; »
+    /// (comme Stripe) : la signature est le HMAC-SHA256 hex de « &lt;t&gt;.&lt;corps_brut&gt; ».
+    /// Repli : un header réduit à une signature hex brute retombe sur la vérification
+    /// générique HMAC(corps).
+    ///
+    /// SECRET MANQUANT : ON REJETTE. Cette méthode retournait `true` — un
+    /// fail-open. Comme cette passerelle SURCHARGE `ParseWebhookAsync`, elle ne
+    /// passait jamais par `GatewayWebhook.Parse`, seul endroit qui consultait le
+    /// garde-fou : celui-ci était donc écrit, commenté, fermé en production… et
+    /// contourné par les deux seules passerelles réellement déployées.
+    ///
+    /// Ce que cela permettait : un POST anonyme sur une route sans limitation de
+    /// débit, portant `{"name":"transaction.approved", ...}`, déclenchait la chaîne
+    /// complète — stock décrémenté, expéditions créées, gains vendeur crédités.
+    /// Une commande entièrement payée sans qu'un franc ait bougé. Et le même défaut
+    /// atteignait les VERSEMENTS, `FedaPayPayoutGateway` réutilisant cette méthode :
+    /// un faux « payout.sent » soldait un retrait jamais versé.
+    ///
+    /// La seule protection était un `${VAR:?}` dans le compose de production. Un
+    /// fichier de déploiement n'est pas un garde-fou de sécurité.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     internal static bool VerifyFedaPaySignature(string rawBody, string? signatureHeader, string secret)
     {
         if (string.IsNullOrEmpty(secret))
         {
-            return true;
+            return GatewayWebhook.AllowUnsignedWhenSecretMissing;
         }
 
         if (string.IsNullOrWhiteSpace(signatureHeader))
@@ -211,9 +238,23 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
             return false;
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // L'HORODATAGE EST SIGNÉ, ENCORE FAUT-IL LE REGARDER.
+        //
+        // `t` entrait dans le HMAC mais n'était jamais confronté à l'heure courante :
+        // un corps signé capturé restait rejouable indéfiniment. La fenêtre est
+        // vérifiée sur la valeur PARSÉE, la signature sur la chaîne REÇUE — c'est ce
+        // qui évite le piège « 007 vaut 7 » : un attaquant qui reformate l'horodatage
+        // casse la signature avant d'atteindre ce contrôle.
+        // ─────────────────────────────────────────────────────────────────────────
         var expected = GatewayWebhook.ComputeSignature($"{t}.{rawBody}", secret);
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(sig.ToLowerInvariant()));
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(sig.ToLowerInvariant())))
+        {
+            return false;
+        }
+
+        return GatewayWebhook.IsWithinClockSkew(t);
     }
 
     private void Authorize(HttpRequestMessage request)

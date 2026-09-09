@@ -55,6 +55,12 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
         // quand la DERNIÈRE part vendeur passe en préparation.
         services.AddScoped<IDomainEventHandler<ShipmentPreparingDomainEvent>, PublishOrderReadyForDeliveryHandler>();
 
+        // L'AUTRE ISSUE DE LA COURSE : l'échec. Sans cet enregistrement, l'événement
+        // serait levé par l'agrégat, dispatché, et n'atteindrait aucun handler — donc
+        // aucune publication, donc aucun vendeur prévenu. Un événement sans abonné ne
+        // fait pas de bruit en échouant : il ne fait rien, et ça ne se voit nulle part.
+        services.AddScoped<IDomainEventHandler<CourierDeliveryFailedDomainEvent>, CourierDeliveryFailedDomainEventHandler>();
+
         // Chorégraphie : création des expéditions à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, CreateShipmentsOnOrderConfirmedHandler>();
 

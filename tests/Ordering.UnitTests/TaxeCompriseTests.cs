@@ -178,7 +178,7 @@ public sealed class TaxeCompriseTests
             UnitBasePrice: prixUnitaire,
             SellerDiscount: 0m,
             PlatformDiscount: 0m,
-            FinalUnitPrice: prixUnitaire,
+            LineTotal: prixUnitaire,
             CommissionRate: 0.10m,
             ProviderFeeRate: 0.02m);
 

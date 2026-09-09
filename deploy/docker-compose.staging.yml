@@ -63,6 +63,10 @@ x-app-env: &app-env
   #    les retraits sont simulés, quoi que dise FEDAPAY_ENABLE_PAYOUTS.
   Payments__FedaPay__BaseUrl: "${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}"
   Payments__FedaPay__ApiKey: "${FEDAPAY_API_KEY:-}"
+  # Vide accepté ici : le staging ne tourne pas en ASPNETCORE_ENVIRONMENT=Production,
+  # donc le garde-fou de démarrage ne s'applique pas. En revanche la signature n'est
+  # PLUS acceptée par défaut : secret vide = rappels rejetés, sauf en Development où
+  # `AllowUnsignedWhenSecretMissing` est activé. Renseignez-le pour tester les rappels.
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
   # Active les VERSEMENTS réels FedaPay (retraits vendeur). false = payout simulé.
   Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
@@ -87,7 +91,7 @@ x-app-env: &app-env
   # Cloudinary ; vider les deux désactive proprement la fonction (image inchangée,
   # et les interfaces cessent de promettre un détourage).
   #
-  # ⚠️ MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
+  # MODÈLE : « u2net » (Apache 2.0 / MIT). NE PAS basculer sur un modèle BRIA
   # (« bria-rmbg ») : ses poids sont en CC BY-NC 4.0, donc interdits sur une place de
   # marché. Le code refuse d'ailleurs de les activer.
   # ─────────────────────────────────────────────────────────────────────────────
@@ -163,7 +167,7 @@ services:
   # ---------------- Détourage d'image (local, sans service tiers) ----------------
   # rembg — remplace Cloudinary pour le détourage IA des photos produit.
   #
-  # ⚠️ AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ.
+  # AUCUN `ports:`, AUCUN label Traefik. CE SERVICE NE DOIT JAMAIS ÊTRE PUBLIÉ.
   # Il n'a ni authentification ni limitation de débit, et son endpoint GET
   # /api/remove va chercher une URL arbitraire (SSRF). Il n'est joignable que depuis
   # le réseau Docker interne, par l'API et les BFF.
@@ -193,7 +197,7 @@ services:
       # simultanées — c'est le rôle de `--threads` dans la commande ci-dessus.
       OMP_NUM_THREADS: "${REMBG_THREADS:-2}"
     volumes:
-      # ⚠️ MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
+      # MONTÉ SUR /root/.u2net, l'emplacement PAR DÉFAUT — surtout pas ailleurs.
       #
       # L'image amont exécute `rembg d u2net` à la construction : u2net.onnx est déjà
       # dans une couche, à cet endroit. Le déplacer avec U2NET_HOME écartait ce
@@ -455,7 +459,7 @@ services:
   # ne transite par le JavaScript client.
   # ---------------------------------------------------------------------------
   # ---------------- Console VENDEUR (Next.js) ----------------
-  # ⚠️ ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
+  # ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
   #
   # Ansible lance `docker compose up -d --no-build` sur TOUTE la pile. Si l'image
   # `seller-console` n'existe pas encore sur GHCR, ce déploiement ÉCHOUE — et il

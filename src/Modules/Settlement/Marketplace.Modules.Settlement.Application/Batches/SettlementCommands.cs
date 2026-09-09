@@ -1,7 +1,9 @@
 using FluentValidation;
+using Microsoft.Extensions.Logging;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Settlement.Application.Abstractions;
+using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Earnings;
 
@@ -143,15 +145,44 @@ internal sealed class CancelSettlementBatchCommandHandler : ICommandHandler<Canc
     }
 }
 
+/// <summary>
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// CLÔTURE D'UN REVERSEMENT DE LOT — ET DÉBIT DU VENDEUR.
+///
+/// Ce handler ne faisait que changer un statut. Le portefeuille du vendeur n'était
+/// jamais touché : après un lot payé, son solde retirable restait intact. Il
+/// demandait alors un retrait, l'admin l'approuvait, et le même gain sortait une
+/// seconde fois. Deux circuits de paiement pour un seul gain, exposés sur deux
+/// hôtes, sans le moindre contrôle entre eux.
+///
+/// Le débit les réunit. Les deux rails puisent désormais dans le même solde, et le
+/// second passage est fermé par `Withdrawal.Create`, qui refuse déjà un retrait
+/// supérieur au disponible — sans qu'aucune règle nouvelle n'ait à l'énoncer.
+///
+/// L'ORDRE COMPTE. La transition d'agrégat vient d'abord : elle est idempotente
+/// (un reversement déjà payé renvoie succès sans rien faire), et c'est elle qui
+/// décide si un débit doit avoir lieu. Le rejeu ne débite donc jamais deux fois —
+/// et le verrou de grand livre en second rideau le garantit même si quelqu'un
+/// assouplit un jour l'agrégat.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
 internal sealed class MarkPayoutPaidCommandHandler : ICommandHandler<MarkPayoutPaidCommand>
 {
     private readonly ISettlementBatchRepository _batchRepository;
+    private readonly WalletMutations _wallets;
     private readonly ISettlementUnitOfWork _unitOfWork;
+    private readonly ILogger<MarkPayoutPaidCommandHandler> _logger;
 
-    public MarkPayoutPaidCommandHandler(ISettlementBatchRepository batchRepository, ISettlementUnitOfWork unitOfWork)
+    public MarkPayoutPaidCommandHandler(
+        ISettlementBatchRepository batchRepository,
+        WalletMutations wallets,
+        ISettlementUnitOfWork unitOfWork,
+        ILogger<MarkPayoutPaidCommandHandler> logger)
     {
         _batchRepository = batchRepository;
+        _wallets = wallets;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result> Handle(MarkPayoutPaidCommand command, CancellationToken cancellationToken)
@@ -162,10 +193,44 @@ internal sealed class MarkPayoutPaidCommandHandler : ICommandHandler<MarkPayoutP
             return Result.Failure(Error.NotFound("settlement.batch.not_found", "Lot de reversement introuvable."));
         }
 
+        var payout = batch.Payouts.FirstOrDefault(p => p.Id == command.PayoutId);
+        if (payout is null)
+        {
+            return Result.Failure(Error.NotFound("settlement.payout.not_found", "Reversement introuvable dans ce lot."));
+        }
+
+        // Lu AVANT la transition : une fois `MarkPayoutPaid` passé, le statut ne dit
+        // plus si ce rejeu est le premier.
+        var alreadyPaid = payout.Status == PayoutStatus.Paid;
+
         var result = batch.MarkPayoutPaid(command.PayoutId, command.ProviderRef);
         if (result.IsFailure)
         {
             return result;
+        }
+
+        if (!alreadyPaid && !await _wallets.BatchPayoutAlreadyDebitedAsync(command.PayoutId, cancellationToken))
+        {
+            var remaining = await _wallets.DebitSellerBatchPayoutAsync(
+                payout.SellerId, payout.NetAmount, payout.Currency, payout.Id, cancellationToken);
+
+            // ─────────────────────────────────────────────────────────────────────
+            // UN SOLDE NÉGATIF ICI SIGNIFIE QUE LE VENDEUR A DÉJÀ ÉTÉ PAYÉ.
+            //
+            // Le virement de ce lot est un fait accompli — l'administrateur l'a
+            // exécuté à la main avant d'appeler cette route. Le refuser n'aurait
+            // rappelé aucun argent, seulement effacé la trace de sa sortie. On
+            // enregistre donc, et on crie : c'est la seule combinaison qui laisse
+            // des livres justes ET un humain averti.
+            // ─────────────────────────────────────────────────────────────────────
+            if (remaining < 0m)
+            {
+                _logger.LogCritical(
+                    "DOUBLE PAIEMENT VENDEUR : le reversement {PayoutId} du lot {BatchId} a porté le solde "
+                    + "disponible du vendeur {SellerId} à {Balance} {Currency}. Ce gain avait déjà été retiré. "
+                    + "Aucune correction automatique n'est appliquée.",
+                    payout.Id, command.BatchId, payout.SellerId, remaining, payout.Currency);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

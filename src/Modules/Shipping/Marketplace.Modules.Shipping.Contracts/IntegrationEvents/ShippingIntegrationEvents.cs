@@ -19,6 +19,43 @@ public sealed record ShipmentDeliveredIntegrationEvent : IntegrationEvent
     public required Guid SellerId { get; init; }
 }
 
+/// <summary>
+/// UNE COURSE A ÉCHOUÉ : le colis n'est jamais parti. Consommé par Notifications, qui
+/// prévient le VENDEUR — le seul qui puisse repartir de là.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// POURQUOI UN ÉVÉNEMENT DISTINCT, ET PAS UN CHAMP SUR « EXPÉDITION LIVRÉE ».
+///
+/// `ShipmentDeliveredIntegrationEvent` déclenche une chaîne entière — avis produit,
+/// séquestre libérée, gains vendeur rendus retirables. Y faire passer un échec, avec un
+/// booléen « en fait non », obligerait CHAQUE consommateur actuel et futur à se souvenir
+/// de le tester. Celui qui oublierait paierait un vendeur pour un colis toujours en
+/// boutique, et l'oubli ne se verrait nulle part.
+///
+/// Un fait différent, un contrat différent : le consommateur qui ne s'y abonne pas
+/// n'apprend rien de faux.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record CourierDeliveryFailedIntegrationEvent : IntegrationEvent
+{
+    public required Guid ShipmentId { get; init; }
+
+    public required Guid OrderId { get; init; }
+
+    /// <summary>Le vendeur à prévenir : il détient le colis, et lui seul peut le relancer.</summary>
+    public required Guid SellerId { get; init; }
+
+    /// <summary>
+    /// LA CLÉ D'IDEMPOTENCE DU CONSOMMATEUR. L'outbox distribue « au moins une fois » et
+    /// autorise dix tentatives : sans elle, une panne dans un consommateur voisin
+    /// renverrait au vendeur la même mauvaise nouvelle jusqu'à dix fois.
+    /// </summary>
+    public required Guid DeliveryJobId { get; init; }
+
+    /// <summary>Motif porté par la course, normalisé en amont. Affiché tel quel au vendeur.</summary>
+    public required string Reason { get; init; }
+}
+
 /// <summary>Un point de RAMASSAGE : où le coursier récupère la part d'un vendeur.</summary>
 /// <param name="Landmark">
 /// Point de repère. C'est le champ qui rend le lieu trouvable — au Bénin, la rue est

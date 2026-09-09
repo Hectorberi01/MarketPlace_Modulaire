@@ -145,13 +145,73 @@ public sealed class JobProgressService
             });
     }
 
-    public Task<Result> FailAsync(
+    /// <summary>
+    /// La course échoue en cours de route : acheteur introuvable, colis refusé, ou plus
+    /// rien à remettre. La course se ferme, le coursier redevient disponible, et
+    /// l'échec part en file vers la marketplace.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// L'ÉCHEC S'ANNONCE, EXACTEMENT COMME LA LIVRAISON. IL NE S'ANNONÇAIT PAS.
+    ///
+    /// Cette méthode se contentait de poser Status = Failed et de libérer le coursier.
+    /// AUCUN message n'était écrit — seule MarkDeliveredAsync en produisait un. La
+    /// marketplace n'apprenait donc jamais l'échec : l'expédition y restait « en
+    /// préparation » indéfiniment, la séquestre du vendeur n'était pas tranchée, la
+    /// commande n'atteignait aucun état final. Et rien ne le signalait : pas d'erreur,
+    /// pas de message abandonné à relever, pas de compteur — du point de vue du service
+    /// coursier, la course s'était close proprement.
+    ///
+    /// Le message est écrit DANS LA MÊME TRANSACTION que le changement de statut, pour la
+    /// raison exacte qui vaut déjà pour la livraison : une course close dont l'annonce
+    /// s'est perdue ne laisse RIEN à réessayer. L'envoi, lui, revient au drain, autant de
+    /// fois qu'il le faudra, et son abandon éventuel est visible.
+    /// ═════════════════════════════════════════════════════════════════════════
+    ///
+    /// SANS EXIGENCE DE POSITION FRAÎCHE, délibérément : c'est l'issue de secours du
+    /// coursier, et un GPS muet ne doit jamais l'empêcher de clore une course qu'il ne
+    /// peut pas finir. Voir CourierActionPolicy, et la garde requirePosition plus bas.
+    /// </summary>
+    public async Task<Result> FailAsync(
         DeliveryJobId jobId, CourierId courierId, string reason, CancellationToken cancellationToken = default)
-        => MutateAsync(
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        return await MutateAsync(
             jobId, courierId,
-            job => job.Fail(reason, _clock.GetUtcNow().UtcDateTime),
+            job => job.Fail(reason, now),
             cancellationToken,
-            release: true);
+            release: true,
+            beforeSave: async job =>
+            {
+                // LA RAISON EST RELUE SUR LA COURSE, pas reprise de l'argument : c'est
+                // Fail qui la normalise — vide remplacé par un libellé par défaut, espaces
+                // coupés. La marketplace doit lire ce que la course PORTE, pas ce que
+                // l'appelant a tapé, sans quoi un motif vide traverserait la file.
+                var payload = new CourierDeliveryFailedPayload(
+                    courierId.Value,
+                    job.OrderId,
+                    job.Id.Value,
+                    job.FailureReason ?? "Échec de livraison.",
+                    now);
+
+                await _outbound.AddAsync(
+                    OutboundMessage.Create(
+                        OutboundMessage.CourierDeliveryFailedType,
+                        JsonSerializer.Serialize(payload, JsonOptions),
+                        now),
+                    cancellationToken);
+
+                _metrics.JobFailed();
+
+                // EN « WARNING », PAS EN « INFORMATION » : une course échouée laisse une
+                // commande en attente d'une décision humaine ou d'une reprise. Ce n'est
+                // pas le déroulement normal d'une journée.
+                _logger.LogWarning(
+                    "Course {JobId} (commande {OrderId}) DÉCLARÉE EN ÉCHEC par le coursier {CourierId} : "
+                    + "{Reason}. Annonce mise en file pour la marketplace.",
+                    job.Id, job.OrderId, courierId, job.FailureReason);
+            });
+    }
 
     /// <summary>
     /// La commande a été annulée côté marketplace : la course tombe avec elle.
@@ -193,7 +253,10 @@ public sealed class JobProgressService
 
     /// <param name="beforeSave">
     /// Exécuté APRÈS la mutation et AVANT l'enregistrement — donc dans la même
-    /// transaction. C'est par là que la livraison met son message de paiement en file.
+    /// transaction. C'est par là que la livraison met son message de paiement en file, et
+    /// que l'échec met le sien : dans les deux cas, l'état de la course et l'annonce qui
+    /// en découle sont écrits par le même SaveChanges, ou ne sont écrits ni l'un ni
+    /// l'autre.
     /// </param>
     private async Task<Result> MutateAsync(
         DeliveryJobId jobId,

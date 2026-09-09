@@ -23,7 +23,7 @@ namespace Marketplace.Modules.Notifications.Application.Notifications.EventHandl
 /// ─────────────────────────────────────────────────────────────────────────────
 ///
 /// <para>
-/// ⚠️ POURQUOI À LA CONFIRMATION, ET NON À LA COMMANDE.
+/// POURQUOI À LA CONFIRMATION, ET NON À LA COMMANDE.
 ///
 /// Une commande « passée » n'est encore qu'une intention : le paiement FedaPay peut
 /// être abandonné. Prévenir les vendeurs à ce moment-là, ce serait les faire préparer
@@ -32,6 +32,24 @@ namespace Marketplace.Modules.Notifications.Application.Notifications.EventHandl
 ///
 /// La confirmation signifie « l'argent est encaissé ». C'est le seul moment où
 /// l'alerte est actionnable.
+/// </para>
+///
+/// <para>
+/// ─────────────────────────────────────────────────────────────────────────────
+/// UNE SEULE ALERTE PAR VENDEUR ET PAR COMMANDE, MÊME SI L'ÉVÉNEMENT EST REJOUÉ.
+///
+/// Ce handler n'avait aucune garde, alors que six des huit consommateurs
+/// d'`OrderConfirmedIntegrationEvent` en ont une. Le dispatch est « au moins une fois »
+/// et Notifications passe AVANT Settlement, Loyalty et Analytics (`ModuleRegistry`) :
+/// une panne dans l'un de ces trois rejouait le message entier et repassait ici, dix
+/// fois au maximum. Chaque vendeur recevait donc jusqu'à dix « Nouvelle commande à
+/// préparer » pour une seule vente — et un vendeur noyé sous les doublons est un
+/// vendeur qui cesse de lire ses alertes, ce qui annule le bénéfice même de ce handler.
+///
+/// La clé inclut le VENDEUR : une commande multi-vendeurs doit produire une alerte par
+/// vendeur. Dédupliquer sur la seule commande ferait taire tous les vendeurs sauf le
+/// premier — un défaut pire que celui corrigé.
+/// ─────────────────────────────────────────────────────────────────────────────
 /// </para>
 public sealed class SellerOrderConfirmedNotificationHandler : IIntegrationEventHandler<OrderConfirmedIntegrationEvent>
 {
@@ -87,7 +105,8 @@ public sealed class SellerOrderConfirmedNotificationHandler : IIntegrationEventH
 
                 var articles = share.ItemCount == 1 ? "1 article" : $"{share.ItemCount} articles";
 
-                await _dispatcher.NotifyAsync(
+                await _dispatcher.NotifyOnceAsync(
+                    NotificationDeduplicationKeys.OrderConfirmedSeller(e.OrderId, seller.UserId),
                     seller.UserId,
                     "Nouvelle commande à préparer",
                     $"Paiement reçu : {articles} pour {share.Amount:0.00} {e.Currency}. Préparez la commande.",

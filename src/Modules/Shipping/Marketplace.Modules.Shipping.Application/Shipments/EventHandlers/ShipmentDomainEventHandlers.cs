@@ -36,3 +36,41 @@ public sealed class ShipmentDeliveredDomainEventHandler : IDomainEventHandler<Sh
             new ShipmentDeliveredIntegrationEvent { ShipmentId = domainEvent.ShipmentId, OrderId = domainEvent.OrderId, SellerId = domainEvent.SellerId },
             cancellationToken);
 }
+
+/// <summary>
+/// Publie « course en échec » — le message qui sort l'échec du module Shipping.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// SANS CE MAILLON, LA CORRECTION S'ARRÊTERAIT À LA BASE DE DONNÉES.
+///
+/// Enregistrer l'échec sur l'expédition ne prévient personne : le vendeur ne relit pas
+/// sa table `shipments`. Shipping ne peut pas non plus notifier lui-même — il ne connaît
+/// ni les comptes, ni les jetons d'appareil, ni les préférences. Il annonce un FAIT, et
+/// Notifications décide quoi en dire, comme pour l'expédition et la livraison.
+///
+/// La publication passe par l'outbox, dans la MÊME TRANSACTION que l'annotation de
+/// l'expédition : un échec enregistré dont l'annonce serait perdue ne laisserait rien à
+/// réessayer, et on retomberait exactement dans le silence qu'on corrige.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed class CourierDeliveryFailedDomainEventHandler
+    : IDomainEventHandler<CourierDeliveryFailedDomainEvent>
+{
+    private readonly IIntegrationEventPublisher _publisher;
+
+    public CourierDeliveryFailedDomainEventHandler(IIntegrationEventPublisher publisher)
+        => _publisher = publisher;
+
+    public Task HandleAsync(
+        CourierDeliveryFailedDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        => _publisher.PublishAsync(
+            new CourierDeliveryFailedIntegrationEvent
+            {
+                ShipmentId = domainEvent.ShipmentId,
+                OrderId = domainEvent.OrderId,
+                SellerId = domainEvent.SellerId,
+                DeliveryJobId = domainEvent.DeliveryJobId,
+                Reason = domainEvent.Reason
+            },
+            cancellationToken);
+}

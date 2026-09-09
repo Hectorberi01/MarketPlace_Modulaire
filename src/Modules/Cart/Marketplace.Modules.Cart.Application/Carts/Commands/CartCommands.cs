@@ -16,8 +16,26 @@ public sealed record RemoveCartItemCommand(Guid BuyerId, Guid OfferId) : IComman
 /// <summary>Vide le panier actif.</summary>
 public sealed record ClearCartCommand(Guid BuyerId) : ICommand;
 
-/// <summary>Valide le panier (checkout) — déclenche la création de commande côté Ordering.</summary>
-public sealed record CheckoutCartCommand(Guid BuyerId) : ICommand<Guid>;
+// ═════════════════════════════════════════════════════════════════════════════
+// `CheckoutCartCommand` A ÉTÉ SUPPRIMÉE, AINSI QUE SON HANDLER.
+//
+// Sa documentation affirmait qu'elle « déclenche la création de commande côté
+// Ordering ». C'ÉTAIT FAUX, et de la pire façon : le handler faisait
+// `Cart.MarkCheckedOut()` puis sauvegardait, rien d'autre. Aucune commande n'était
+// créée, et l'`CartCheckedOutIntegrationEvent` publié dans la foulée n'avait aucun
+// consommateur dans le dépôt. Le panier passait `CheckedOut`, la lecture du panier
+// actif filtre sur `Active`, et l'agrégat n'a aucune méthode de réouverture :
+// l'acheteur perdait son panier définitivement, en échange de rien.
+//
+// Son unique appelant était `POST /api/cart/checkout`, supprimé en même temps
+// (voir l'encadré dans `CartEndpoints.MapCartEndpoints`). Aucun autre appelant dans
+// `src` ni dans `tests` — la commande n'avait donc plus de raison d'exister, et la
+// laisser en place aurait invité à la rebrancher.
+//
+// La fermeture du panier n'a plus qu'un seul chemin, et c'est une RÉACTION :
+// `CloseCartOnOrderPlacedHandler`, sur `OrderPlaced`. Le panier ne se ferme donc
+// jamais sans qu'une commande existe pour le remplacer.
+// ═════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Applique un code promo au panier.</summary>
 public sealed record ApplyCouponCommand(Guid BuyerId, string Code) : ICommand;
@@ -113,31 +131,6 @@ internal sealed class ClearCartCommandHandler
         cart.Clear();
         await SaveAndInvalidateAsync(command.BuyerId, cancellationToken);
         return Result.Success();
-    }
-}
-
-internal sealed class CheckoutCartCommandHandler
-    : CartCommandHandlerBase, ICommandHandler<CheckoutCartCommand, Guid>
-{
-    public CheckoutCartCommandHandler(ICartRepository cartRepository, ICartUnitOfWork unitOfWork, ICacheService cache)
-        : base(cartRepository, unitOfWork, cache) { }
-
-    public async Task<Result<Guid>> Handle(CheckoutCartCommand command, CancellationToken cancellationToken)
-    {
-        var cart = await CartRepository.GetActiveByBuyerAsync(command.BuyerId, cancellationToken);
-        if (cart is null)
-        {
-            return Result.Failure<Guid>(Error.NotFound("cart.not_found", "Aucun panier actif."));
-        }
-
-        var result = cart.MarkCheckedOut();
-        if (result.IsFailure)
-        {
-            return Result.Failure<Guid>(result.Error);
-        }
-
-        await SaveAndInvalidateAsync(command.BuyerId, cancellationToken);
-        return cart.Id.Value;
     }
 }
 

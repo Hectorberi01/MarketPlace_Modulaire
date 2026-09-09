@@ -121,6 +121,13 @@ namespace Marketplace.Modules.Shipping.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<DateTime?>("CourierFailedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CourierFailureReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -133,6 +140,9 @@ namespace Marketplace.Modules.Shipping.Infrastructure.Migrations
                     b.Property<string>("DeliveryMode")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("FailedDeliveryJobId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uuid");

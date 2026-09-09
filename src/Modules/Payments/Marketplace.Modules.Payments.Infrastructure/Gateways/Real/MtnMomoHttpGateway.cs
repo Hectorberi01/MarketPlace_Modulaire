@@ -42,6 +42,16 @@ public sealed class MtnMomoHttpGateway : HttpPaymentGatewayBase
 
     private async Task<GatewaySession> RequestToPayAsync(GatewayChargeContext context, CancellationToken ct)
     {
+        // LA DEVISE VIENT DE LA COMMANDE, ET ELLE DOIT ÊTRE CELLE DU COMPTE MARCHAND.
+        // Le payload envoyait `_options.Currency` avec `context.Amount` : l'étiquette
+        // de la configuration collée sur le montant de la commande. Voir l'encadré de
+        // `EnsureCurrencyIsSupported`.
+        //
+        // Le contrôle est fait AVANT le jeton : refuser ne doit pas coûter un
+        // aller-retour OAuth, et surtout pas laisser croire qu'on a commencé quelque
+        // chose côté prestataire.
+        var currency = EnsureCurrencyIsSupported(Provider, context.Currency, _options.Currency);
+
         var token = await GetAccessTokenAsync(ct);
         var referenceId = Guid.NewGuid().ToString();
 
@@ -49,8 +59,10 @@ public sealed class MtnMomoHttpGateway : HttpPaymentGatewayBase
         {
             Content = JsonContent.Create(new
             {
-                amount = FormatAmount(context.Amount),
-                currency = _options.Currency,
+                // « amount » est une CHAÎNE chez MoMo : on la formate à la précision de la
+                // devise (« 5000 » en XOF, « 50.00 » en EUR) au lieu de tronquer à l'entier.
+                amount = FormatAmountForCurrency(context.Amount, currency),
+                currency,
                 externalId = context.OrderId.ToString(),
                 payer = new
                 {
@@ -155,8 +167,6 @@ public sealed class MtnMomoHttpGateway : HttpPaymentGatewayBase
 
         return root.TryGetProperty("externalId", out var extId) ? extId.GetString() : null;
     }
-
-    private static string FormatAmount(decimal amount) => ((long)Math.Round(amount)).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static string NormalizeMsisdn(string? msisdn)
         => new string((msisdn ?? string.Empty).Where(char.IsDigit).ToArray());

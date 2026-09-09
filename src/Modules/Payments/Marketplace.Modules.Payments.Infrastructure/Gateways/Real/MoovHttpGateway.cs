@@ -43,6 +43,14 @@ public sealed class MoovHttpGateway : HttpPaymentGatewayBase
 
     private async Task<GatewaySession> RequestToPayAsync(GatewayChargeContext context, CancellationToken ct)
     {
+        // LA DEVISE VIENT DE LA COMMANDE, ET ELLE DOIT ÊTRE CELLE DU COMPTE MARCHAND.
+        // Le payload envoyait `_options.Currency` avec `context.Amount` : l'étiquette
+        // de la configuration collée sur le montant de la commande. Voir l'encadré de
+        // `EnsureCurrencyIsSupported`.
+        //
+        // Contrôle fait AVANT le jeton : un refus ne doit rien démarrer côté Moov.
+        var currency = EnsureCurrencyIsSupported(Provider, context.Currency, _options.Currency);
+
         var token = await GetAccessTokenAsync(ct);
         var externalReference = $"MOOV-{Guid.NewGuid():N}";
 
@@ -50,8 +58,10 @@ public sealed class MoovHttpGateway : HttpPaymentGatewayBase
         {
             Content = JsonContent.Create(new
             {
-                amount = FormatAmount(context.Amount),
-                currency = _options.Currency,
+                // « amount » est une CHAÎNE chez Moov : formatée à la précision de la devise
+                // (« 5000 » en XOF, « 50.00 » en EUR) au lieu d'être tronquée à l'entier.
+                amount = FormatAmountForCurrency(context.Amount, currency),
+                currency,
                 msisdn = NormalizeMsisdn(context.PayerMsisdn),
                 externalReference,
                 description = $"Commande {context.OrderId}",
@@ -147,8 +157,6 @@ public sealed class MoovHttpGateway : HttpPaymentGatewayBase
 
         return null;
     }
-
-    private static string FormatAmount(decimal amount) => ((long)Math.Round(amount)).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static string NormalizeMsisdn(string? msisdn)
         => new string((msisdn ?? string.Empty).Where(char.IsDigit).ToArray());

@@ -1,3 +1,5 @@
+using Marketplace.BuildingBlocks.Domain.Primitives;
+
 namespace Marketplace.BuildingBlocks.Application.Observability;
 
 /// <summary>
@@ -9,15 +11,17 @@ namespace Marketplace.BuildingBlocks.Application.Observability;
 /// </summary>
 public static class MoneyUnits
 {
-    private static readonly HashSet<string> ZeroDecimal = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "XOF", "XAF", "JPY", "KRW", "CLP", "VND", "GNF", "RWF", "UGX", "BIF", "DJF", "KMF", "PYG", "XPF"
-    };
-
-    /// <summary>Montant en plus petite unité (centimes pour EUR/USD, unité pour XOF…).</summary>
+    /// <summary>
+    /// Montant en plus petite unité (centimes pour EUR/USD, unité pour XOF…).
+    ///
+    /// LA LISTE DES DEVISES SANS SUBDIVISION VIT DANS <see cref="Money"/>. Elle était
+    /// recopiée ici — une troisième copie, à côté de celles de Stripe et de PayPal, et
+    /// déjà divergente : celle-ci ignorait MGA et VUV. Trois listes qu'aucun test ne
+    /// confrontait, pour une question qui n'a qu'une réponse.
+    /// </summary>
     public static long ToMinorUnits(decimal amount, string currency)
     {
-        var factor = ZeroDecimal.Contains(currency) ? 1m : 100m;
+        var factor = Money.IsZeroDecimal(currency) ? 1m : 100m;
         return (long)decimal.Round(amount * factor, MidpointRounding.AwayFromZero);
     }
 }

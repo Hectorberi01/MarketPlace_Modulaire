@@ -51,7 +51,7 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 
         var drafts = cart.Lines.Select(l => new OrderLineDraft(
             l.OfferId, l.ProductId, l.SellerId, l.Sku, l.ShipFromLocationId, l.Quantity,
-            l.UnitBaseAmount, l.SellerDiscount, l.PlatformDiscount, l.FinalUnitPrice,
+            l.UnitBaseAmount, l.SellerDiscount, l.PlatformDiscount, l.LineTotal,
             l.CommissionRate, l.ProviderFeeRate));
 
         // Le code promo du panier est FIGÉ dans la commande. C'est indispensable : le
@@ -166,78 +166,192 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
 
         await _orderRepository.AddAsync(order, cancellationToken);
 
-        // --- Étape Saga : réservation du stock, avec compensation en cas d'échec.
+        // ═════════════════════════════════════════════════════════════════════════
+        // TOUT CE QUI SUIT EST COMPENSÉ, Y COMPRIS SUR EXCEPTION.
+        //
+        // Il n'existe aucune transaction englobante dans ce dépôt : chaque étape du
+        // saga commite pour son propre compte, et la commande n'est écrite qu'à la
+        // fin. La compensation était donc la SEULE garantie — et elle n'était
+        // déclenchée que par un échec MÉTIER (`ok == false`).
+        //
+        // Or l'échec le plus attendu en production n'en est pas un : `TryReserveAsync`
+        // LÈVE sur conflit de verrou optimiste, cas documenté ailleurs dans ce dépôt
+        // et traduit en 409 tout en haut de la pile. Deux acheteurs sur le dernier
+        // article, une coupure réseau, une panne de base : l'exception traversait le
+        // handler, et les lignes déjà réservées n'étaient JAMAIS libérées. La commande
+        // n'étant pas persistée, ces réservations restaient rattachées à un
+        // identifiant qui n'existait dans aucune table — invisibles du balayeur
+        // d'abandon, qui part de la table des commandes. Seule l'expiration à six
+        // heures les rendait inoffensives, et le message du 409 — « Rien n'a été
+        // enregistré » — était faux.
+        //
+        // Le `try` couvre donc aussi l'engagement de cagnotte, qui n'avait AUCUNE
+        // compensation dans cet orchestrateur : `ReleaseCreditAsync` n'y était pas
+        // appelé une seule fois, et son seul appelant du dépôt exige une commande
+        // chargée depuis la base. Tout échec après l'engagement laissait donc l'argent
+        // du client bloqué dans le réservé, définitivement : ni dépensable, ni
+        // retirable, et sans aucun écran pour l'expliquer. Le stock avait un second
+        // filet — son expiration ; la cagnotte n'en avait pas.
+        // ═════════════════════════════════════════════════════════════════════════
         var reserved = new List<(string Sku, Guid LocationId)>();
-        foreach (var line in order.Lines)
+        var walletReserved = 0m;
+
+        try
         {
-            var ok = await _inventoryModuleApi.TryReserveAsync(
-                line.Sku, line.ShipFromLocationId, order.Id.Value, line.Quantity, cancellationToken);
-
-            if (ok)
+            foreach (var line in order.Lines)
             {
-                reserved.Add((line.Sku, line.ShipFromLocationId));
-                continue;
+                var ok = await _inventoryModuleApi.TryReserveAsync(
+                    line.Sku, line.ShipFromLocationId, order.Id.Value, line.Quantity, cancellationToken);
+
+                if (ok)
+                {
+                    reserved.Add((line.Sku, line.ShipFromLocationId));
+                    continue;
+                }
+
+                await CompensateAsync(order, reserved, walletReserved, cancellationToken);
+
+                order.Fail($"Stock indisponible pour le SKU {line.Sku}.");
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return Result.Failure<Guid>(Error.Conflict("ordering.out_of_stock", $"Stock insuffisant pour {line.Sku}."));
             }
 
-            // Compensation : on libère les réservations déjà obtenues.
-            foreach (var r in reserved)
+            // ─────────────────────────────────────────────────────────────────────
+            // Étape Saga : engagement de la CAGNOTTE, après le stock et avant le paiement.
+            //
+            // Cet ordre n'est pas indifférent. Engager la cagnotte avant le stock
+            // obligerait à la rendre dès qu'un article manque — une écriture de plus,
+            // pour rien, sur le cas d'échec le plus fréquent du checkout. Le stock
+            // tranche en premier ; l'argent ne bouge que pour une commande qui a une
+            // chance d'exister.
+            //
+            // Le montant réservé peut être INFÉRIEUR au montant demandé : entre
+            // l'affichage du panier et la validation, la même cagnotte a pu être
+            // engagée depuis un autre appareil. C'est ce qui est réellement réservé
+            // qui est imputé à la commande, et le client paiera la différence au
+            // prestataire.
+            // ─────────────────────────────────────────────────────────────────────
+            if (command.WalletAmount > 0m)
             {
-                await _inventoryModuleApi.ReleaseReservationAsync(r.Sku, r.LocationId, order.Id.Value, cancellationToken);
+                walletReserved = await _settlementModuleApi.TryReserveCreditAsync(
+                    command.BuyerId, order.Id.Value, Math.Min(command.WalletAmount, order.GrandTotal),
+                    order.Currency, cancellationToken);
+
+                order.ApplyWalletCredit(walletReserved);
             }
 
-            order.Fail($"Stock indisponible pour le SKU {line.Sku}.");
+            order.MarkAwaitingPayment();
+
+            // ═════════════════════════════════════════════════════════════════════
+            // LA COMMANDE EST ÉCRITE ICI, AVANT TOUTE CONSOMMATION DÉFINITIVE.
+            //
+            // Ce `SaveChanges` n'existait pas : la commande n'était persistée qu'à la
+            // toute fin, APRÈS que la cagnotte ait été débitée et le stock décrémenté
+            // par le chemin « réglée intégralement en cagnotte ». Or cette sauvegarde
+            // finale peut échouer — le contexte dispatche les événements de domaine
+            // AVANT d'écrire, donc un handler qui lève emporte tout.
+            //
+            // Le résultat était le pire état atteignable du parcours : le client avait
+            // payé, le stock était parti, et AUCUNE LIGNE DE COMMANDE N'EXISTAIT. Rien
+            // n'était rattrapable — ni le balayeur d'abandon, ni les plafonds de
+            // remboursement, qui ont tous besoin d'un identifiant de commande.
+            //
+            // En écrivant d'abord, le pire devient une commande « en attente de
+            // paiement » avec sa cagnotte engagée : exactement ce que le balayeur sait
+            // annuler et compenser six heures plus tard. Une panne coûte alors un
+            // délai, plus une commande fantôme.
+            // ═════════════════════════════════════════════════════════════════════
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            return Result.Failure<Guid>(Error.Conflict("ordering.out_of_stock", $"Stock insuffisant pour {line.Sku}."));
-        }
 
-        // ─────────────────────────────────────────────────────────────────────────────
-        // Étape Saga : engagement de la CAGNOTTE, après le stock et avant le paiement.
-        //
-        // Cet ordre n'est pas indifférent. Engager la cagnotte avant le stock obligerait
-        // à la rendre dès qu'un article manque — une écriture de plus, pour rien, sur le
-        // cas d'échec le plus fréquent du checkout. Le stock tranche en premier ; l'argent
-        // ne bouge que pour une commande qui a une chance d'exister.
-        //
-        // Le montant réservé peut être INFÉRIEUR au montant demandé : entre l'affichage du
-        // panier et la validation, la même cagnotte a pu être engagée depuis un autre
-        // appareil. C'est ce qui est réellement réservé qui est imputé à la commande, et
-        // le client paiera la différence au prestataire.
-        // ─────────────────────────────────────────────────────────────────────────────
-        if (command.WalletAmount > 0m)
-        {
-            var reservedCredit = await _settlementModuleApi.TryReserveCreditAsync(
-                command.BuyerId, order.Id.Value, Math.Min(command.WalletAmount, order.GrandTotal),
-                order.Currency, cancellationToken);
-
-            order.ApplyWalletCredit(reservedCredit);
-        }
-
-        order.MarkAwaitingPayment();
-
-        // ─────────────────────────────────────────────────────────────────────────────
-        // LA CAGNOTTE COUVRE TOUT : IL N'Y A RIEN À ENCAISSER, DONC PAS DE PAIEMENT.
-        //
-        // C'est le seul chemin par lequel une commande se confirme sans qu'un prestataire
-        // n'ait jamais été appelé. Il est ici, dans le Saga, et non derrière une commande
-        // publique : une commande « confirmer sans payer » exposée au BFF serait une porte
-        // ouverte pour confirmer n'importe quelle commande sans la régler.
-        //
-        // Le garde-fou est celui du domaine — IsFullyCoveredByWallet ne peut être vrai que
-        // si la cagnotte a réellement été engagée à hauteur du total, ce qui vient d'une
-        // écriture au grand livre et pas d'un paramètre d'appel.
-        // ─────────────────────────────────────────────────────────────────────────────
-        if (order.IsFullyCoveredByWallet)
-        {
-            var settled = await SettleWithWalletOnlyAsync(order, cancellationToken);
-            if (settled.IsFailure)
+            // ─────────────────────────────────────────────────────────────────────
+            // LA CAGNOTTE COUVRE TOUT : IL N'Y A RIEN À ENCAISSER, DONC PAS DE PAIEMENT.
+            //
+            // C'est le seul chemin par lequel une commande se confirme sans qu'un
+            // prestataire n'ait jamais été appelé. Il est ici, dans le Saga, et non
+            // derrière une commande publique : une commande « confirmer sans payer »
+            // exposée au BFF serait une porte ouverte pour confirmer n'importe quelle
+            // commande sans la régler.
+            //
+            // Le garde-fou est celui du domaine — `IsFullyCoveredByWallet` ne peut
+            // être vrai que si la cagnotte a réellement été engagée à hauteur du
+            // total, ce qui vient d'une écriture au grand livre et pas d'un paramètre
+            // d'appel.
+            // ─────────────────────────────────────────────────────────────────────
+            if (order.IsFullyCoveredByWallet)
             {
-                return Result.Failure<Guid>(settled.Error);
+                var settled = await SettleWithWalletOnlyAsync(order, cancellationToken);
+                if (settled.IsFailure)
+                {
+                    // La commande EXISTE déjà en base, en attente de paiement, avec sa
+                    // cagnotte engagée. On ne compense pas ici : le balayeur d'abandon
+                    // l'annulera et rendra tout, par le chemin unique qui sait le
+                    // faire. Compenser à la main doublerait ce chemin, et deux
+                    // libérations de la même réservation finiraient par diverger.
+                    return Result.Failure<Guid>(settled.Error);
+                }
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
         }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        catch (Exception)
+        {
+            // On rend ce qui a été pris, PUIS on relaisse remonter. Avaler l'exception
+            // transformerait une panne en commande silencieusement absente ; la
+            // compenser sans la relancer ferait croire au client que rien n'a échoué.
+            await CompensateAsync(order, reserved, walletReserved, CancellationToken.None);
+            throw;
+        }
 
         return order.Id.Value;
+    }
+
+    /// <summary>
+    /// Rend ce que le saga a pris : réservations de stock et cagnotte engagée.
+    ///
+    /// LES ÉCHECS DE COMPENSATION SONT AVALÉS, ET C'EST DÉLIBÉRÉ. Cette méthode est
+    /// appelée depuis un chemin d'erreur : lever ici masquerait la faute d'origine par
+    /// une seconde, et laisserait les libérations SUIVANTES non tentées. Chaque ligne
+    /// est donc compensée indépendamment, et ce qui échoue retombe sur les filets de
+    /// second rang — l'expiration des réservations, le balayeur d'abandon.
+    ///
+    /// `CancellationToken.None` chez l'appelant du bloc `catch` : une requête annulée
+    /// ne doit pas empêcher de rendre ce qu'elle avait pris.
+    /// </summary>
+    private async Task CompensateAsync(
+        Order order,
+        IReadOnlyList<(string Sku, Guid LocationId)> reserved,
+        decimal walletReserved,
+        CancellationToken cancellationToken)
+    {
+        foreach (var r in reserved)
+        {
+            try
+            {
+                await _inventoryModuleApi.ReleaseReservationAsync(
+                    r.Sku, r.LocationId, order.Id.Value, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // Rattrapé par l'expiration de la réservation.
+            }
+        }
+
+        if (walletReserved <= 0m)
+        {
+            return;
+        }
+
+        try
+        {
+            await _settlementModuleApi.ReleaseCreditAsync(
+                order.BuyerId, order.Id.Value, walletReserved, order.Currency, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Rattrapé par le balayeur d'abandon SI la commande a été écrite. Si elle
+            // ne l'a pas été, la cagnotte reste engagée : c'est le seul trou résiduel
+            // de ce chemin, et il exige que DEUX opérations échouent coup sur coup.
+        }
     }
 
     /// <summary>
@@ -255,10 +369,20 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         await _settlementModuleApi.ConfirmCreditAsync(
             order.BuyerId, order.Id.Value, order.WalletApplied, order.Currency, cancellationToken);
 
+        // Le résultat se lit ici aussi : une confirmation qui ne solde pas le stock
+        // vend deux fois le même article. Voir l'encadré de
+        // `ConfirmOrderPaymentCommandHandler`, même défaut, même correction.
         foreach (var line in order.Lines)
         {
-            await _inventoryModuleApi.ConfirmReservationAsync(
+            var settled = await _inventoryModuleApi.ConfirmReservationAsync(
                 line.Sku, line.ShipFromLocationId, order.Id.Value, cancellationToken);
+
+            if (!settled)
+            {
+                return Result.Failure(Error.Conflict(
+                    "ordering.reservation_not_settled",
+                    $"Le stock de « {line.Sku} » n'a pas pu être soldé pour cette commande."));
+            }
         }
 
         var paid = order.MarkPaid();

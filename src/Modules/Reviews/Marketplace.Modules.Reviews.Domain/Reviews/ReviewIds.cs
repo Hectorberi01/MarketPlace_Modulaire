@@ -11,11 +11,23 @@ public readonly record struct ReviewId(Guid Value)
     public override string ToString() => Value.ToString();
 }
 
-/// <summary>Statut de modération d'un avis.</summary>
+/// <summary>
+/// Statut de modération d'un avis.
+///
+/// SEUL `Rejected` RETIRE L'AVIS DES LECTURES PUBLIQUES. `Flagged` marque un avis
+/// contesté qui attend la décision d'un modérateur — il reste affiché et continue de
+/// compter dans les notes. Voir `ReviewRepository.PubliclyVisible` : c'est là que la
+/// règle est appliquée, et là qu'est expliqué pourquoi `Flagged` a cessé de dépublier.
+/// </summary>
 public enum ReviewStatus
 {
+    /// <summary>Visible publiquement, compté dans les notes.</summary>
     Published = 0,
+
+    /// <summary>Signalé par un utilisateur : visible, en attente de revue.</summary>
     Flagged = 1,
+
+    /// <summary>Rejeté par un modérateur : retiré des lectures publiques et des notes.</summary>
     Rejected = 2
 }
 

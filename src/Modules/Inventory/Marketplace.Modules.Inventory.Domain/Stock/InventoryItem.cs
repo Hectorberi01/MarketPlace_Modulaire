@@ -182,9 +182,15 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
     ///
     /// L'EXPIRATION N'EST PAS REGARDÉE ICI, DÉLIBÉRÉMENT. La commande est payée : le
     /// stock physique doit partir, que la réservation ait tenu ou non. Filtrer sur
-    /// l'expiration ferait échouer la confirmation d'un paiement lent — et comme
-    /// `ConfirmOrderPaymentCommandHandler` ignore le résultat, l'échec serait muet : le
-    /// client payé, le stock jamais décrémenté.
+    /// l'expiration ferait échouer la confirmation d'un paiement lent, et priverait la
+    /// commande de son décrément alors même que l'argent est encaissé.
+    ///
+    /// LE RÉSULTAT EST DÉSORMAIS LU PAR L'APPELANT. Ce commentaire disait auparavant
+    /// que `ConfirmOrderPaymentCommandHandler` ignorait le résultat, « donc l'échec
+    /// serait muet ». C'était exact, et c'était une survente : la commande passait
+    /// `Confirmed` sans que `OnHand` bouge. Le handler teste maintenant la valeur de
+    /// retour et refuse de confirmer. Le raisonnement ci-dessus tient toujours — il
+    /// ne repose simplement plus sur un défaut pour être vrai.
     /// </summary>
     public Result ConfirmReservation(Guid orderId)
     {

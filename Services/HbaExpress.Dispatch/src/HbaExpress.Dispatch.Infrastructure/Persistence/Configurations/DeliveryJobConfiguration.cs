@@ -172,6 +172,14 @@ internal sealed class PickupPointConfiguration : IEntityTypeConfiguration<Pickup
 
         builder.Navigation(p => p.Parcels).UsePropertyAccessMode(PropertyAccessMode.Field);
 
+        // « Traité » se DÉDUIT de IsPickedUp et d'Incident : aucune colonne, donc aucune
+        // migration, et aucun troisième état à maintenir cohérent avec les deux autres.
+        // EF ne la mapperait pas de toute façon (ni accesseur en écriture ni champ de
+        // stockage) ; on le dit quand même, comme pour les propriétés calculées de la
+        // course, pour qu'un futur refactoring en propriété stockée soit un choix et non
+        // un accident.
+        builder.Ignore(p => p.IsResolved);
+
         builder.HasIndex("DeliveryJobId", "Sequence").IsUnique();
     }
 }

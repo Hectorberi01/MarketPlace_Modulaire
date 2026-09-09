@@ -5,13 +5,20 @@ using Marketplace.Modules.Reviews.Domain.Reviews;
 
 namespace Marketplace.Modules.Reviews.Application.Reviews.Commands;
 
-/// <summary>Signale un avis (modération).</summary>
+/// <summary>
+/// Signale un avis : le marque pour revue de modération.
+///
+/// AUCUN CONTRÔLE DE RÔLE ICI, ET C'EST ASSUMÉ : signaler est un geste d'utilisateur.
+/// Ce handler ne dépublie rien — `Review.Flag()` ne fait plus sortir l'avis des
+/// lectures publiques. Le retrait effectif passe par <see cref="RejectReviewCommand"/>,
+/// dont la route exige Admin/Modérateur.
+/// </summary>
 public sealed record FlagReviewCommand(Guid ReviewId) : ICommand;
 
-/// <summary>Rejette un avis (le retire de la note publique).</summary>
+/// <summary>Rejette un avis (Admin / Modérateur) : le retire des lectures publiques et de la note.</summary>
 public sealed record RejectReviewCommand(Guid ReviewId) : ICommand;
 
-/// <summary>Restaure un avis signalé / rejeté.</summary>
+/// <summary>Lève le signalement ou le rejet d'un avis (Admin / Modérateur).</summary>
 public sealed record RestoreReviewCommand(Guid ReviewId) : ICommand;
 
 internal abstract class ReviewModerationHandlerBase

@@ -103,6 +103,108 @@ public class ShipmentAggregateTests
         shipment.DomainEvents.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// L'ÉCHEC NE FAIT PAS AVANCER L'EXPÉDITION, ET C'EST LE POINT. NE PAS « CORRIGER ».
+    ///
+    /// Le vendeur doit pouvoir repartir, et le seul état d'où `MarkShipped` accepte de
+    /// confier la part à un transporteur tiers est « en préparation ». Faire basculer
+    /// l'expédition ailleurs — livrée, annulée, en attente — supprimerait ce repli sur
+    /// une commande DÉJÀ PAYÉE.
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public void Une_course_en_echec_laisse_l_expedition_en_preparation_et_le_repli_transporteur_ouvert()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+
+        var resultat = shipment.MarkCourierDeliveryFailed(
+            Guid.NewGuid(), "Acheteur injoignable.", DateTime.UtcNow);
+
+        resultat.IsSuccess.Should().BeTrue();
+        shipment.Status.Should().Be(ShipmentStatus.Preparing);
+        shipment.DeliveryMode.Should().BeNull("personne n'a emporté ce colis");
+        shipment.CourierFailureReason.Should().Be("Acheteur injoignable.");
+
+        // LE REPLI RESTE PRATICABLE : c'est toute la raison de ne pas bouger le statut.
+        shipment.MarkShipped("DHL", "TRACK-9").IsSuccess.Should().BeTrue();
+        shipment.Status.Should().Be(ShipmentStatus.Shipped);
+    }
+
+    [Fact]
+    public void Une_annonce_d_echec_rejouee_est_un_succes_silencieux()
+    {
+        var shipment = NewShipment();
+        var course = Guid.NewGuid();
+        shipment.MarkPreparing();
+        shipment.MarkCourierDeliveryFailed(course, "Adresse introuvable.", DateTime.UtcNow);
+        shipment.ClearDomainEvents();
+
+        // Le drain du service coursier réessaie jusqu'à dix fois : sans ce succès
+        // silencieux, le vendeur recevrait dix fois la même mauvaise nouvelle.
+        shipment.MarkCourierDeliveryFailed(course, "Adresse introuvable.", DateTime.UtcNow)
+            .IsSuccess.Should().BeTrue();
+        shipment.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Un_SECOND_echec_par_une_AUTRE_course_est_bien_annonce()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+        shipment.MarkCourierDeliveryFailed(Guid.NewGuid(), "Premier abandon.", DateTime.UtcNow);
+        shipment.ClearDomainEvents();
+
+        // Le repli a été retenté et a échoué à son tour : c'est un fait NOUVEAU. Le taire
+        // laisserait le vendeur croire sa seconde tentative partie.
+        var seconde = Guid.NewGuid();
+        shipment.MarkCourierDeliveryFailed(seconde, "Second abandon.", DateTime.UtcNow)
+            .IsSuccess.Should().BeTrue();
+
+        shipment.FailedDeliveryJobId.Should().Be(seconde);
+        shipment.DomainEvents.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Un_motif_interminable_est_tronque_et_ne_fait_pas_echouer_l_annonce()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+
+        // Le service de dispatch normalise le motif mais NE LE BORNE PAS. Refuser ici
+        // ferait rejouer puis abandonner l'annonce : le vendeur ne saurait rien, ce qui
+        // est exactement le défaut qu'on ferme.
+        shipment.MarkCourierDeliveryFailed(Guid.NewGuid(), new string('x', 5000), DateTime.UtcNow)
+            .IsSuccess.Should().BeTrue();
+
+        shipment.CourierFailureReason!.Length.Should().Be(300);
+    }
+
+    [Fact]
+    public void Un_motif_vide_devient_un_libelle_exploitable()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+
+        shipment.MarkCourierDeliveryFailed(Guid.NewGuid(), "   ", DateTime.UtcNow)
+            .IsSuccess.Should().BeTrue();
+
+        shipment.CourierFailureReason.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void Une_expedition_deja_confiee_a_un_transporteur_refuse_l_echec_de_course()
+    {
+        var shipment = NewShipment();
+        shipment.MarkPreparing();
+        shipment.MarkShipped("DHL", "TRACK-1");
+
+        // Cette part n'appartient plus au coursier : elle est en transit chez un tiers.
+        shipment.MarkCourierDeliveryFailed(Guid.NewGuid(), "Abandon.", DateTime.UtcNow)
+            .IsFailure.Should().BeTrue();
+    }
+
     [Fact]
     public void Une_expedition_deja_livree_par_une_AUTRE_course_est_refusee()
     {

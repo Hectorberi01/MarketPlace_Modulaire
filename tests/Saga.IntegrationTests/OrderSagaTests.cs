@@ -171,7 +171,8 @@ public sealed class OrderSagaTests : IAsyncLifetime
             UnitBasePrice: 10_000m,
             SellerDiscount: 0m,
             PlatformDiscount: 0m,
-            FinalUnitPrice: 10_000m,
+            // Montant de LIGNE, pas prix unitaire : deux articles à 10 000.
+            LineTotal: 20_000m,
             CommissionRate: 0.10m,
             ProviderFeeRate: 0.05m);
 

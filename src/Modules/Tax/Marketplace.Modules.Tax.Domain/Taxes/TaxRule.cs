@@ -68,9 +68,17 @@ public sealed class TaxRule : AggregateRoot<TaxRuleId>
             type == TaxType.Exempt ? 0m : rate, type, effectiveFromUtc);
     }
 
-    /// <summary>Calcule la taxe due sur un montant hors taxe.</summary>
-    public decimal ComputeTax(decimal amount)
-        => Type == TaxType.Exempt ? 0m : decimal.Round(amount * Rate, 2);
+    /// <summary>
+    /// Calcule la taxe due sur un montant hors taxe.
+    ///
+    /// La précision suit la DEVISE du montant, plus deux décimales en dur : une taxe
+    /// exprimée au centime dans une devise qui n'en a pas est un chiffre que la
+    /// déclaration ne pourra pas reprendre. Une règle fiscale ne porte pas de devise —
+    /// elle porte une juridiction et un taux — d'où le paramètre, dont le défaut est
+    /// <see cref="Money.DefaultCurrency"/>, la devise de la place.
+    /// </summary>
+    public decimal ComputeTax(decimal amount, string currency = Money.DefaultCurrency)
+        => Type == TaxType.Exempt ? 0m : Money.Round(amount * Rate, currency);
 
     /// <summary>
     /// ═════════════════════════════════════════════════════════════════════════════
@@ -89,16 +97,18 @@ public sealed class TaxRule : AggregateRoot<TaxRuleId>
     /// précisément parce que les deux formules se ressemblent que ce sont deux
     /// méthodes nommées, et pas un paramètre booléen.
     ///
-    /// Arrondi à deux décimales, une seule fois, comme partout ailleurs dans le
-    /// calcul monétaire de la place. Le HT est déduit par SOUSTRACTION chez
-    /// l'appelant, jamais recalculé : c'est ce qui garantit que HT + TVA redonne
-    /// exactement le TTC, sans centime perdu à l'arrondi.
+    /// ARRONDI UNE SEULE FOIS, À LA PRÉCISION DE LA DEVISE. C'était deux décimales en
+    /// dur : sur 1 500 XOF à 18 %, la TVA extraite valait 228,81 — un montant que ni la
+    /// caisse ni la déclaration ne savent porter, puisque le franc CFA n'a pas de
+    /// subdivision. L'invariant, lui, ne bouge pas : le HT est déduit par SOUSTRACTION
+    /// chez l'appelant, jamais recalculé, donc HT + TVA redonne exactement le TTC quelle
+    /// que soit la précision retenue.
     /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public decimal ExtractIncludedTax(decimal grossAmount)
+    public decimal ExtractIncludedTax(decimal grossAmount, string currency = Money.DefaultCurrency)
         => Type == TaxType.Exempt || Rate == 0m
             ? 0m
-            : decimal.Round(grossAmount * Rate / (1m + Rate), 2);
+            : Money.Round(grossAmount * Rate / (1m + Rate), currency);
 
     public bool IsApplicableAt(DateTime nowUtc) => IsActive && EffectiveFromUtc <= nowUtc;
 
