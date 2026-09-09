@@ -1,0 +1,278 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE VPS BASE — CONFIGURATION, PAS INSTALLATION.
+#
+# PostgreSQL est déjà en place sur cette machine : ce rôle ne l'installe pas et ne
+# recrée aucun cluster. Il aligne la configuration, ouvre l'écoute sur le tunnel, et
+# crée la base et les rôles applicatifs.
+#
+# TOUT EST IDEMPOTENT. Relancé sur une machine déjà conforme, il ne change rien et
+# ne redémarre rien — c'est ce qui permet de le passer sans crainte pendant que la
+# production tourne.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+- name: Vérifier que PostgreSQL est bien présent
+  ansible.builtin.command: pg_lsclusters --no-header
+  register: pg_clusters
+  changed_when: false
+  # Sans ceci, `--check` saute la tâche : `pg_clusters` n'a alors pas de clé `rc`
+  # ni `stdout`, et les tâches qui les lisent échouent sur « dict object has no
+  # attribute ». Or le runbook recommande `--check` comme premier geste. Une
+  # commande en lecture seule n'a aucune raison d'être sautée.
+  check_mode: false
+  failed_when: pg_clusters.rc != 0 or pg_clusters.stdout | trim == ''
+
+- name: Afficher le cluster détecté
+  ansible.builtin.debug:
+    msg: "Cluster(s) PostgreSQL : {{ pg_clusters.stdout_lines }}"
+
+# ── Dépendances de pilotage ──────────────────────────────────────────────────────
+#
+# Les modules `community.postgresql` parlent à la base par psycopg2, exécuté SUR
+# l'hôte cible. Sans lui, chaque tâche échoue sur « the PostgreSQL module is not
+# importable » — un message qui ne dit pas qu'il manque un paquet système.
+
+- name: Installer le pilote Python de PostgreSQL
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ── La locale, AVANT la base ─────────────────────────────────────────────────────
+#
+# `CREATE DATABASE … LC_COLLATE 'fr_FR.UTF-8'` échoue si la locale n'existe pas sur
+# le système. Elle doit donc être générée d'abord, et le service redémarré pour
+# qu'il la voie.
+
+- name: Installer les outils de locale
+  ansible.builtin.apt:
+    name: locales
+    state: present
+
+- name: Générer la locale {{ postgres_locale }}
+  community.general.locale_gen:
+    name: "{{ postgres_locale }}"
+    state: present
+  register: locale_generated
+
+- name: Redémarrer PostgreSQL pour qu'il prenne la nouvelle locale en compte
+  ansible.builtin.service:
+    name: postgresql
+    state: restarted
+  when: locale_generated is changed
+
+# ── Configuration du moteur ──────────────────────────────────────────────────────
+#
+# On n'écrase PAS `postgresql.conf`, qui appartient au paquet et porte des chemins
+# propres à la distribution. On dépose un fichier dans `conf.d/`, lu APRÈS le
+# fichier principal : nos valeurs gagnent, et une mise à jour du paquet ne les
+# efface pas.
+
+- name: Déterminer le répertoire de configuration du cluster
+  ansible.builtin.set_fact:
+    pg_conf_dir: "/etc/postgresql/{{ postgres_version }}/main"
+
+- name: Vérifier que ce répertoire existe
+  ansible.builtin.stat:
+    path: "{{ pg_conf_dir }}"
+  register: pg_conf_stat
+
+- name: Échouer clairement si la version ne correspond pas à ce qui est installé
+  ansible.builtin.fail:
+    msg: >-
+      {{ pg_conf_dir }} est introuvable. `postgres_version` vaut
+      {{ postgres_version }}, mais le cluster installé est :
+      {{ pg_clusters.stdout_lines | join(' | ') }}.
+      Corriger `postgres_version` dans group_vars/all/main.yml.
+  when: not pg_conf_stat.stat.exists
+
+- name: Déposer la configuration de la place de marché
+  ansible.builtin.template:
+    src: marketplace.conf.j2
+    dest: "{{ pg_conf_dir }}/conf.d/10-marketplace.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: restart postgresql
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE REDÉMARRAGE MAINTENANT, PAS À LA FIN.
+#
+# `shared_preload_libraries` ne se charge qu'au démarrage du serveur. Tant que le
+# handler reste en file, la bibliothèque n'est pas là — et le `CREATE EXTENSION
+# pg_stat_statements` plus bas échouerait sur « must be loaded via
+# shared_preload_libraries ». Les handlers ne s'exécutent qu'en fin de play : sans
+# ce flush, l'ordre serait faux au premier passage, et seulement au premier — la
+# pire forme de bug, celle qui disparaît quand on rejoue.
+#
+# C'est exactement la faute d'ordonnancement corrigée dans le rôle `marketplace`.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Appliquer la configuration avant de continuer
+  ansible.builtin.meta: flush_handlers
+
+# ── Qui a le droit de se connecter ───────────────────────────────────────────────
+#
+# `pg_hba` est la seule chose qui sépare une base joignable d'une base ouverte. Les
+# règles sont posées une par une plutôt que par un fichier entier : le module ne
+# touche qu'aux lignes qu'il connaît, et les règles de la distribution restent en
+# place.
+
+- name: Autoriser le réseau du tunnel, en scram-sha-256
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ pg_conf_dir }}/pg_hba.conf"
+    contype: host
+    databases: all
+    users: all
+    source: "{{ postgres_allowed_cidr }}"
+    method: scram-sha-256
+    create: true
+  become_user: postgres
+  notify: reload postgresql
+
+# ── La base et ses rôles ─────────────────────────────────────────────────────────
+
+- name: Créer le rôle applicatif
+  community.postgresql.postgresql_user:
+    name: "{{ app_db_user }}"
+    password: "{{ postgres_password }}"
+    role_attr_flags: LOGIN,CREATEDB
+    state: present
+  become_user: postgres
+  no_log: true
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LA COLLATION SE CHOISIT ICI, ET NULLE PART AILLEURS.
+#
+# Le cluster existe déjà : SA collation est figée depuis son `initdb` et ne se
+# change plus. Mais la collation est une propriété de la BASE, pas du cluster — et
+# `TEMPLATE template0` est ce qui permet d'en choisir une autre que celle du
+# cluster. C'est la seule raison pour laquelle il est encore temps.
+#
+# Sans ce détour, une base créée sur un cluster en `C` hérite du tri par octets :
+# « Émile » après « Zoé », « é » étranger à « e ». Sur une place de marché
+# francophone, c'est faux dans chaque liste de produits, de vendeurs et de résultats
+# de recherche — et irréparable après coup autrement que par un dump/restore.
+#
+# `template0` et non `template1` : `template1` peut avoir été modifié (extensions,
+# objets), et une base ne peut être créée avec une collation différente que depuis
+# un modèle vierge et non connecté.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Créer la base applicative, avec la collation française
+  community.postgresql.postgresql_db:
+    name: "{{ app_db_name }}"
+    owner: "{{ app_db_user }}"
+    encoding: "{{ postgres_encoding }}"
+    lc_collate: "{{ postgres_locale }}"
+    lc_ctype: "{{ postgres_locale }}"
+    template: template0
+    state: present
+  become_user: postgres
+
+- name: Créer les bases annexes (dispatch), mêmes règles
+  community.postgresql.postgresql_db:
+    name: "{{ item }}"
+    owner: "{{ app_db_user }}"
+    encoding: "{{ postgres_encoding }}"
+    lc_collate: "{{ postgres_locale }}"
+    lc_ctype: "{{ postgres_locale }}"
+    template: template0
+    state: present
+  become_user: postgres
+  loop: "{{ postgres_extra_databases }}"
+
+- name: Activer pg_stat_statements sur la base applicative
+  community.postgresql.postgresql_ext:
+    name: pg_stat_statements
+    db: "{{ app_db_name }}"
+    state: present
+  become_user: postgres
+
+# ── Le rôle en lecture seule ─────────────────────────────────────────────────────
+#
+# Pour l'explorateur SQL et l'exporter de métriques. Ils lisaient jusqu'ici avec le
+# compte applicatif, c'est-à-dire avec le droit d'écrire sur toute la base : un
+# exporter compromis pouvait la modifier.
+
+- name: Créer le rôle de lecture seule
+  community.postgresql.postgresql_user:
+    name: "{{ postgres_readonly_user }}"
+    password: "{{ db_admin_readonly_password }}"
+    role_attr_flags: LOGIN
+    state: present
+  become_user: postgres
+  no_log: true
+  when: db_admin_readonly_password is defined
+
+- name: Lui donner la lecture sur toute la base, et rien de plus
+  community.postgresql.postgresql_membership:
+    target_roles:
+      - "{{ postgres_readonly_user }}"
+    groups:
+      - pg_read_all_data
+    state: present
+  become_user: postgres
+  when: db_admin_readonly_password is defined
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE PARE-FEU DOIT LAISSER ENTRER LE TUNNEL.
+#
+# Sans cette règle, UFW — actif sur cette machine — jette les paquets décapsulés à
+# destination de 5432. Et le piège est que le tunnel a l'air de fonctionner : UFW
+# autorise l'ICMP par défaut, donc le `ping` de fin du rôle wireguard réussit et
+# annonce « tunnel opérationnel » pendant que Postgres est injoignable. La panne ne
+# se révélerait qu'à l'étape 7 du runbook, après la bascule.
+#
+# La source est le RÉSEAU DU TUNNEL, pas l'adresse publique du pair : les paquets
+# arrivent avec 10.20.0.1 comme source, l'encapsulation ayant déjà été retirée.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Ouvrir PostgreSQL au seul réseau du tunnel
+  community.general.ufw:
+    rule: allow
+    port: "5432"
+    proto: tcp
+    src: "{{ postgres_allowed_cidr }}"
+    comment: "PostgreSQL — tunnel WireGuard uniquement"
+  when: enable_ufw | default(false)
+
+# ── Vérification finale ──────────────────────────────────────────────────────────
+#
+# Une tâche qui ne change rien mais qui échoue si le résultat n'est pas celui
+# attendu. Sans elle, un rôle « ok » ne dirait pas que la base écoute au mauvais
+# endroit ou que la collation n'a pas été appliquée.
+
+- name: Forcer l'application des changements en attente
+  ansible.builtin.meta: flush_handlers
+
+- name: Relire ce que la base annonce d'elle-même
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: >-
+      SELECT current_setting('listen_addresses') AS listen,
+             current_setting('max_connections')  AS max_conn,
+             datcollate, datctype
+      FROM pg_database WHERE datname = %(db)s
+    named_args:
+      db: "{{ app_db_name }}"
+  become_user: postgres
+  register: pg_check
+  changed_when: false
+  check_mode: false
+
+- name: La collation doit être celle qui a été décidée
+  ansible.builtin.assert:
+    that:
+      - pg_check.query_result[0].datcollate == postgres_locale
+    fail_msg: >-
+      La base « {{ app_db_name }} » a la collation
+      « {{ pg_check.query_result[0].datcollate }} » et non « {{ postgres_locale }} ».
+      Elle existait donc déjà avec une autre collation : la corriger exige un
+      dump/restore, pas un simple ALTER. Voir docs/RUNBOOK_Bascule_Base.md.
+    success_msg: "Collation « {{ postgres_locale }} » confirmée sur {{ app_db_name }}."
+
+- name: Récapitulatif
+  ansible.builtin.debug:
+    msg: >-
+      Base prête — écoute « {{ pg_check.query_result[0].listen }} »,
+      {{ pg_check.query_result[0].max_conn }} connexions,
+      collation « {{ pg_check.query_result[0].datcollate }} ».

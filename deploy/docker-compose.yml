@@ -25,11 +25,24 @@ x-app-env: &app-env
   # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
   Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
   # Cloudflare R2 : stockage des pièces KYB. Renseigné → adaptateur R2 réel ; vide → stub hors-ligne.
-  Storage__CloudflareR2__AccountId: "${R2_ACCOUNT_ID:-}"
-  Storage__CloudflareR2__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
-  Storage__CloudflareR2__SecretAccessKey: "${R2_SECRET_ACCESS_KEY:-}"
-  Storage__CloudflareR2__BucketName: "${R2_BUCKET_NAME:-}"
-  Storage__CloudflareR2__PublicBaseUrl: "${R2_PUBLIC_BASE_URL:-}"
+  # ── Pièces KYB : le MinIO local, par défaut ────────────────────────────────
+  #
+  # Nouvelle section « Storage:KybStorage », qui ne nomme plus un fournisseur.
+  # L'ancienne « Storage:CloudflareR2 » reste lue en repli par l'installeur, le
+  # temps que tous les environnements aient migré.
+  #
+  # Les valeurs par défaut visent le conteneur `minio` : un `docker compose up`
+  # suffit désormais à exercer le vrai chemin de stockage, là où c'était le stub
+  # hors-ligne qui répondait. Pour viser R2 depuis un poste de développement,
+  # renseigner MINIO_ENDPOINT à vide et R2_ACCOUNT_ID.
+  Storage__KybStorage__ServiceUrl: "${KYB_ENDPOINT:-http://minio:9000}"
+  Storage__KybStorage__AccountId: "${R2_ACCOUNT_ID:-}"
+  Storage__KybStorage__AccessKeyId: "${KYB_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}"
+  Storage__KybStorage__SecretAccessKey: "${KYB_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}"
+  Storage__KybStorage__BucketName: "${KYB_BUCKET:-hbaexpress-kyb}"
+  Storage__KybStorage__Region: "${MINIO_REGION:-us-east-1}"
+  # VIDE, et délibérément : une pièce d'identité ne se lit que par URL présignée.
+  Storage__KybStorage__PublicBaseUrl: ""
   # Cloudflare R2 (images produit) : bucket PUBLIC distinct du KYB. Renseigné → R2 réel.
   Storage__CloudflareR2Media__AccountId: "${R2_ACCOUNT_ID:-}"
   Storage__CloudflareR2Media__AccessKeyId: "${R2_ACCESS_KEY_ID:-}"
@@ -55,6 +68,12 @@ x-app-depends: &app-depends
     condition: service_healthy
   redis:
     condition: service_healthy
+  # Le bucket KYB doit exister avant le premier téléversement, sinon l'erreur est
+  # « NoSuchBucket » — qu'on attribue longtemps à une signature fausse plutôt qu'à
+  # un bucket manquant. `service_completed_successfully` : minio-init crée le
+  # bucket puis s'arrête, il n'a pas d'état « sain » à attendre.
+  minio-init:
+    condition: service_completed_successfully
 
 x-healthcheck: &app-healthcheck
   test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
@@ -119,6 +138,64 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    networks: [marketplace-net]
+
+  # ---------------- Stockage objet (pièces KYB) ----------------
+  #
+  # POURQUOI IL EST ICI ALORS QU'IL N'Y ÉTAIT PAS.
+  #
+  # En développement, `IKybDocumentStorage` se résolvait vers le stub hors-ligne :
+  # aucun identifiant configuré, donc aucun stockage réel. Le chemin qui téléverse
+  # une pièce d'identité, signe une requête en SigV4 et relit par URL présignée
+  # n'était donc JAMAIS exercé ailleurs qu'en production — et c'est exactement le
+  # genre d'écart qui laisse survivre un défaut jusqu'à ce qu'il compte.
+  #
+  # Le même service tourne sur le VPS base en production, en systemd plutôt qu'en
+  # conteneur. Ce qui est identique, et c'est ce qui compte, c'est le protocole :
+  # SigV4 en path-style, sur un endpoint configurable.
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      # La MÊME région que celle avec laquelle l'application signe. Une divergence
+      # donne « SignatureDoesNotMatch », sans dire que la région est en cause.
+      MINIO_REGION: "${MINIO_REGION:-us-east-1}"
+    ports:
+      # Sur la boucle locale uniquement : même en développement, un stockage objet
+      # ouvert sur toutes les interfaces d'un poste portable est un partage de
+      # fichiers involontaire dès qu'on se connecte à un réseau public.
+      - "127.0.0.1:9000:9000"   # API S3
+      - "127.0.0.1:9001:9001"   # console d'administration
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [marketplace-net]
+
+  # Crée le bucket au démarrage, puis s'arrête. Sans lui, le premier téléversement
+  # échoue sur « NoSuchBucket » — une erreur qu'on met du temps à attribuer à un
+  # bucket manquant plutôt qu'à une signature fausse.
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+    entrypoint: >-
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb --ignore-existing local/${KYB_BUCKET:-hbaexpress-kyb} &&
+      mc anonymous set none local/${KYB_BUCKET:-hbaexpress-kyb} &&
+      echo 'bucket KYB prêt'
+      "
     networks: [marketplace-net]
 
   # ---------------- Edge gateway ----------------
@@ -290,3 +367,4 @@ volumes:
   pgdata:
   pgdata-dispatch:
   redisdata:
+  miniodata:

@@ -13,6 +13,7 @@ using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Catalog.Application.Brands.EventHandlers;
 using Marketplace.Modules.Catalog.Application.Categories.EventHandlers;
 using Marketplace.Modules.Catalog.Application.Products.Commands.CreateProduct;
+using Marketplace.Modules.Catalog.Application.Products;
 using Marketplace.Modules.Catalog.Application.Products.EventHandlers;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Domain.Brands;
@@ -55,6 +56,11 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IBrandRepository, BrandRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+
+        // Point de passage unique du contrôle « un produit respecte le schéma
+        // d'attributs de sa catégorie ». Injecté par les trois handlers qui écrivent
+        // des attributs, plutôt que recopié dans chacun.
+        services.AddScoped<ProductAttributeGuard>();
         services.AddScoped<ICatalogModuleApi, CatalogModuleApi>();
 
         // Service média externe (https://hbamediacore.fr). Stub hors-ligne tant que
@@ -100,6 +106,19 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         }
 
         // ─────────────────────────────────────────────────────────────────────────
+        // QUELLES URL DE MÉDIA LA PLACE ACCEPTE D'ATTACHER À UNE FICHE.
+        //
+        // La route « attacher par URL » ne validait rien : un vendeur pouvait faire
+        // pointer l'image principale de sa fiche vers l'hôte de son choix, et c'est
+        // le navigateur de chaque acheteur anonyme qui allait la chercher. Pixel de
+        // traçage, ou contenu remplacé après le passage du modérateur.
+        //
+        // La politique est déduite des hôtes RÉELLEMENT configurés — donc elle suit
+        // le déploiement au lieu d'être une liste à maintenir à côté.
+        // ─────────────────────────────────────────────────────────────────────────
+        services.AddSingleton<IMediaUrlPolicy>(_ => new ConfiguredMediaUrlPolicy(r2Media, mediaOptions));
+
+        // ─────────────────────────────────────────────────────────────────────────
         // TRAITEMENT D'IMAGE : UN CHOIX AU DÉMARRAGE, PAS UN REPLI À CHAUD.
         //
         // Les deux implémentations rendent le même service — détourage puis fond
@@ -108,7 +127,7 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         // quota, pas de facture à l'usage, et les photos des vendeurs ne quittent pas
         // l'infrastructure.
         //
-        // ⚠️ CE N'EST PAS UNE CHAÎNE DE SECOURS. L'adaptateur est choisi ICI, une fois,
+        // CE N'EST PAS UNE CHAÎNE DE SECOURS. L'adaptateur est choisi ICI, une fois,
         // et ne change plus. Si le conteneur rembg tombe, les détourages échouent —
         // ils NE BASCULENT PAS sur Cloudinary. C'est assumé : un basculement
         // silencieux vers un service payant, déclenché par une panne, est exactement
@@ -152,6 +171,7 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
 
         // Handlers de domain events (résolus par le DomainEventDispatcher).
         services.AddScoped<IDomainEventHandler<ProductCreatedDomainEvent>, ProductCreatedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<ProductUpdatedDomainEvent>, ProductUpdatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<ProductStatusChangedDomainEvent>, ProductStatusChangedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<BrandCreatedDomainEvent>, BrandCreatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<CategoryCreatedDomainEvent>, CategoryCreatedDomainEventHandler>();
@@ -159,6 +179,7 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         // Handlers d'events d'intégration venus du module Sellers : Catalog réagit au
         // cycle de vie du compte vendeur (fermeture -> dépublication, suppression ->
         // archivage des produits).
+        services.AddScoped<IIntegrationEventHandler<SellerSuspendedIntegrationEvent>, SellerSuspendedProductUnpublishHandler>();
         services.AddScoped<IIntegrationEventHandler<SellerClosedIntegrationEvent>, SellerClosedProductInvalidationHandler>();
         services.AddScoped<IIntegrationEventHandler<SellerDeletedIntegrationEvent>, SellerDeletedProductPurgeHandler>();
 

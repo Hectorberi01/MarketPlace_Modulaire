@@ -1,6 +1,7 @@
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
+using Marketplace.Modules.Catalog.Application.Categories;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Domain.Categories;
 
@@ -30,10 +31,7 @@ internal sealed class ListCategoriesQueryHandler : IQueryHandler<ListCategoriesQ
             async ct =>
             {
                 var categories = await _repository.ListAllAsync(ct);
-                return categories
-                    .Select(c => new CategorySummary(
-                        c.Id.Value, c.ParentId, c.Name, c.Slug.Value, c.Path, c.Status.ToString(), c.ImageUrl))
-                    .ToList();
+                return categories.Select(CategoryMapping.ToSummary).ToList();
             },
             CatalogCacheKeys.ReferenceDataTtl,
             cancellationToken: cancellationToken);

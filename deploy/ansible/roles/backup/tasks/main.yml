@@ -1,0 +1,144 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# LA SAUVEGARDE, ENFIN PLANIFIÉE.
+#
+# `backup.sh` existait, correct, depuis des mois — et n'était installé, appelé ni
+# planifié par rien. Deux cases à cocher vides dans ENV-PROD.md en tenaient lieu,
+# dont une listée parmi les « bloqueurs connus ». Ce rôle est la ligne qui manquait.
+#
+# IL TOURNE SUR LE VPS BASE, pas sur l'applicatif : c'est là qu'est la base, et un
+# `pg_dump` local n'a besoin ni du réseau ni d'un mot de passe.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+- name: Installer les outils nécessaires
+  ansible.builtin.apt:
+    name:
+      - awscli        # envoi vers Cloudflare R2 (compatible S3)
+      - cron
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE RÉPERTOIRE DE SAUVEGARDE EST HORS DE `app_dir`, ET C'EST ESSENTIEL.
+#
+# Le défaut précédent le plaçait dans /opt/marketplace/backups. Or le rôle
+# applicatif y synchronise le dépôt avec `rsync --delete`, dont la liste
+# d'exclusions ne mentionne pas `backups` : chaque déploiement aurait effacé les
+# dumps — au moment précis où l'on a le plus besoin d'en avoir un.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Créer le répertoire de sauvegarde
+  ansible.builtin.file:
+    path: "{{ backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    # 0700 : les dumps contiennent l'intégralité des données de la plateforme.
+    mode: "0700"
+
+- name: Déposer la configuration de la sauvegarde
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: /etc/marketplace-backup.env
+    owner: root
+    group: postgres
+    # 0640 : porte les identifiants R2. Lisible par postgres, qui exécute le
+    # script ; par personne d'autre.
+    mode: "0640"
+  no_log: true
+
+- name: Déposer le script de sauvegarde
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../postgres/backup.sh"
+    dest: /usr/local/bin/marketplace-backup
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Créer le fichier de journal
+  ansible.builtin.file:
+    path: "{{ backup_log }}"
+    state: touch
+    owner: postgres
+    group: postgres
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Faire tourner le journal de la sauvegarde
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/marketplace-backup
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ backup_log }} {
+          weekly
+          rotate 8
+          compress
+          missingok
+          notifempty
+          create 0640 postgres postgres
+      }
+
+# ── La planification ─────────────────────────────────────────────────────────────
+#
+# Sous l'utilisateur `postgres` : le dump se fait alors par le socket local en
+# authentification `peer`, sans mot de passe à stocker ni à passer en argument.
+
+- name: Planifier la sauvegarde
+  ansible.builtin.cron:
+    name: "sauvegarde postgres marketplace"
+    user: postgres
+    minute: "{{ backup_cron_minute }}"
+    hour: "{{ backup_cron_hour }}"
+    job: "/usr/local/bin/marketplace-backup >> {{ backup_log }} 2>&1"
+    cron_file: marketplace-backup
+    state: present
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# ET LA SURVEILLANCE DE LA SAUVEGARDE ELLE-MÊME.
+#
+# Une sauvegarde planifiée qui échoue en silence est indiscernable d'une sauvegarde
+# qui n'existe pas — c'est précisément l'état dont on sort. Ce second cron ne
+# sauvegarde rien : il vérifie que la dernière réussite est récente, et sort en
+# code non nul sinon. Cron envoie alors un e-mail à MAILTO, sans dépendre de
+# Prometheus ni d'Alertmanager, qui sont sur l'AUTRE machine et peuvent être en
+# panne au même moment.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Surveiller l'âge de la dernière sauvegarde
+  ansible.builtin.cron:
+    name: "controle age sauvegarde postgres"
+    user: postgres
+    # Toutes les six heures, et non une fois par jour : avec un seuil de 13 h, un
+    # contrôle quotidien pouvait signaler une panne survenue vingt-trois heures
+    # plus tôt. Le contrôle ne coûte qu'un `stat`.
+    minute: "47"
+    hour: "*/6"
+    job: "/usr/local/bin/marketplace-backup --check"
+    cron_file: marketplace-backup
+    state: present
+
+- name: Destinataire des messages de cron
+  community.general.cronvar:
+    name: MAILTO
+    value: "{{ backup_alert_email | default('root') }}"
+    cron_file: marketplace-backup
+    user: postgres
+
+# ── Vérification ─────────────────────────────────────────────────────────────────
+#
+# Une première exécution, tout de suite. Le rôle ne se termine pas sur « cron posé,
+# on verra dans six heures » : si la configuration est fausse, on le sait maintenant.
+
+- name: Exécuter une première sauvegarde, pour de vrai
+  ansible.builtin.command: /usr/local/bin/marketplace-backup
+  become_user: postgres
+  register: premiere_sauvegarde
+  changed_when: true
+  when: backup_run_now | default(true)
+
+- name: Ce qu'elle a produit
+  ansible.builtin.debug:
+    var: premiere_sauvegarde.stdout_lines
+  when: backup_run_now | default(true)

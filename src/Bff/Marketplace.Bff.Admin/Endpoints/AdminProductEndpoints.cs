@@ -9,8 +9,9 @@ using Marketplace.Modules.Offers.Contracts;
 namespace Marketplace.Bff.Admin.Endpoints;
 
 /// <summary>
-/// BFF Admin — produits de la plateforme : liste globale et modération
-/// (valider → Active, rejeter → Archived) des fiches publiées par les vendeurs.
+/// BFF Admin — produits de la plateforme : liste globale et modération des fiches
+/// publiées par les vendeurs : valider (-> Active), rejeter (-> Draft, corrigeable),
+/// et retirer du catalogue (-> Archived, par PATCH /status).
 /// </summary>
 public static class AdminProductEndpoints
 {
@@ -50,9 +51,27 @@ public static class AdminProductEndpoints
     private static async Task<IResult> ApproveAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new ChangeProductStatusCommand(id, "Active"), ct)).Match(() => Results.NoContent());
 
-    /// <summary>Rejette un produit (le retire : statut Archived).</summary>
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// REJETTE UN PRODUIT : RETOUR EN BROUILLON, PAS ARCHIVAGE.
+    ///
+    /// Le rejet écrivait `Archived`, et `Activate` refuse explicitement un produit
+    /// archivé. Le geste naturel du modérateur — REJETER, le vendeur corrige,
+    /// APPROUVER — renvoyait donc un 409, sans qu'aucun code ni message n'indique
+    /// que la sortie passe par un retour en brouillon. Un produit rejeté était, en
+    /// pratique, un produit perdu.
+    ///
+    /// « Rejeter » veut dire « pas publiable EN L'ÉTAT », pas « retirer du
+    /// catalogue ». Le brouillon est exactement cet état : le vendeur peut éditer sa
+    /// fiche, il ne peut toujours pas la publier lui-même (la publication reste
+    /// réservée à la modération), et l'index l'a masquée.
+    ///
+    /// Le retrait ferme reste disponible par `PATCH /status` avec `Archived`, qui
+    /// dit ce qu'il fait.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static async Task<IResult> RejectAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ChangeProductStatusCommand(id, "Archived"), ct)).Match(() => Results.NoContent());
+        => (await sender.Send(new ChangeProductStatusCommand(id, "Draft"), ct)).Match(() => Results.NoContent());
 
     /// <summary>Change librement le statut (Active / Archived / Draft).</summary>
     private static async Task<IResult> ChangeStatusAsync(Guid id, StatusRequest request, ISender sender, CancellationToken ct)

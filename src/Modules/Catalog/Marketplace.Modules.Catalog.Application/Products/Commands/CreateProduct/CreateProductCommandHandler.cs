@@ -9,16 +9,30 @@ namespace Marketplace.Modules.Catalog.Application.Products.Commands.CreateProduc
 internal sealed class CreateProductCommandHandler : ICommandHandler<CreateProductCommand, Guid>
 {
     private readonly IProductRepository _productRepository;
+    private readonly ProductAttributeGuard _attributeGuard;
     private readonly ICatalogUnitOfWork _unitOfWork;
 
-    public CreateProductCommandHandler(IProductRepository productRepository, ICatalogUnitOfWork unitOfWork)
+    public CreateProductCommandHandler(
+        IProductRepository productRepository,
+        ProductAttributeGuard attributeGuard,
+        ICatalogUnitOfWork unitOfWork)
     {
         _productRepository = productRepository;
+        _attributeGuard = attributeGuard;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<Guid>> Handle(CreateProductCommand command, CancellationToken cancellationToken)
     {
+        // La catégorie et son schéma d'attributs, AVANT le slug : c'est le contrôle
+        // qui peut refuser, et il ne coûte rien de le faire d'abord.
+        var attributes = await _attributeGuard.ResolveAsync(
+            command.CategoryId, command.Attributes, cancellationToken);
+        if (attributes.IsFailure)
+        {
+            return Result.Failure<Guid>(attributes.Error);
+        }
+
         // Slug UNIQUE résolu ici : deux produits homonymes (ou une reprise après un
         // échec partiel) ne doivent pas bloquer la création — on suffixe « -2 », « -3 »…
         var slugResult = await ResolveUniqueSlugAsync(command.Name, cancellationToken);
@@ -36,7 +50,7 @@ internal sealed class CreateProductCommandHandler : ICommandHandler<CreateProduc
             command.Gtin,
             command.Ean,
             command.ProductGroupId,
-            command.Attributes,
+            attributes.Value,
             command.Tags,
             slug: slugResult.Value);
 

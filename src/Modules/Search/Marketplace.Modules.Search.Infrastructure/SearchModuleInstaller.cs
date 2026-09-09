@@ -40,6 +40,7 @@ public sealed class SearchModuleInstaller : IModuleInstaller
 
         // Consumers : l'index est alimenté par les events des autres modules.
         services.AddScoped<IIntegrationEventHandler<ProductCreatedIntegrationEvent>, ProductCreatedSearchHandler>();
+        services.AddScoped<IIntegrationEventHandler<ProductUpdatedIntegrationEvent>, ProductUpdatedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<ProductStatusChangedIntegrationEvent>, ProductStatusChangedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<ProductDeletedIntegrationEvent>, ProductDeletedSearchHandler>();
         services.AddScoped<IIntegrationEventHandler<OfferCreatedIntegrationEvent>, OfferCreatedSearchHandler>();

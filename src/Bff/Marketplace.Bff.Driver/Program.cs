@@ -118,6 +118,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddAuthRateLimiter();
 builder.Services.AddProxyForwardedHeaders();
 builder.Services.AddConcurrencyExceptionHandler();
+builder.Services.AddUniqueViolationExceptionHandler();
 builder.Services.AddProblemDetails();
 
 builder.Services.AddEndpointsApiExplorer();

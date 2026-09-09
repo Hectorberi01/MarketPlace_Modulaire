@@ -1,0 +1,136 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE TUNNEL ENTRE LE VPS APPLICATIF ET LE VPS BASE.
+#
+# Il existait déjà, monté à la main, et n'apparaissait NULLE PART dans le dépôt :
+# ni clés, ni configuration, ni documentation. Un lien dont personne ne sait le
+# rétablir est un lien qui disparaît à la première reconstruction de machine — et
+# comme la base n'écoute que dessus, c'est la plateforme entière qui disparaît avec.
+#
+# CE RÔLE EST ÉCRIT POUR ÊTRE PASSÉ SUR UN TUNNEL QUI FONCTIONNE DÉJÀ. Il compare,
+# et ne recharge que si la configuration diffère — via `wg syncconf`, qui n'interrompt
+# aucune connexion établie.
+#
+# LES DEUX CÔTÉS SONT DÉCRITS ICI. Le même rôle tourne sur les deux machines et
+# déduit son rôle de son appartenance au groupe `marketplace` ou `database` : une
+# seule source de vérité, donc pas de configuration asymétrique par inadvertance —
+# la panne classique de WireGuard, où un côté a changé de clé et l'autre l'ignore.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+- name: Installer WireGuard
+  ansible.builtin.apt:
+    name:
+      - wireguard
+      - wireguard-tools
+      # `ufw` ici et non dans le seul rôle `security` : la règle du port du tunnel
+      # est posée dans CE rôle, qui tourne dans un play antérieur. Sur une image
+      # minimale où ufw n'est pas préinstallé, le module échouerait et emporterait
+      # tout le play.
+      - ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ── Qui suis-je dans ce tunnel ? ─────────────────────────────────────────────────
+#
+# Déduit du groupe d'inventaire, jamais saisi à la main : c'est ce qui garantit que
+# les deux côtés se décrivent l'un l'autre de façon cohérente.
+
+- name: Déterminer le côté du tunnel
+  ansible.builtin.set_fact:
+    wg_is_app: "{{ 'marketplace' in group_names }}"
+    wg_self_ip: "{{ wg_app_ip if 'marketplace' in group_names else wg_db_ip }}"
+    wg_peer_ip: "{{ wg_db_ip if 'marketplace' in group_names else wg_app_ip }}"
+    wg_self_private_key: "{{ wg_app_private_key if 'marketplace' in group_names else wg_db_private_key }}"
+    wg_peer_public_key: "{{ wg_db_public_key if 'marketplace' in group_names else wg_app_public_key }}"
+    wg_peer_endpoint_host: "{{ wg_db_endpoint_host if 'marketplace' in group_names else wg_app_endpoint_host }}"
+
+- name: Refuser de continuer si les clés manquent
+  ansible.builtin.assert:
+    that:
+      - wg_self_private_key is defined and wg_self_private_key | length > 0
+      - wg_peer_public_key is defined and wg_peer_public_key | length > 0
+      # Les valeurs d'exemple passaient le test de longueur. Le rôle écrivait alors
+      # la configuration — ÉCRASANT le tunnel manuel en service — pour échouer
+      # ensuite sur « Key is not the correct length or format ». Une clé WireGuard
+      # encodée en base64 fait exactement 44 caractères.
+      - not (wg_self_private_key is search('CHANGE_ME'))
+      - not (wg_peer_public_key is search('CHANGE_ME'))
+      - wg_peer_public_key | length == 44
+    fail_msg: >-
+      Clés WireGuard absentes. Les clés PRIVÉES (wg_app_private_key,
+      wg_db_private_key) vont dans group_vars/all/vault.yml ; les clés PUBLIQUES
+      (wg_app_public_key, wg_db_public_key) dans group_vars/all/main.yml.
+      Générer une paire :  wg genkey | tee cle_privee | wg pubkey
+
+# ── Le routage entre les deux machines ───────────────────────────────────────────
+
+- name: Activer le transfert IPv4
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Déposer la configuration du tunnel
+  # `no_log` parce que ce fichier contient la clé privée : sans lui, un
+  # `--check --diff` — le premier geste recommandé par le runbook — l'afficherait
+  # en clair à l'écran et dans tout journal Ansible.
+  no_log: true
+  ansible.builtin.template:
+    src: wg.conf.j2
+    dest: "/etc/wireguard/{{ wg_interface }}.conf"
+    owner: root
+    group: root
+    # 0600 : ce fichier contient la clé privée de cette machine. Un 0644 la
+    # rendrait lisible par tout compte local, y compris celui d'un service
+    # applicatif compromis.
+    mode: "0600"
+  notify: reconfigurer wireguard
+
+- name: Démarrer et activer le tunnel
+  ansible.builtin.service:
+    name: "wg-quick@{{ wg_interface }}"
+    state: started
+    enabled: true
+
+# ── Le pare-feu ──────────────────────────────────────────────────────────────────
+#
+# Le port du tunnel doit être joignable depuis l'autre machine, et d'elle seule.
+# La règle est posée sur l'adresse publique du pair : ouvrir 51820 au monde
+# exposerait la poignée de main WireGuard à tout Internet — elle est robuste, mais
+# il n'y a aucune raison de l'y soumettre.
+
+- name: Ouvrir le port du tunnel, pour le seul pair
+  community.general.ufw:
+    rule: allow
+    port: "{{ wg_port }}"
+    proto: udp
+    src: "{{ wg_peer_endpoint_host }}"
+    comment: "WireGuard — pair {{ 'base' if wg_is_app else 'applicatif' }}"
+  when: enable_ufw | default(false)
+
+# ── Vérification ─────────────────────────────────────────────────────────────────
+
+- name: Appliquer les changements en attente
+  ansible.builtin.meta: flush_handlers
+
+- name: Le pair répond-il ?
+  ansible.builtin.command: "ping -c 2 -W 3 {{ wg_peer_ip }}"
+  register: wg_ping
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Dire clairement ce qu'il en est
+  ansible.builtin.assert:
+    that:
+      - wg_ping.rc == 0
+    fail_msg: >-
+      Le tunnel est monté mais {{ wg_peer_ip }} ne répond pas. Vérifier, dans
+      l'ordre : que le pair a bien été configuré (relancer le playbook sur les DEUX
+      groupes), que les clés publiques se correspondent
+      (`wg show {{ wg_interface }}` de chaque côté), et que le port UDP
+      {{ wg_port }} n'est pas filtré entre les deux hébergeurs.
+    success_msg: "Tunnel opérationnel — {{ wg_peer_ip }} répond."

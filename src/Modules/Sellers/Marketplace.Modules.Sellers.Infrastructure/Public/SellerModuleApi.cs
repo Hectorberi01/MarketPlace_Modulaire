@@ -112,7 +112,10 @@ internal sealed class SellerModuleApi : ISellerModuleApi
                 seller.Metadata.Commune,
                 BeninGeography.CommuneName(seller.Metadata.Commune),
                 seller.Metadata.Activity,
-                seller.Metadata.ManagerName, seller.Metadata.Phone));
+                seller.Metadata.ManagerName, seller.Metadata.Phone),
+        seller.KybRejectionReason,
+        seller.SuspendedOnUtc,
+        seller.SuspensionReason);
 
     /// <summary>Statut affichable d'une pièce : vérifiée, refusée (boutique refusée) ou en revue.</summary>
     private static string ResolveDocStatus(KybDocument doc, KybStatus sellerStatus) =>

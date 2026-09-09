@@ -44,9 +44,17 @@ public sealed class SellerRegisteredAdminNotificationHandler : IIntegrationEvent
 }
 
 /// <summary>
-/// Prévient le vendeur que sa boutique a été SUSPENDUE. Une suspension retire ses
-/// produits du catalogue : la découvrir par la chute de ses ventes serait le pire cas.
-/// Doublée par e-mail — il n'ouvrira pas forcément l'application ce jour-là.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// FERMETURE À L'INITIATIVE DU VENDEUR — ET NON SUSPENSION.
+///
+/// Ce handler annonçait « Boutique suspendue », par notification ET par e-mail, à un
+/// vendeur qui venait de fermer sa boutique LUI-MÊME. Il recevait l'annonce d'une
+/// sanction qu'il n'avait pas subie, et l'invitation à contacter le support pour en
+/// connaître un motif qui n'existait pas — pendant que le vrai suspendu, faute
+/// d'événement, ne recevait rien du tout.
+///
+/// Les deux cas ont désormais chacun leur événement et chacun leur message.
+/// ═════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed class SellerClosedNotificationHandler : IIntegrationEventHandler<SellerClosedIntegrationEvent>
 {
@@ -57,8 +65,91 @@ public sealed class SellerClosedNotificationHandler : IIntegrationEventHandler<S
     public Task HandleAsync(SellerClosedIntegrationEvent e, CancellationToken cancellationToken = default)
         => _dispatcher.NotifyAsync(
             e.UserId,
+            "Boutique fermée",
+            "Votre boutique est fermée : vos produits ne sont plus en vente. "
+            + "Vous pouvez demander sa réouverture à tout moment depuis votre compte.",
+            "Seller",
+            e.SellerId,
+            cancellationToken,
+            alsoEmail: true);
+}
+
+/// <summary>
+/// Prévient le vendeur que son dossier KYB a été REFUSÉ, avec le motif.
+///
+/// Aucun handler n'existait : le vendeur découvrait « Rejected » sur son écran de
+/// compte, sans savoir quoi corriger. Doublé par e-mail, parce que c'est le message
+/// qui débloque son inscription — et parce que sans lui il re-téléversera la même
+/// pièce.
+/// </summary>
+public sealed class SellerKybRejectedNotificationHandler : IIntegrationEventHandler<SellerKybRejectedIntegrationEvent>
+{
+    private readonly NotificationDispatcher _dispatcher;
+
+    public SellerKybRejectedNotificationHandler(NotificationDispatcher dispatcher) => _dispatcher = dispatcher;
+
+    public Task HandleAsync(SellerKybRejectedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _dispatcher.NotifyAsync(
+            e.UserId,
+            "Dossier de vérification refusé",
+            $"Votre dossier n'a pas été validé. Motif : {e.Reason} "
+            + "Téléversez une pièce corrigée depuis votre compte : le dossier repartira automatiquement en revue.",
+            "Seller",
+            e.SellerId,
+            cancellationToken,
+            alsoEmail: true);
+}
+
+/// <summary>
+/// Prévient le vendeur que sa boutique a été SUSPENDUE, AVEC LE MOTIF. La suspension
+/// retire ses produits de la vitrine : la découvrir par la chute de ses ventes serait
+/// le pire cas, et la découvrir sans savoir pourquoi ne lui permet rien de corriger.
+/// Doublée par e-mail — il n'ouvrira pas forcément l'application ce jour-là.
+/// </summary>
+public sealed class SellerSuspendedNotificationHandler : IIntegrationEventHandler<SellerSuspendedIntegrationEvent>
+{
+    private readonly NotificationDispatcher _dispatcher;
+
+    public SellerSuspendedNotificationHandler(NotificationDispatcher dispatcher) => _dispatcher = dispatcher;
+
+    public Task HandleAsync(SellerSuspendedIntegrationEvent e, CancellationToken cancellationToken = default)
+    {
+        // Le motif est exigé par le validateur de la commande d'administration. Le
+        // repli ne couvre donc qu'une suspension écrite par un autre chemin : mieux
+        // vaut un renvoi vers le support qu'une phrase qui s'arrête au milieu.
+        var motif = string.IsNullOrWhiteSpace(e.Reason)
+            ? "Contactez le support pour en connaître le motif."
+            : $"Motif : {e.Reason}";
+
+        return _dispatcher.NotifyAsync(
+            e.UserId,
             "Boutique suspendue",
-            "Votre boutique a été suspendue : vos produits ne sont plus visibles. Contactez le support pour en connaître le motif.",
+            $"Votre boutique a été suspendue : vos produits ne sont plus visibles. {motif}",
+            "Seller",
+            e.SellerId,
+            cancellationToken,
+            alsoEmail: true);
+    }
+}
+
+/// <summary>
+/// Prévient le vendeur que la suspension est levée. Le message dit explicitement que
+/// la remise en vitrine lui revient : Catalog ne republie pas de lui-même, et sans
+/// cette phrase le vendeur attendrait un retour automatique qui n'arrivera pas.
+/// </summary>
+public sealed class SellerSuspensionLiftedNotificationHandler
+    : IIntegrationEventHandler<SellerSuspensionLiftedIntegrationEvent>
+{
+    private readonly NotificationDispatcher _dispatcher;
+
+    public SellerSuspensionLiftedNotificationHandler(NotificationDispatcher dispatcher) => _dispatcher = dispatcher;
+
+    public Task HandleAsync(SellerSuspensionLiftedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _dispatcher.NotifyAsync(
+            e.UserId,
+            "Suspension levée",
+            "Votre boutique est de nouveau active. Vos fiches produit ont été dépubliées pendant la suspension : "
+            + "republiez celles que vous souhaitez remettre en vente.",
             "Seller",
             e.SellerId,
             cancellationToken,

@@ -159,6 +159,21 @@ public static class SellerAccountEndpoints
     /// Fermeture du compte demandée par le vendeur (suppression partielle) : bascule
     /// le compte en « fermé » et retire ses produits de la vente. La suppression
     /// définitive relève de l'admin ; le vendeur garde un accès restreint.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// AUCUN CONTRÔLE DE STATUT SUR TOUT CE FICHIER, ET C'EST LE POINT.
+    ///
+    /// Les écritures catalogue passent maintenant par `ResolveSellingSellerAsync`
+    /// (voir SellerRights). LA GESTION DU COMPTE, ELLE, N'Y PASSERA JAMAIS : fermer,
+    /// demander sa réactivation, changer son mot de passe, supprimer son compte sont
+    /// les gestes par lesquels un vendeur SORT de son état — pas ceux par lesquels il
+    /// en profite.
+    ///
+    /// Les brancher sur le statut fabriquerait un cul-de-sac parfait : un vendeur
+    /// suspendu ne pourrait plus rien faire, pas même demander sa réactivation ni
+    /// sécuriser son compte, et il ne resterait que le support pour l'en sortir. Une
+    /// sanction doit avoir une porte de sortie, sinon ce n'est plus une sanction.
+    /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>
     private static async Task<IResult> CloseAccountAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
@@ -172,7 +187,13 @@ public static class SellerAccountEndpoints
             .Match(() => Results.NoContent());
     }
 
-    /// <summary>Le vendeur (compte fermé) demande la réactivation : soumise à validation admin.</summary>
+    /// <summary>
+    /// Le vendeur (compte fermé) demande la réactivation : soumise à validation admin.
+    ///
+    /// C'est LA route qu'il ne faut surtout pas verrouiller sur le statut : elle
+    /// n'existe que pour être appelée par un vendeur dont le statut interdit déjà tout
+    /// le reste. Voir le pavé sur `CloseAccountAsync`.
+    /// </summary>
     private static async Task<IResult> RequestReactivationAsync(ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);

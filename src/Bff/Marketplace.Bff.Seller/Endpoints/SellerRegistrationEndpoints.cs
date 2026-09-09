@@ -380,29 +380,9 @@ public static class SellerRegistrationEndpoints
 
         var userId = account.Id;
 
-        var existingShop = await sellers.GetSellerByUserIdAsync(userId, ct);
-        if (existingShop is not null)
-        {
-            return Results.Problem(
-                title: "sellers.seller.already_seller",
-                detail: "Ce compte est déjà rattaché à une boutique.",
-                statusCode: StatusCodes.Status409Conflict);
-        }
-
-        // 3. Boutique AVANT rôle/activation : c'est l'étape qui peut légitimement
-        //    échouer (nom de boutique déjà pris). L'e-mail est désormais vérifié,
-        //    donc RegisterSeller l'accepte.
-        var metadata = request.Company?.ToDomain();
-        var sellerResult = await sender.Send(
-            new RegisterSellerCommand(userId, request.ShopName, 0.10m, metadata), ct);
-        if (sellerResult.IsFailure)
-        {
-            return sellerResult.Match(_ => Results.Ok());
-        }
-
-        var sellerId = sellerResult.Value;
-
-        // 4. Rôle Seller — sans lui, impossible de se connecter à /seller/*.
+        // 3. Le rôle Seller est lu MAINTENANT, avant toute décision : c'est lui qui
+        //    distingue les deux cas ci-dessous, et non la seule existence d'une
+        //    boutique.
         var rolesResult = await sender.Send(new ListRolesQuery(), ct);
         if (rolesResult.IsFailure)
         {
@@ -422,13 +402,73 @@ public static class SellerRegistrationEndpoints
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
+        var hasSellerRole = account.RoleIds.Contains(sellerRole.Id);
+
+        Guid sellerId;
+        var existingShop = await sellers.GetSellerByUserIdAsync(userId, ct);
+
+        if (existingShop is not null)
+        {
+            // ═════════════════════════════════════════════════════════════════════
+            // BOUTIQUE EXISTANTE : DOUBLON, OU CUL-DE-SAC À OUVRIR ?
+            //
+            // Ce chemin renvoyait 409 dans tous les cas, AVANT l'attribution du
+            // rôle. Or `POST /api/sellers/` — surface parallèle sans rôle — laissait
+            // n'importe quel compte à e-mail vérifié créer une boutique sans passer
+            // par ici. Ce compte se retrouvait alors avec une boutique et SANS le
+            // rôle : il ne pouvait pas entrer dans l'application vendeur, et il ne
+            // pouvait plus repasser par le seul chemin qui attribue le rôle, puisque
+            // celui-ci refusait en 409 justement parce que la boutique existait.
+            // Compte enfermé, définitivement, seule sortie par une route admin.
+            //
+            // La route fautive est fermée ; restent les comptes déjà pris au piège.
+            // Le rôle, et non la boutique, dit lequel des deux cas on traite :
+            //   • rôle présent  -> le compte est un vendeur en règle qui redemande
+            //                      une boutique : c'est un vrai doublon, 409.
+            //   • rôle absent   -> c'est le cul-de-sac : le code a été prouvé, le
+            //                      compte est éligible, la boutique est la sienne.
+            //                      On reprend la procédure à l'étape 5.
+            //
+            // Le nom de boutique du corps est IGNORÉ dans ce second cas : la
+            // boutique existe déjà, la renommer ici serait une modification de
+            // profil déguisée en inscription.
+            // ═════════════════════════════════════════════════════════════════════
+            if (hasSellerRole)
+            {
+                return Results.Problem(
+                    title: "sellers.seller.already_seller",
+                    detail: "Ce compte est déjà rattaché à une boutique.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            sellerId = existingShop.Id;
+        }
+        else
+        {
+            // 4. Boutique AVANT rôle/activation : c'est l'étape qui peut légitimement
+            //    échouer (nom de boutique déjà pris). L'e-mail est désormais vérifié,
+            //    donc RegisterSeller l'accepte.
+            var metadata = request.Company?.ToDomain();
+            var sellerResult = await sender.Send(
+                new RegisterSellerCommand(userId, request.ShopName, 0.10m, metadata), ct);
+            if (sellerResult.IsFailure)
+            {
+                return sellerResult.Match(_ => Results.Ok());
+            }
+
+            sellerId = sellerResult.Value;
+        }
+
+        // 5. Rôle Seller — sans lui, impossible de se connecter à /seller/*.
+        //    `AssignRole` est réappliqué même si le compte l'a déjà : l'opération est
+        //    idempotente et coûte moins qu'une branche de plus.
         var roleResult = await sender.Send(new AssignRoleCommand(userId, sellerRole.Id), ct);
         if (roleResult.IsFailure)
         {
             return roleResult.Match(() => Results.Ok());
         }
 
-        // 5. Activation du compte : l'e-mail est prouvé, le vendeur doit pouvoir
+        // 6. Activation du compte : l'e-mail est prouvé, le vendeur doit pouvoir
         //    entrer et compléter son KYB. La publication produit reste gatée ailleurs.
         var approveResult = await sender.Send(new ApproveUserCommand(userId), ct);
         if (approveResult.IsFailure)

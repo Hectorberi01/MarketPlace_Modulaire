@@ -1,0 +1,51 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# MINIO — STOCKAGE OBJET DES PIÈCES KYB, SUR LA MACHINE DES DONNÉES.
+#
+# POURQUOI SUR LE VPS BASE ET NON SUR L'APPLICATIF. On vient de séparer les deux
+# machines précisément pour que ce qui est durable ne partage plus le sort de ce qui
+# est jetable. Poser des documents de conformité sur l'hôte applicatif — celui qu'on
+# redéploie, qu'on recrée, dont on efface les volumes — annulerait ce choix le jour
+# où quelqu'un ferait un `docker volume prune` un peu vite.
+#
+# EN SERVICE SYSTEMD, PAS EN CONTENEUR. Le VPS base n'a pas Docker
+# (`manage_docker: false`) et il n'y a aucune raison de l'y installer pour un binaire
+# unique : ce serait un démon, un réseau virtuel et une couche de stockage de plus
+# sous des fichiers qu'on veut justement au plus près du disque.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+minio_version: "RELEASE.2024-10-13T13-34-11Z"
+minio_user: minio
+minio_group: minio
+
+# Le répertoire de données. Séparé de /var/backups : l'un est le primaire, l'autre
+# la copie. Les mettre ensemble reviendrait à n'en avoir qu'un.
+minio_data_dir: /var/lib/minio
+minio_config_dir: /etc/minio
+
+# ── ÉCOUTE : LE TUNNEL, ET RIEN D'AUTRE ─────────────────────────────────────────
+#
+# Même règle que PostgreSQL. Ces documents sont des pièces d'identité : il ne doit
+# pas exister de socket qu'Internet puisse atteindre, indépendamment du pare-feu.
+minio_api_port: 9000
+minio_console_port: 9001
+
+# La console d'administration n'écoute QUE sur la boucle locale. Pour y accéder,
+# un tunnel SSH — `ssh -L 9001:127.0.0.1:9001 root@vps-base` — et rien de publié.
+# C'est la leçon de Portainer et de Grafana : une console d'administration ne se
+# publie pas « en attendant de poser une garde ».
+minio_console_bind: "127.0.0.1"
+
+minio_bucket_kyb: hbaexpress-kyb
+
+# ── LA COPIE HORS-SITE ──────────────────────────────────────────────────────────
+#
+# MinIO sur une machine, c'est UN disque : aucun code correcteur d'effacement (il en
+# faudrait quatre), aucune réplication. Le miroir vers R2 est ce qui rend ce choix
+# défendable — le stockage souverain reste le primaire, et R2 devient la copie de
+# catastrophe. C'est l'inverse de la situation précédente, et c'est assumé.
+minio_mirror_enabled: true
+minio_mirror_bucket: hbaexpress-kyb-mirror
+minio_mirror_cron_hour: "*/4"
+minio_mirror_cron_minute: "23"
+minio_mirror_log: /var/log/minio-mirror.log

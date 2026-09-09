@@ -6,7 +6,10 @@ db_admin_subdomain: "db"
 dbadmin_image: "sosedoff/pgweb:0.16.2"
 
 # Base cible (co-hébergée dans le conteneur `postgres`, même réseau).
-db_admin_pg_host: "postgres"
+# Hôte de la base. `postgres` = le conteneur local ; l'adresse du tunnel dès que la
+# base a sa propre machine. Le group_vars de prod le surcharge via
+# `use_external_database` — voir inventories/prod/group_vars/marketplace/main.yml.
+db_admin_pg_host: "{{ wg_db_ip if (use_external_database | default(false)) else 'postgres' }}"
 db_admin_pg_port: "5432"
 db_admin_pg_user: "readonly"
 db_admin_pg_db: "{{ postgres_db | default('marketplace') }}"

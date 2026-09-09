@@ -1,0 +1,94 @@
+# ═════════════════════════════════════════════════════════════════════════════════
+# Fichier généré par Ansible (rôle postgres_host) — NE PAS ÉDITER À LA MAIN.
+# Modifier group_vars/database/main.yml et relancer le playbook.
+#
+# Déposé dans conf.d/, donc lu APRÈS postgresql.conf : ces valeurs gagnent, et une
+# mise à jour du paquet PostgreSQL ne les efface pas.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+# ── ÉCOUTE ───────────────────────────────────────────────────────────────────────
+#
+# Le tunnel, et la boucle locale. Ni « * », ni l'adresse publique : il n'existe
+# aucun socket que le monde puisse atteindre, même si le pare-feu était mal réglé
+# un jour. C'est la seule protection qui ne dépend pas d'une autre.
+listen_addresses = '{{ postgres_listen_addresses }}'
+port = 5432
+
+# ── CONNEXIONS ───────────────────────────────────────────────────────────────────
+#
+# {{ postgres_max_connections }}, et non 200. Cinq hôtes applicatifs × un pool de
+# {{ npgsql_max_pool_size | default(15) }} = {{ 5 * (npgsql_max_pool_size | default(15)) }}
+# connexions au maximum, plus une marge pour l'exploitation. Chaque connexion
+# réservée coûte de la mémoire même inutilisée, et `work_mem` se compte PAR NŒUD DE
+# TRI, pas par connexion : surdimensionner ce nombre, c'est promettre au planificateur
+# une mémoire que la machine n'a pas.
+max_connections = {{ postgres_max_connections }}
+
+# ── MÉMOIRE ──────────────────────────────────────────────────────────────────────
+#
+# Calibré pour {{ postgres_ram_mb }} Mo dédiés à la base. `effective_cache_size` est
+# une INDICATION au planificateur, pas une allocation : il doit décrire ce que la
+# machine peut réellement mettre en cache. Le déclarer trop haut fait choisir des
+# parcours d'index qui supposent des pages déjà chaudes — et l'ancienne configuration
+# annonçait 12 Go sur un conteneur plafonné à 8.
+shared_buffers = {{ postgres_shared_buffers }}
+effective_cache_size = {{ postgres_effective_cache_size }}
+work_mem = {{ postgres_work_mem }}
+maintenance_work_mem = {{ postgres_maintenance_work_mem }}
+
+# ── JOURNAL DES TRANSACTIONS ─────────────────────────────────────────────────────
+#
+# `synchronous_commit = on` : ce sont des paiements. Une transaction confirmée au
+# client doit être sur le disque avant qu'on le lui dise. C'est le réglage le plus
+# coûteux du fichier, et le seul qui ne se négocie pas.
+wal_level = replica
+synchronous_commit = on
+wal_compression = on
+wal_buffers = 16MB
+min_wal_size = 1GB
+max_wal_size = 4GB
+checkpoint_completion_target = 0.9
+
+# ARCHIVAGE : désactivé, et il faut le savoir.
+#
+# `wal_level = replica` PRÉPARE l'archivage sans l'activer. Tant qu'`archive_mode`
+# est à off, les WAL sont recyclés en place : la restauration à un instant précis
+# (PITR) n'existe pas, et le seul point de reprise est le dernier dump. C'est
+# assumé pour l'instant — le dump toutes les six heures est le contrat actuel.
+archive_mode = off
+
+# ── PARALLÉLISME ─────────────────────────────────────────────────────────────────
+max_worker_processes = 8
+max_parallel_workers = 6
+max_parallel_workers_per_gather = 2
+max_parallel_maintenance_workers = 2
+
+# ── OBSERVABILITÉ ────────────────────────────────────────────────────────────────
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.max = 10000
+pg_stat_statements.track = all
+
+# Journalise ce qui est lent, ce qui bloque, et ce qui modifie le schéma. Pas les
+# requêtes courantes : sur une base de production, tout journaliser revient à
+# n'avoir rien de lisible.
+log_min_duration_statement = 500ms
+log_lock_waits = on
+log_checkpoints = on
+log_temp_files = 0
+log_line_prefix = '%m [%p] %q%u@%d '
+log_statement = 'ddl'
+
+# ── LOCALISATION ─────────────────────────────────────────────────────────────────
+#
+# UTC pour l'horodatage : la place opère au Bénin, ses vendeurs et ses prestataires
+# de paiement ailleurs, et une base qui stocke en heure locale rend toute
+# comparaison ambiguë deux fois par an.
+timezone = 'UTC'
+log_timezone = 'UTC'
+
+# `dmy` et non `mdy` : sur une plateforme francophone, « 03/04 » veut dire le
+# 3 avril. Sans effet sur les paramètres typés qu'envoie EF Core, décisif pour tout
+# SQL écrit à la main un jour d'astreinte.
+datestyle = 'iso, dmy'
+lc_messages = 'C'
+default_text_search_config = 'pg_catalog.french'

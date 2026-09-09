@@ -84,7 +84,7 @@ public static class SellerInventoryEndpoints
             return SellerBff.NotASeller();
         }
 
-        // ⚠️ On interroge le module DIRECTEMENT, sans passer par `SellerLocationIdsAsync`.
+        // ON INTERROGE LE MODULE DIRECTEMENT, sans passer par `SellerLocationIdsAsync`.
         //
         // Ce helper renvoie un ensemble VIDE quand la requête échoue. C'est le bon
         // comportement sur les chemins d'ÉCRITURE, où il fait échouer fermé : aucune
@@ -147,14 +147,17 @@ public static class SellerInventoryEndpoints
     /// <summary>Crée un lieu d'expédition rattaché à la boutique du jeton (OwnerId = SellerId).</summary>
     private static async Task<IResult> CreateLocationAsync(ClaimsPrincipal user, LocationRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ÉCRITURE : un lieu d'expédition est l'outillage de la vente — il devient le
+        // « ShipFromLocationId » des offres. Une boutique qui n'a plus le droit de
+        // vendre n'a pas à en monter de nouveaux. Voir SellerRights.
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         var result = await sender.Send(new CreateFulfillmentLocationCommand(
-            "SellerAddress", seller.Id, request.Commune, request.Quartier, request.Landmark,
+            "SellerAddress", seller!.Id, request.Commune, request.Quartier, request.Landmark,
             request.Line, request.Latitude, request.Longitude), ct);
 
         return result.Match(id => Results.Ok(new { locationId = id }));
@@ -167,28 +170,34 @@ public static class SellerInventoryEndpoints
     /// </summary>
     private static async Task<IResult> DeleteLocationAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ÉCRITURE, par symétrie avec la création : supprimer un lieu coupe la source
+        // d'expédition des offres qui s'y adossent. Laisser ce geste à une boutique
+        // suspendue reviendrait à lui laisser désorganiser sa logistique pendant
+        // l'instruction — sans qu'elle puisse la remonter derrière.
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
-        var result = await sender.Send(new DeleteFulfillmentLocationCommand(id, seller.Id), ct);
+        var result = await sender.Send(new DeleteFulfillmentLocationCommand(id, seller!.Id), ct);
         return result.Match(() => Results.NoContent());
     }
 
     private static async Task<IResult> CreateItemAsync(ClaimsPrincipal user, CreateItemRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ÉCRITURE : ouvrir une référence en stock, c'est déclarer de la marchandise
+        // disponible à la vente. Voir SellerRights.
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         // La localisation d'accueil doit appartenir au vendeur : sans ce contrôle, on
         // rattachait du stock à l'entrepôt d'un concurrent, faussant ses alertes de
         // réapprovisionnement.
-        var mine = await SellerLocationIdsAsync(sender, seller.Id, ct);
+        var mine = await SellerLocationIdsAsync(sender, seller!.Id, ct);
         if (!mine.Contains(request.LocationId))
         {
             return SellerBff.NotFoundOrForbidden("location");
@@ -234,18 +243,22 @@ public static class SellerInventoryEndpoints
     }
 
     /// <summary>
-    /// Exige une boutique active ET que l'article de stock lui appartienne, puis exécute.
+    /// Exige une boutique EN DROIT DE VENDRE ET que l'article de stock lui appartienne,
+    /// puis exécute.
     ///
-    /// Remplace l'ancien `GuardSellerAsync`, qui ne vérifiait que la première moitié.
+    /// Remplace l'ancien `GuardSellerAsync`, qui ne vérifiait que la propriété — et
+    /// disait « boutique active » alors qu'il ne regardait jamais le statut. Réception,
+    /// ajustement et seuil de réapprovisionnement pilotent ce qui est vendable : ce sont
+    /// des écritures commerciales, pas de la consultation. Voir SellerRights.
     /// </summary>
     private static async Task<IResult> GuardItemAsync(
         ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid itemId, CancellationToken ct,
         Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         var item = await sender.Send(new GetInventoryItemQuery(itemId), ct);
@@ -254,7 +267,7 @@ public static class SellerInventoryEndpoints
             return SellerBff.NotFoundOrForbidden("inventory_item");
         }
 
-        var mine = await SellerLocationIdsAsync(sender, seller.Id, ct);
+        var mine = await SellerLocationIdsAsync(sender, seller!.Id, ct);
         if (!mine.Contains(item.Value.LocationId))
         {
             // Même réponse qu'un article inexistant : distinguer les deux cas

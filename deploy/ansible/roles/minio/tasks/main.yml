@@ -1,0 +1,270 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# MINIO SUR LE VPS BASE — pièces KYB.
+#
+# Ce rôle installe un binaire, pose un service, crée un bucket, et programme un
+# miroir vers R2. Il ne publie rien : ni Traefik, ni port ouvert sur Internet.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+- name: Créer le compte de service
+  ansible.builtin.user:
+    name: "{{ minio_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ minio_data_dir }}"
+    create_home: false
+
+- name: Créer les répertoires
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    # 0700 : ces répertoires contiennent des documents d'identité de vendeurs.
+    mode: "0700"
+  loop:
+    - "{{ minio_data_dir }}"
+    - "{{ minio_config_dir }}"
+
+# ── Le binaire ───────────────────────────────────────────────────────────────────
+#
+# Version ÉPINGLÉE, pas « latest ». Un service qui garde des documents de conformité
+# n'a pas à changer de version parce qu'un playbook a été rejoué : la mise à jour
+# doit être une décision, avec ses notes de version lues.
+
+- name: Installer le binaire MinIO ({{ minio_version }})
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.{{ minio_version }}"
+    dest: /usr/local/bin/minio
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart minio
+
+- name: Installer le client MinIO (mc), pour le bucket et le miroir
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/client/mc/release/linux-amd64/mc"
+    dest: /usr/local/bin/mc
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── La configuration ─────────────────────────────────────────────────────────────
+
+- name: Déposer l'environnement du service
+  ansible.builtin.template:
+    src: minio.env.j2
+    dest: "{{ minio_config_dir }}/minio.env"
+    owner: root
+    group: "{{ minio_group }}"
+    # 0640 : porte la clé racine. Lisible par le service, par personne d'autre.
+    mode: "0640"
+  no_log: true
+  notify: restart minio
+
+- name: Déposer l'unité systemd
+  ansible.builtin.template:
+    src: minio.service.j2
+    dest: /etc/systemd/system/minio.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart minio
+
+- name: Démarrer et activer MinIO
+  ansible.builtin.systemd:
+    name: minio
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Appliquer les changements en attente avant de parler au service
+  ansible.builtin.meta: flush_handlers
+
+- name: Attendre que l'API réponde
+  ansible.builtin.uri:
+    url: "http://{{ wg_db_ip }}:{{ minio_api_port }}/minio/health/live"
+    status_code: 200
+  register: minio_sante
+  retries: 12
+  delay: 5
+  until: minio_sante.status == 200
+  check_mode: false
+
+# ── Le pare-feu ──────────────────────────────────────────────────────────────────
+#
+# Même raisonnement que pour PostgreSQL : la source est le RÉSEAU DU TUNNEL, les
+# paquets arrivant décapsulés. La console (9001) n'est pas ouverte du tout — elle
+# n'écoute que sur la boucle locale et s'atteint par un tunnel SSH.
+
+- name: Ouvrir l'API MinIO au seul réseau du tunnel
+  community.general.ufw:
+    rule: allow
+    port: "{{ minio_api_port }}"
+    proto: tcp
+    src: "{{ postgres_allowed_cidr }}"
+    comment: "MinIO — tunnel WireGuard uniquement"
+  when: enable_ufw | default(false)
+
+# ── Le bucket ────────────────────────────────────────────────────────────────────
+#
+# `mc` conserve ses identifiants dans le répertoire personnel de l'utilisateur qui
+# l'exécute. On l'exécute en root, sur la boucle locale : rien ne transite par le
+# réseau, pas même le tunnel.
+
+- name: Déclarer le serveur auprès du client mc
+  ansible.builtin.command:
+    cmd: >-
+      mc alias set local
+      http://127.0.0.1:{{ minio_api_port }}
+      {{ minio_root_user }} {{ minio_root_password }}
+  changed_when: false
+  no_log: true
+
+- name: Créer le bucket des pièces KYB
+  ansible.builtin.command: "mc mb --ignore-existing local/{{ minio_bucket_kyb }}"
+  register: minio_mb
+  changed_when: "'Bucket created' in minio_mb.stdout"
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE BUCKET RESTE PRIVÉ, ET ON LE VÉRIFIE PLUTÔT QUE DE LE SUPPOSER.
+#
+# `mc anonymous set none` est idempotent et c'est le défaut de MinIO — mais c'est
+# aussi le réglage dont dépend le fait qu'une pièce d'identité ne soit pas lisible
+# par qui devine son nom. Un défaut sur lequel on compte sans l'écrire est un défaut
+# qu'un `mc anonymous set download` posé un soir de débogage effacera en silence.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Interdire tout accès anonyme au bucket
+  ansible.builtin.command: "mc anonymous set none local/{{ minio_bucket_kyb }}"
+  changed_when: false
+
+- name: Activer le versionnage des objets
+  # Une pièce KYB écrasée par erreur — même nom de fichier, mauvais document — reste
+  # récupérable. Le volume est négligeable ; la conformité, non.
+  ansible.builtin.command: "mc version enable local/{{ minio_bucket_kyb }}"
+  register: minio_version_out
+  changed_when: "'Versioning enabled' in minio_version_out.stdout"
+  failed_when:
+    - minio_version_out.rc != 0
+    - "'already' not in (minio_version_out.stderr | default(''))"
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# UN COMPTE POUR L'APPLICATION, DISTINCT DU COMPTE RACINE.
+#
+# L'application téléverse et relit des pièces KYB. Elle n'a aucune raison de pouvoir
+# effacer le bucket, changer sa politique d'accès ou créer des utilisateurs. Lui
+# donner la clé racine — le raccourci évident — ferait qu'une compromission du
+# processus web emporterait le magasin de conformité entier.
+#
+# La politique se limite au bucket KYB, en lecture et écriture. La suppression est
+# volontairement absente : `RemoveKybDocument` refuse déjà d'effacer une pièce
+# vérifiée, et il n'y a pas de raison que le droit existe au niveau du stockage.
+# ═════════════════════════════════════════════════════════════════════════════════
+- name: Décrire la politique de l'application
+  ansible.builtin.copy:
+    dest: "{{ minio_config_dir }}/politique-kyb.json"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["s3:PutObject", "s3:GetObject"],
+            "Resource": ["arn:aws:s3:::{{ minio_bucket_kyb }}/*"]
+          },
+          {
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": ["arn:aws:s3:::{{ minio_bucket_kyb }}"]
+          }
+        ]
+      }
+  register: minio_politique
+
+- name: Enregistrer la politique
+  ansible.builtin.command: "mc admin policy create local kyb-application {{ minio_config_dir }}/politique-kyb.json"
+  register: minio_policy_out
+  changed_when: "'created successfully' in minio_policy_out.stdout"
+  failed_when:
+    - minio_policy_out.rc != 0
+    - "'already exists' not in (minio_policy_out.stderr | default('')) | string"
+
+- name: Créer le compte applicatif
+  ansible.builtin.command: "mc admin user add local {{ minio_app_access_key }} {{ minio_app_secret_key }}"
+  register: minio_user_out
+  changed_when: "'added successfully' in minio_user_out.stdout"
+  failed_when:
+    - minio_user_out.rc != 0
+    - "'already exists' not in (minio_user_out.stderr | default('')) | string"
+  no_log: true
+
+- name: Lui attacher la politique, et elle seule
+  ansible.builtin.command: "mc admin policy attach local kyb-application --user {{ minio_app_access_key }}"
+  register: minio_attach_out
+  changed_when: "'attached successfully' in minio_attach_out.stdout"
+  failed_when:
+    - minio_attach_out.rc != 0
+    - "'already' not in (minio_attach_out.stderr | default('')) | string"
+  no_log: true
+
+# ── Le miroir vers R2 ────────────────────────────────────────────────────────────
+
+- name: Déclarer R2 auprès du client mc
+  ansible.builtin.command:
+    cmd: >-
+      mc alias set r2backup
+      https://{{ r2_account_id }}.r2.cloudflarestorage.com
+      {{ r2_access_key_id }} {{ r2_secret_access_key }}
+  changed_when: false
+  no_log: true
+  when: minio_mirror_enabled | bool
+
+- name: Déposer le script de miroir
+  ansible.builtin.template:
+    src: minio-mirror.sh.j2
+    dest: /usr/local/bin/minio-mirror
+    owner: root
+    group: root
+    mode: "0755"
+  when: minio_mirror_enabled | bool
+
+- name: Programmer le miroir vers R2
+  ansible.builtin.cron:
+    name: "miroir minio vers r2"
+    user: root
+    minute: "{{ minio_mirror_cron_minute }}"
+    hour: "{{ minio_mirror_cron_hour }}"
+    job: "/usr/local/bin/minio-mirror >> {{ minio_mirror_log }} 2>&1"
+    cron_file: minio-mirror
+    state: present
+  when: minio_mirror_enabled | bool
+
+- name: Faire tourner le journal du miroir
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/minio-mirror
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ minio_mirror_log }} {
+          weekly
+          rotate 8
+          compress
+          missingok
+          notifempty
+      }
+  when: minio_mirror_enabled | bool
+
+# ── Récapitulatif ────────────────────────────────────────────────────────────────
+
+- name: Ce qui est en place
+  ansible.builtin.debug:
+    msg: >-
+      MinIO écoute sur {{ wg_db_ip }}:{{ minio_api_port }} (tunnel uniquement),
+      bucket « {{ minio_bucket_kyb }} » privé et versionné.
+      Console d'administration sur 127.0.0.1:{{ minio_console_port }} —
+      accessible par « ssh -L {{ minio_console_port }}:127.0.0.1:{{ minio_console_port }} ».
+      Miroir vers R2 : {{ 'toutes les ' ~ minio_mirror_cron_hour ~ ' heures' if minio_mirror_enabled else 'DÉSACTIVÉ' }}.

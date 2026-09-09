@@ -17,6 +17,24 @@ public sealed class ProductCreatedSearchHandler : IIntegrationEventHandler<Produ
 }
 
 /// <summary>
+/// Réindexe un produit dont les champs descriptifs ont changé (Catalog).
+///
+/// Ce consommateur n'existait pas, faute d'événement à consommer : le nom et le slug
+/// de l'index étaient figés au jour de la création. `UpsertProductAsync` couvre les
+/// deux cas — document présent (mise à jour) ou disparu (reconstruction) — et rend le
+/// rejeu inoffensif.
+/// </summary>
+public sealed class ProductUpdatedSearchHandler : IIntegrationEventHandler<ProductUpdatedIntegrationEvent>
+{
+    private readonly SearchIndexer _indexer;
+
+    public ProductUpdatedSearchHandler(SearchIndexer indexer) => _indexer = indexer;
+
+    public Task HandleAsync(ProductUpdatedIntegrationEvent e, CancellationToken cancellationToken = default)
+        => _indexer.UpsertProductAsync(e.ProductId, e.SellerId, e.CategoryId, e.Name, e.Slug, cancellationToken);
+}
+
+/// <summary>
 /// Gère la visibilité publique selon le statut validé par l'admin : « Active »
 /// rend le produit visible en vitrine, « Draft » / « Archived » le masque.
 /// </summary>

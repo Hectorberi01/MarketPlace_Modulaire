@@ -35,7 +35,10 @@ public static class ClientCatalogEndpoints
     private static async Task<IResult> ProductDetailAsync(
         Guid id, ICatalogModuleApi catalog, IOfferModuleApi offers, ISellerModuleApi sellers, ISender sender, CancellationToken ct)
     {
-        var product = await catalog.GetProductAsync(id, ct);
+        // LECTURE PUBLIQUE : nul si le produit n'est pas en vente. Cette route est
+        // anonyme, et elle servait jusqu'ici les brouillons jamais validés comme les
+        // produits REJETÉS par un modérateur — le rejet écrivant « Archived ».
+        var product = await catalog.GetPubliclyVisibleProductAsync(id, ct);
         if (product is null)
         {
             return Results.NotFound(new { error = "product_not_found" });
@@ -161,7 +164,7 @@ public static class ClientCatalogEndpoints
         var rating = await reviews.GetSellerRatingAsync(sellerId, ct);
         var salesCount = await ordering.GetSellerSalesCountAsync(sellerId, ct);
 
-        // ⚠️ `.ToPublic()` — SANS LUI, CET ENDPOINT ANONYME FUIT LE RIB ET LES PIÈCES KYB.
+        // `.ToPublic()` — SANS LUI, CET ENDPOINT ANONYME FUIT LE RIB ET LES PIÈCES KYB.
         //
         // `seller` est un SellerSummary COMPLET : numéro Mobile Money, taux de commission,
         // URLs des documents d'identité. Le sérialiser tel quel sur une route anonyme

@@ -8,6 +8,7 @@ using Marketplace.Modules.Sellers.Application.Sellers.Commands.DeleteSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
+using Marketplace.Modules.Sellers.Application.Sellers.Commands.LiftSellerSuspension;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SuspendSeller;
 using Marketplace.Modules.Sellers.Application.Abstractions;
 using Marketplace.Modules.Identity.Application.Roles.Queries.ListRoles;
@@ -48,7 +49,10 @@ public static class AdminSellerEndpoints
         // Téléversement par l'admin d'une pièce KYB au nom d'un vendeur (multipart : file + type).
         sellers.MapPost("/{id:guid}/kyb-documents/upload", UploadKybDocumentAsync).DisableAntiforgery();
         sellers.MapPost("/{id:guid}/activate", ActivateAsync);
+        // Suspension : le corps porte le MOTIF, obligatoire — il est transmis au vendeur.
         sellers.MapPost("/{id:guid}/suspend", SuspendAsync);
+        // Levée de suspension : geste explicite, seule sortie de l'état suspendu.
+        sellers.MapPost("/{id:guid}/lift-suspension", LiftSuspensionAsync);
         // Réactivation d'un compte fermé (approbation de la demande vendeur) + suppression définitive.
         sellers.MapPost("/{id:guid}/reactivate", ReactivateAsync);
         sellers.MapDelete("/{id:guid}", DeleteAsync);
@@ -223,9 +227,13 @@ public static class AdminSellerEndpoints
     private static async Task<IResult> ApproveKybAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new ApproveKybCommand(id), ct)).Match(() => Results.NoContent());
 
-    /// <summary>Rejette le KYB.</summary>
-    private static async Task<IResult> RejectKybAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new RejectKybCommand(id), ct)).Match(() => Results.NoContent());
+    /// <summary>
+    /// Rejette le KYB. Le motif est obligatoire et part au vendeur : un refus muet
+    /// le laisse re-téléverser exactement la pièce refusée.
+    /// </summary>
+    private static async Task<IResult> RejectKybAsync(
+        Guid id, RejectKybRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new RejectKybCommand(id, request.Reason), ct)).Match(() => Results.NoContent());
 
     /// <summary>
     /// Renvoie une URL de lecture temporaire (présignée, ~5 min) pour consulter une
@@ -270,9 +278,22 @@ public static class AdminSellerEndpoints
     private static async Task<IResult> ActivateAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new ActivateSellerCommand(id), ct)).Match(() => Results.NoContent());
 
-    /// <summary>Suspend le vendeur.</summary>
-    private static async Task<IResult> SuspendAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new SuspendSellerCommand(id), ct)).Match(() => Results.NoContent());
+    /// <summary>
+    /// Suspend le vendeur. Le motif est obligatoire : il part au vendeur par
+    /// notification et par e-mail, et c'est la seule chose qui lui permette de
+    /// corriger ce qui a motivé la sanction.
+    /// </summary>
+    private static async Task<IResult> SuspendAsync(
+        Guid id, SuspendRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new SuspendSellerCommand(id, request.Reason), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Lève la suspension du vendeur : sa boutique redevient active. Ses fiches
+    /// dépubliées ne sont PAS republiées automatiquement — c'est au vendeur de
+    /// choisir celles qu'il remet en vente.
+    /// </summary>
+    private static async Task<IResult> LiftSuspensionAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new LiftSellerSuspensionCommand(id), ct)).Match(() => Results.NoContent());
 
     /// <summary>Approuve la demande de réactivation d'un compte fermé : le vendeur redevient actif.</summary>
     private static async Task<IResult> ReactivateAsync(Guid id, ISender sender, CancellationToken ct)
@@ -281,6 +302,16 @@ public static class AdminSellerEndpoints
     /// <summary>Suppression DÉFINITIVE du vendeur (et archivage de ses produits).</summary>
     private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new DeleteSellerCommand(id), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Corps de la suspension. Le motif est dans le CORPS et non dans la query :
+    /// c'est un texte libre destiné au vendeur, il n'a rien à faire dans une URL
+    /// journalisée.
+    /// </summary>
+    public sealed record SuspendRequest(string Reason);
+
+    /// <summary>Corps du refus de KYB : le motif, communiqué au vendeur.</summary>
+    public sealed record RejectKybRequest(string Reason);
 
     /// <summary>Corps de création d'un compte vendeur par l'admin.</summary>
     /// <param name="UserId">

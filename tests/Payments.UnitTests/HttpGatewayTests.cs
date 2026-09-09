@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -52,25 +53,67 @@ public class HttpGatewayTests : IDisposable
     private static StripeHttpGateway RealStripe(string webhookSecret = "")
         => new(new StubHttpClientFactory(), new StripeOptions { WebhookSecret = webhookSecret });
 
+    private const string StripeSecret = "whsec_stripe";
+
+    private const string StripeBody =
+        "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_real\"}}}";
+
+    /// <summary>
+    /// Fabrique l'en-tête `t=…,v1=…` que Stripe enverrait pour ce corps, à
+    /// l'horodatage demandé.
+    /// </summary>
+    private static string StripeHeader(DateTimeOffset sentAt)
+    {
+        var timestamp = sentAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(StripeSecret));
+        var v1 = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{timestamp}.{StripeBody}"))).ToLowerInvariant();
+        return $"t={timestamp},v1={v1}";
+    }
+
     [Fact]
     public async Task Stripe_reel_verifie_la_signature_t_v1_et_mappe_l_evenement()
     {
-        const string secret = "whsec_stripe";
-        var body = "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_real\"}}}";
-        var timestamp = "1700000000";
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        var v1 = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{timestamp}.{body}"))).ToLowerInvariant();
+        // ═════════════════════════════════════════════════════════════════════════
+        // L'HORODATAGE EST CALCULÉ, PLUS ÉCRIT EN DUR.
+        //
+        // Ce test posait `t=1700000000` — novembre 2023. La signature était juste, et
+        // il passait tant que l'horodatage n'était que SIGNÉ. Depuis qu'il est aussi
+        // CONFRONTÉ À L'HEURE COURANTE (fenêtre de 5 minutes, anti-rejeu), une valeur
+        // figée dans le passé est rejetée — à raison. Le test était devenu faux, pas
+        // la passerelle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var gateway = RealStripe(StripeSecret);
 
-        var gateway = RealStripe(secret);
-
-        var valid = await gateway.ParseWebhookAsync(body, $"t={timestamp},v1={v1}");
+        var valid = await gateway.ParseWebhookAsync(StripeBody, StripeHeader(DateTimeOffset.UtcNow));
         valid.Verified.Should().BeTrue();
         valid.Outcome.Should().Be(GatewayOutcome.Captured);
         valid.ProviderReference.Should().Be("cs_real");
 
-        var bad = await gateway.ParseWebhookAsync(body, $"t={timestamp},v1=deadbeef");
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        var bad = await gateway.ParseWebhookAsync(StripeBody, $"t={timestamp},v1=deadbeef");
         bad.Verified.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Stripe_reel_refuse_un_corps_rejoue_hors_de_la_fenetre()
+    {
+        // La signature est PARFAITEMENT VALIDE : c'est tout l'intérêt du cas. Un corps
+        // capturé sur le réseau reste signé pour toujours ; seule la confrontation de
+        // l'horodatage à l'heure courante l'empêche d'être rejoué indéfiniment pour
+        // créditer plusieurs fois la même commande.
+        //
+        // La symétrie de la fenêtre est déjà couverte par `SignatureDesPasserellesTests`,
+        // au niveau de `IsWithinClockSkew`. Ce test-ci prouve autre chose : que Stripe,
+        // qui SURCHARGE `ParseWebhookAsync` et ne passe donc pas par le chemin partagé,
+        // appelle bien ce garde-fou. C'est exactement le contournement qui existait.
+        var gateway = RealStripe(StripeSecret);
+        var vieux = DateTimeOffset.UtcNow - GatewayWebhook.MaxClockSkew - TimeSpan.FromMinutes(1);
+
+        var rejeu = await gateway.ParseWebhookAsync(StripeBody, StripeHeader(vieux));
+
+        rejeu.Verified.Should().BeFalse();
+    }
+
 
     [Fact]
     public async Task Le_callback_moov_reel_mappe_le_statut_et_la_reference()

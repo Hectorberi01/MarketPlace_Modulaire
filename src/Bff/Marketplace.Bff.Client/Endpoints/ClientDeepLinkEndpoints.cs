@@ -120,7 +120,16 @@ public static class ClientDeepLinkEndpoints
     private static async Task<IResult> ProductLandingAsync(
         Guid id, ICatalogModuleApi catalog, IConfiguration config, CancellationToken ct)
     {
-        var product = await catalog.GetProductAsync(id, ct);
+        // ─────────────────────────────────────────────────────────────────────────
+        // LA SURFACE LA PLUS EXPOSÉE DES TROIS.
+        //
+        // Cette page rend du HTML avec des balises Open Graph : un produit servi ici
+        // est partageable ET récupérable par un robot d'indexation. Un brouillon ou
+        // un produit rejeté y était intégralement exposé, alors même que le
+        // commentaire de repli ci-dessous promettait « produit introuvable ou RETIRÉ :
+        // page générique » — promesse qu'aucun test de statut ne tenait.
+        // ─────────────────────────────────────────────────────────────────────────
+        var product = await catalog.GetPubliclyVisibleProductAsync(id, ct);
 
         var appStore = config.GetValue<string>("DeepLink:AppStoreUrl")
                        ?? config.GetValue<string>("MobileApp:UpdateUrlIos")

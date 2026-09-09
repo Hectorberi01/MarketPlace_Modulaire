@@ -76,7 +76,14 @@ public static class SellerReviewEndpoints
         return (await sender.Send(new GetProductRatingQuery(productId), ct)).Match(r => Results.Ok(r));
     }
 
-    /// <summary>Signale un avis ciblant un produit du vendeur.</summary>
+    /// <summary>
+    /// Signale un avis ciblant un produit du vendeur.
+    ///
+    /// PAS DE CONTRÔLE DE STATUT. Le signalement ne publie rien et ne dépublie plus
+    /// rien (voir l'en-tête de ce fichier) : c'est une ALERTE adressée à la modération.
+    /// Un vendeur suspendu qui reçoit un avis diffamatoire doit pouvoir le signaler —
+    /// le lui interdire ne protège personne et prive la modération d'un signal.
+    /// </summary>
     private static async Task<IResult> FlagAsync(ClaimsPrincipal user, Guid reviewId, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
@@ -92,15 +99,22 @@ public static class SellerReviewEndpoints
         return (await sender.Send(new FlagReviewCommand(reviewId), ct)).Match(() => Results.NoContent());
     }
 
-    /// <summary>Réponse publique du vendeur à un avis ciblant un de ses produits.</summary>
+    /// <summary>
+    /// Réponse publique du vendeur à un avis ciblant un de ses produits.
+    ///
+    /// ÉCRITURE, contrairement au signalement juste au-dessus. Ce texte s'affiche en
+    /// vitrine, signé de l'enseigne : c'est de la parole commerciale, pas un devoir
+    /// envers un acheteur précis. Une boutique suspendue ou fermée ne doit pas
+    /// continuer à publier sous le nom de la plateforme. Voir SellerRights.
+    /// </summary>
     private static async Task<IResult> ReplyAsync(ClaimsPrincipal user, Guid reviewId, ReplyRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
-        if (!await SellerBff.OwnsReviewAsync(sender, seller.Id, reviewId, ct))
+        if (!await SellerBff.OwnsReviewAsync(sender, seller!.Id, reviewId, ct))
         {
             return SellerBff.NotFoundOrForbidden("review");
         }

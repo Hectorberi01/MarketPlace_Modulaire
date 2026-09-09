@@ -46,13 +46,14 @@ public sealed class SellersModuleInstaller : IModuleInstaller
         services.AddScoped<ISellerRepository, SellerRepository>();
         services.AddScoped<ISellerModuleApi, SellerModuleApi>();
 
-        // Stockage des pièces KYB : Cloudflare R2 (S3) si configuré, sinon stub hors-ligne.
-        var r2Options = BindCloudflareR2Options(configuration);
-        services.AddSingleton(r2Options);
-        if (r2Options.IsConfigured)
+        // Stockage des pièces KYB : service S3-compatible si configuré (R2 ou MinIO),
+        // sinon stub hors-ligne.
+        var kybStorageOptions = BindKybStorageOptions(configuration);
+        services.AddSingleton(kybStorageOptions);
+        if (kybStorageOptions.IsConfigured)
         {
-            services.AddHttpClient(CloudflareR2KybStorage.ClientName);
-            services.AddScoped<IKybDocumentStorage, CloudflareR2KybStorage>();
+            services.AddHttpClient(S3KybStorage.ClientName);
+            services.AddScoped<IKybDocumentStorage, S3KybStorage>();
         }
         else
         {
@@ -62,6 +63,9 @@ public sealed class SellersModuleInstaller : IModuleInstaller
         services.AddScoped<IDomainEventHandler<SellerRegisteredDomainEvent>, SellerRegisteredDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerActivatedDomainEvent>, SellerActivatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerClosedDomainEvent>, SellerClosedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<SellerKybRejectedDomainEvent>, SellerKybRejectedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<SellerSuspendedDomainEvent>, SellerSuspendedDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<SellerSuspensionLiftedDomainEvent>, SellerSuspensionLiftedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerReactivatedDomainEvent>, SellerReactivatedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<SellerDeletedDomainEvent>, SellerDeletedDomainEventHandler>();
 
@@ -78,21 +82,49 @@ public sealed class SellersModuleInstaller : IModuleInstaller
         services.AddOutboxProcessor<SellersDbContext>();
     }
 
-    private static CloudflareR2Options BindCloudflareR2Options(IConfiguration configuration)
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// DEUX SECTIONS DE CONFIGURATION, ET LA NOUVELLE L'EMPORTE.
+    ///
+    /// « Storage:KybStorage » est la section à utiliser désormais : elle ne nomme
+    /// plus un fournisseur, et elle accepte `ServiceUrl` pour viser un MinIO.
+    ///
+    /// « Storage:CloudflareR2 » reste lue en repli. Ce n'est pas de la complaisance :
+    /// c'est ce nom-là qui est écrit dans les `.env` des trois environnements et dans
+    /// `env.j2`. Le retirer d'un coup aurait fait basculer la production sur le stub
+    /// hors-ligne — c'est-à-dire des pièces KYB acceptées et jamais stockées, sans
+    /// erreur visible. La bascule se fait donc fichier par fichier, et cette méthode
+    /// disparaîtra quand le dernier aura été migré.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static S3StorageOptions BindKybStorageOptions(IConfiguration configuration)
     {
-        var section = configuration.GetSection("Storage:CloudflareR2");
-        var options = new CloudflareR2Options
+        var section = configuration.GetSection("Storage:KybStorage");
+        var legacy = configuration.GetSection("Storage:CloudflareR2");
+
+        string Read(string key) =>
+            section[key] is { Length: > 0 } value ? value : legacy[key] ?? string.Empty;
+
+        var options = new S3StorageOptions
         {
-            AccountId = section["AccountId"] ?? string.Empty,
-            AccessKeyId = section["AccessKeyId"] ?? string.Empty,
-            SecretAccessKey = section["SecretAccessKey"] ?? string.Empty,
-            BucketName = section["BucketName"] ?? string.Empty,
+            ServiceUrl = Read("ServiceUrl"),
+            AccountId = Read("AccountId"),
+            AccessKeyId = Read("AccessKeyId"),
+            SecretAccessKey = Read("SecretAccessKey"),
+            BucketName = Read("BucketName"),
+            // PAS de repli sur la valeur historique : sur un bucket KYB, une base
+            // publique renseignée rendrait des pièces d'identité lisibles par qui
+            // connaît le nom du fichier. Si elle doit exister, elle doit être posée
+            // explicitement dans la nouvelle section.
             PublicBaseUrl = section["PublicBaseUrl"] ?? string.Empty
         };
-        if (!string.IsNullOrWhiteSpace(section["Region"]))
+
+        var region = Read("Region");
+        if (!string.IsNullOrWhiteSpace(region))
         {
-            options.Region = section["Region"]!;
+            options.Region = region;
         }
+
         return options;
     }
 }

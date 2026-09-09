@@ -52,8 +52,27 @@ public sealed class Category : AggregateRoot<CategoryId>
 
     public string? ImageUrl { get; private set; }
 
-    /// <summary>Schéma d'attributs attendus + validation (jsonb).</summary>
+    /// <summary>
+    /// Schéma d'attributs de CETTE catégorie, au format stocké (jsonb). Voir
+    /// <see cref="CategoryAttributeSchema"/> pour le format et pour ce qu'il
+    /// contraint. « {} » = aucune contrainte.
+    ///
+    /// La chaîne reste la forme persistée ; on n'expose pas un objet parsé en
+    /// propriété EF, ce qui obligerait à un converter et à re-sérialiser à chaque
+    /// écriture. Le parsing se fait à la demande, par <see cref="ParseSchema"/>.
+    /// </summary>
     public string AttributeSchema { get; private set; } = "{}";
+
+    /// <summary>
+    /// Lit le schéma de cette catégorie.
+    ///
+    /// NE PEUT PAS ÉCHOUER EN PRATIQUE : `Create` et `Update` refusent un schéma
+    /// illisible, donc ce qui est en base a déjà été validé. Le Result est conservé
+    /// pour le cas d'une donnée écrite avant ce contrôle, ou à la main en base :
+    /// mieux vaut alors une erreur de validation lisible qu'une exception au milieu
+    /// d'une création de produit.
+    /// </summary>
+    public Result<CategoryAttributeSchema> ParseSchema() => CategoryAttributeSchema.Parse(AttributeSchema);
 
     public CategoryStatus Status { get; private set; }
 
@@ -102,6 +121,18 @@ public sealed class Category : AggregateRoot<CategoryId>
         if (slugResult.IsFailure)
         {
             return Result.Failure<Category>(slugResult.Error);
+        }
+
+        // LE SCHÉMA EST VALIDÉ ICI, PAS À LA PREMIÈRE CRÉATION DE PRODUIT.
+        //
+        // Le champ n'était contrôlé nulle part : une saisie fautive traversait la
+        // commande, atteignait une colonne `jsonb` et donnait un 500 opaque à
+        // l'administrateur — ou pire, passait, et n'échouait qu'au moment où un
+        // vendeur créait un produit dans cette catégorie, très loin de la faute.
+        var schemaResult = CategoryAttributeSchema.Parse(attributeSchema);
+        if (schemaResult.IsFailure)
+        {
+            return Result.Failure<Category>(schemaResult.Error);
         }
 
         var path = BuildPath(parentPath, slugResult.Value.Value);
@@ -164,6 +195,14 @@ public sealed class Category : AggregateRoot<CategoryId>
         if (slugResult.IsFailure)
         {
             return Result.Failure(slugResult.Error);
+        }
+
+        // Même contrôle qu'à la création : un schéma illisible est refusé au moment
+        // où il est saisi, avec un message qui dit quoi corriger.
+        var schemaResult = CategoryAttributeSchema.Parse(attributeSchema);
+        if (schemaResult.IsFailure)
+        {
+            return Result.Failure(schemaResult.Error);
         }
 
         Name = name.Trim();

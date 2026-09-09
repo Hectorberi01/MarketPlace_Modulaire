@@ -139,7 +139,35 @@ public sealed class Offer : AggregateRoot<OfferId>
             return Error.Validation("offers.offer.seller_required", "Le vendeur est obligatoire.");
         }
 
-        // ⚠️ PRIX STRICTEMENT POSITIF — invariant du domaine, pas simple validation d'entrée.
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA DEVISE DOIT ÊTRE UNE DEVISE QUE LA PLACE SAIT TARIFER.
+        //
+        // `CreateOfferCommandValidator` ne portait AUCUNE règle sur la devise : le
+        // client la choisissait librement, et elle pilotait ensuite tout le calcul
+        // monétaire de l'offre. « ZZZ » était accepté ; `Money.DecimalsFor` lui
+        // prêtait deux décimales par défaut, la commission et les frais étaient
+        // arrondis sur cette hypothèse, l'offre était publiée — et l'erreur ne
+        // survenait qu'à l'encaissement, chez une passerelle qui ne connaît pas ce
+        // code. Entre les deux, un catalogue affichant des prix dans une devise qui
+        // n'existe pas.
+        //
+        // POURQUOI ICI ET PAS SEULEMENT DANS LE VALIDATOR.
+        //
+        // Le validator ne couvre qu'un chemin d'entrée. Le domaine les couvre tous :
+        // BFF vendeur, API d'administration, futur import en masse. Une offre ne
+        // peut naître que dans une devise dont l'arrondi est CONNU — c'est cette
+        // connaissance, et elle seule, que le contrôle de précision juste en dessous
+        // suppose acquise.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (!Money.IsSupported(currency))
+        {
+            return Error.Validation(
+                "offers.offer.currency_unsupported",
+                $"La devise « {currency} » n'est pas prise en charge. "
+                + $"Devises acceptées : {string.Join(", ", Money.SupportedCurrencies)}.");
+        }
+
+        // PRIX STRICTEMENT POSITIF — invariant du domaine, pas simple validation d'entrée.
         //
         // `Money.Create` ne rejette que le NÉGATIF : un prix de 0 passait, en création comme
         // en modification (ChangeOfferPrice n'avait d'ailleurs aucun validator). Un vendeur
@@ -150,6 +178,27 @@ public sealed class Offer : AggregateRoot<OfferId>
         if (sellerPrice <= 0m)
         {
             return Error.Validation("offers.offer.price_invalid", "Le prix vendeur doit être strictement positif.");
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE PRIX VENDEUR DOIT TENIR DANS SA DEVISE.
+        //
+        // Un prix de 1000,50 XOF passait — le franc CFA n'a pourtant aucune
+        // subdivision. L'offre publiait alors, dans une seule et même réponse :
+        // prix vendeur 1000,50, commission 100, frais 50, et prix acheteur 1150
+        // (arrondi par `Money.Create`). Une addition fausse, visible à l'écran, et
+        // un écart jusqu'à 0,50 par unité sur le net reversé.
+        //
+        // On refuse plutôt que d'arrondir en silence : le vendeur a saisi un
+        // montant, il doit voir lequel sera retenu.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (sellerPrice != Money.Round(sellerPrice, currency))
+        {
+            return Error.Validation(
+                "offers.offer.price_precision",
+                Money.IsZeroDecimal(currency)
+                    ? $"Le {currency} ne se divise pas : saisissez un montant entier."
+                    : $"Le prix comporte trop de décimales pour le {currency}.");
         }
 
         if (shipFromLocationId == Guid.Empty)
@@ -163,7 +212,7 @@ public sealed class Offer : AggregateRoot<OfferId>
         }
 
         var (commissionAmount, providerFeeAmount, productPrice) =
-            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate);
+            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate, currency);
 
         var priceResult = Money.Create(productPrice, currency);
         if (priceResult.IsFailure)
@@ -199,8 +248,24 @@ public sealed class Offer : AggregateRoot<OfferId>
                 "offers.offer.price_invalid", "Le prix vendeur doit être strictement positif."));
         }
 
+        // MÊME CONTRÔLE DE PRÉCISION QU'À LA CRÉATION.
+        //
+        // Le refuser à la création et l'admettre à la modification ne ferme rien : il
+        // suffisait de créer l'offre à 1000 XOF puis de la repasser à 1000,50 pour
+        // retrouver exactement l'addition fausse. La devise, elle, n'a pas à être
+        // revérifiée : elle vient de `BasePrice`, donc d'une création déjà validée, et
+        // aucune méthode ne permet d'en changer.
+        if (sellerPrice != Money.Round(sellerPrice, BasePrice.Currency))
+        {
+            return Result.Failure(Error.Validation(
+                "offers.offer.price_precision",
+                Money.IsZeroDecimal(BasePrice.Currency)
+                    ? $"Le {BasePrice.Currency} ne se divise pas : saisissez un montant entier."
+                    : $"Le prix comporte trop de décimales pour le {BasePrice.Currency}."));
+        }
+
         var (commissionAmount, providerFeeAmount, productPrice) =
-            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate);
+            ComputeBreakdown(sellerPrice, commissionRate, providerFeeRate, BasePrice.Currency);
 
         var priceResult = Money.Create(productPrice, BasePrice.Currency);
         if (priceResult.IsFailure)
@@ -253,9 +318,10 @@ public sealed class Offer : AggregateRoot<OfferId>
         // On repart toujours du prix d'origine, jamais du prix déjà réduit.
         var reference = OriginalSellerPrice ?? SellerPrice;
 
+        // Même correction que dans `ComputeBreakdown` : l'arrondi suit la devise.
         var discounted = type == DiscountType.Percentage
-            ? Math.Round(reference * (1m - value / 100m))
-            : reference - Math.Round(value);
+            ? Money.Round(reference * (1m - value / 100m), BasePrice.Currency)
+            : reference - Money.Round(value, BasePrice.Currency);
 
         if (discounted <= 0m || discounted >= reference)
         {
@@ -264,14 +330,14 @@ public sealed class Offer : AggregateRoot<OfferId>
                 "La remise doit produire un prix réduit strictement positif et inférieur au prix d'origine."));
         }
 
-        var (_, _, referenceBuyerPrice) = ComputeBreakdown(reference, commissionRate, providerFeeRate);
+        var (_, _, referenceBuyerPrice) = ComputeBreakdown(reference, commissionRate, providerFeeRate, BasePrice.Currency);
         var compareAt = Money.Create(referenceBuyerPrice, BasePrice.Currency);
         if (compareAt.IsFailure)
         {
             return Result.Failure(compareAt.Error);
         }
 
-        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(discounted, commissionRate, providerFeeRate);
+        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(discounted, commissionRate, providerFeeRate, BasePrice.Currency);
         var newPrice = Money.Create(productPrice, BasePrice.Currency);
         if (newPrice.IsFailure)
         {
@@ -301,7 +367,7 @@ public sealed class Offer : AggregateRoot<OfferId>
             return Result.Success(); // pas de remise : rien à faire
         }
 
-        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(original, commissionRate, providerFeeRate);
+        var (commissionAmount, providerFeeAmount, productPrice) = ComputeBreakdown(original, commissionRate, providerFeeRate, BasePrice.Currency);
         var priceResult = Money.Create(productPrice, BasePrice.Currency);
         if (priceResult.IsFailure)
         {
@@ -324,15 +390,38 @@ public sealed class Offer : AggregateRoot<OfferId>
     }
 
     /// <summary>
-    /// Empile la majoration plateforme sur le prix vendeur net (XOF = entiers) :
-    ///   commission = Round(sellerPrice * commRate), provider = Round(sellerPrice * provRate),
-    ///   prix produit = sellerPrice + commission + provider.
+    /// Empile la majoration plateforme sur le prix vendeur net :
+    ///   commission = Round(sellerPrice * commRate), frais = Round(sellerPrice * provRate),
+    ///   prix produit = sellerPrice + commission + frais — chaque arrondi étant fait
+    ///   à la précision de LA DEVISE.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ARRONDI EST UNE PROPRIÉTÉ DE LA DEVISE, PAS UNE CONSTANTE.
+    ///
+    /// Ces deux lignes faisaient `Math.Round(x)` — zéro décimale, QUELLE QUE SOIT LA
+    /// DEVISE. Juste en franc CFA, faux partout ailleurs. Et la devise arrivait du
+    /// client sans le moindre contrôle.
+    ///
+    /// Le chiffrage, sur une offre en euro à 10,40 € net, barème 10 % / 5 % :
+    ///
+    ///   ici        : commission Round(1,04) = 1,00 ; frais Round(0,52) = 1,00
+    ///                → prix acheteur 12,40 €
+    ///   Settlement : commission 1,08 ; frais 0,54 → net vendeur 10,78 €
+    ///
+    /// Le vendeur a fixé 10,40 € et touche 10,78 €. La plateforme a facturé 2,00 € de
+    /// majoration et n'en garde que 1,62 € : 0,38 € perdus par unité, soit 19 % de sa
+    /// propre marge, dans le sens qui la coûte.
+    ///
+    /// `Money.Round` connaît le nombre de décimales de chaque devise. C'est la
+    /// primitive que doivent appeler tous les calculs monétaires du dépôt, et le
+    /// contournement se voyait d'autant mieux qu'elle existait déjà.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static (decimal Commission, decimal ProviderFee, decimal ProductPrice) ComputeBreakdown(
-        decimal sellerPrice, decimal commissionRate, decimal providerFeeRate)
+        decimal sellerPrice, decimal commissionRate, decimal providerFeeRate, string currency)
     {
-        var commissionAmount = Math.Round(sellerPrice * commissionRate);
-        var providerFeeAmount = Math.Round(sellerPrice * providerFeeRate);
+        var commissionAmount = Money.Round(sellerPrice * commissionRate, currency);
+        var providerFeeAmount = Money.Round(sellerPrice * providerFeeRate, currency);
         var productPrice = sellerPrice + commissionAmount + providerFeeAmount;
         return (commissionAmount, providerFeeAmount, productPrice);
     }

@@ -1,0 +1,36 @@
+# ═════════════════════════════════════════════════════════════════════════════════
+# Fichier généré par Ansible (rôle wireguard) — NE PAS ÉDITER À LA MAIN.
+# Machine : {{ inventory_hostname }} ({{ 'applicatif' if wg_is_app else 'base' }})
+# ═════════════════════════════════════════════════════════════════════════════════
+
+[Interface]
+Address = {{ wg_self_ip }}/{{ wg_prefix | default(24) }}
+PrivateKey = {{ wg_self_private_key }}
+{% if not wg_is_app %}
+# Seul le côté BASE écoute : c'est l'applicatif qui compose. Un pair qui n'écoute
+# pas n'expose aucun port, et c'est autant de surface en moins sur la machine qui
+# tient les données.
+ListenPort = {{ wg_port }}
+{% endif %}
+
+[Peer]
+# {{ 'Le VPS base' if wg_is_app else 'Le VPS applicatif' }}
+PublicKey = {{ wg_peer_public_key }}
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# `AllowedIPs` EST UNE RÈGLE DE ROUTAGE **ET** UN FILTRE.
+#
+# C'est ce qui décide à la fois ce qui PART dans le tunnel et ce qui est ACCEPTÉ en
+# retour de ce pair. Un /32 dit : ce pair ne peut se faire passer que pour cette
+# unique adresse. Élargir en 0.0.0.0/0 ferait passer TOUT le trafic de la machine
+# par le tunnel et autoriserait le pair à usurper n'importe quelle source.
+# ─────────────────────────────────────────────────────────────────────────────────
+AllowedIPs = {{ wg_peer_ip }}/32
+
+{% if wg_is_app %}
+Endpoint = {{ wg_peer_endpoint_host }}:{{ wg_port }}
+# Maintient l'association ouverte côté NAT. Voir defaults/main.yml : sans lui, le
+# tunnel se tait après quelques minutes d'inactivité, et la panne disparaît dès
+# qu'on la teste.
+PersistentKeepalive = {{ wg_keepalive }}
+{% endif %}

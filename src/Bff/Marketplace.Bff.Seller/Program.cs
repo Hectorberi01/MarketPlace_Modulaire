@@ -56,9 +56,7 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
 
 // 3quater. CORS — le back-office vendeur est une application navigateur.
 const string SellerCorsPolicy = "seller-console";
-// Tableau indexé (Cors__Origins__0…) OU liste séparée par des virgules
-// (Cors__Origins="https://a, http://b") : la seconde forme se pilote depuis
-// une variable unique, sans avoir à connaître le nombre d'origines d'avance.
+
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>()
     ?? builder.Configuration["Cors:Origins"]?
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -73,12 +71,6 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            // Repli FERMÉ, aligné sur le BFF Admin.
-            //
-            // Ce repli n'était neutralisé, en production, que par deux origines
-            // `localhost` laissées dans appsettings.json — et autorisées avec
-            // `AllowCredentials()`. Les supprimer aurait basculé l'hôte en
-            // `AllowAnyOrigin()` sans que rien ne le signale.
             policy.SetIsOriginAllowed(_ => false);
         }
     });
@@ -90,7 +82,7 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]
     ?? throw new InvalidOperationException("Clé de signature JWT absente (Jwt:SigningKey).");
 
-// ⚠️ REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
+// REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
 // committée dans le dépôt). Avec elle, n'importe qui forge un jeton « Admin ».
 // Le compose impose déjà l'override ; ceci est la seconde barrière — pour tous les
 // autres chemins de déploiement. Voir JwtKeyGuard.
@@ -152,6 +144,7 @@ builder.Services.AddProxyForwardedHeaders();
 // sommes cassés ». Enregistré AVANT AddProblemDetails : le premier handler qui traite
 // l'exception gagne.
 builder.Services.AddConcurrencyExceptionHandler();
+builder.Services.AddUniqueViolationExceptionHandler();
 
 builder.Services.AddProblemDetails();
 
@@ -200,7 +193,7 @@ var dbContextTypes = builder.Services
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
+// EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
 //
 // Restaure la vraie IP du client (Traefik la transmet en X-Forwarded-For). Tout ce qui
 // suit — journalisation, authentification, limitation de débit — lit RemoteIpAddress.
@@ -251,7 +244,7 @@ app.UseCors(SellerCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ⚠️ APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
+// APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
 //
 // Le limiteur partitionne par IDENTIFIANT DE COMPTE quand l'utilisateur est
 // authentifié (mitigation du CGNAT). Or cette identité n'existe qu'APRÈS
@@ -285,7 +278,7 @@ app.MapSellerAppEndpoints();
 
 // Hub temps réel (messagerie). Sous /seller pour être routé par Traefik + CORS navigateur.
 
-// ⚠️ Le hub SignalR est EXEMPTÉ du limiteur de débit.
+// Le hub SignalR est EXEMPTÉ du limiteur de débit.
 //
 // Une connexion WebSocket est une connexion LONGUE : elle négocie, se reconnecte, et
 // pousse des messages. Le limiteur la compterait comme une avalanche de requêtes

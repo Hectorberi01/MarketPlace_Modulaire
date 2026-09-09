@@ -1,6 +1,7 @@
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
+using Marketplace.Modules.Catalog.Application.Categories;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Catalog.Domain.Categories;
 
@@ -26,16 +27,7 @@ internal sealed class GetCategoryQueryHandler : IQueryHandler<GetCategoryQuery, 
             async ct =>
             {
                 var category = await _categoryRepository.GetByIdAsync(new CategoryId(query.CategoryId), ct);
-                return category is null
-                    ? null
-                    : new CategorySummary(
-                        category.Id.Value,
-                        category.ParentId,
-                        category.Name,
-                        category.Slug.Value,
-                        category.Path,
-                        category.Status.ToString(),
-                        category.ImageUrl);
+                return category is null ? null : CategoryMapping.ToSummary(category);
             },
             CatalogCacheKeys.ReferenceDataTtl,
             CatalogCacheKeys.MissTtl,

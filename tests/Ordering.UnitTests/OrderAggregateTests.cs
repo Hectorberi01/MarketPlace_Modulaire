@@ -6,10 +6,28 @@ namespace Ordering.UnitTests;
 
 public class OrderAggregateTests
 {
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LES TROIS DERNIERS MONTANTS SONT DES MONTANTS DE LIGNE, PLUS DES UNITAIRES.
+    ///
+    /// Cet assistant s'appelait `finalUnit` et passait des remises UNITAIRES. Le
+    /// modèle a changé avec la remise de panier : une remise à montant fixe — « −500
+    /// sur votre commande » — n'a pas d'équivalent unitaire, et la diviser par la
+    /// quantité crée un arrondi par article, donc un écart entre le total affiché et
+    /// le total facturé. `OrderLineDraft` porte désormais `SellerDiscount`,
+    /// `PlatformDiscount` et `LineTotal` au niveau de la LIGNE.
+    ///
+    /// Les paramètres sont renommés en conséquence : la signature n'avait pas bougé,
+    /// donc rien ne cassait à la compilation — les tests continuaient de passer des
+    /// unitaires là où le domaine attendait des totaux, et c'est ce qui les a fait
+    /// échouer sans que personne n'ait touché à Ordering.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static OrderLineDraft Line(
-        int qty, decimal unitBase, decimal sellerDisc, decimal platformDisc, decimal finalUnit,
+        int qty, decimal unitBase, decimal sellerDiscountLine, decimal platformDiscountLine, decimal lineTotal,
         decimal commissionRate = 0.10m, decimal providerFeeRate = 0.05m)
-        => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "SKU-1", Guid.NewGuid(), qty, unitBase, sellerDisc, platformDisc, finalUnit,
+        => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "SKU-1", Guid.NewGuid(), qty, unitBase,
+            sellerDiscountLine, platformDiscountLine, lineTotal,
             commissionRate, providerFeeRate);
 
     private static Order NewOrder(params OrderLineDraft[] lines)
@@ -18,13 +36,17 @@ public class OrderAggregateTests
     [Fact]
     public void Create_computes_totals_from_lines()
     {
-        // 2 × (base 7000, -1400 vendeur, -500 plateforme, final 5100) → totaux ×2.
-        var order = NewOrder(Line(2, 7000m, 1400m, 500m, 5100m));
+        // Une ligne de 2 articles à 7000 de base : sous-total 14 000, dont 2800 de
+        // remise vendeur et 1000 de remise plateforme, soit 10 200 à payer. Les trois
+        // derniers montants sont ceux de la LIGNE, pas d'un article.
+        var order = NewOrder(Line(2, 7000m, 2800m, 1000m, 10200m));
 
         order.Subtotal.Should().Be(14000m);
         order.TotalSellerDiscount.Should().Be(2800m);
         order.TotalPlatformDiscount.Should().Be(1000m);
         order.GrandTotal.Should().Be(10200m);
+        // Le prix unitaire n'est plus qu'un affichage déduit du montant de ligne.
+        order.Lines.Single().FinalUnitPrice.Should().Be(5100m);
         order.Status.Should().Be(OrderStatus.Pending);
     }
 
@@ -108,7 +130,7 @@ public class OrderAggregateTests
     [Fact]
     public void La_cagnotte_reduit_le_montant_du_sans_toucher_a_la_valeur_de_la_commande()
     {
-        var order = NewOrder(Line(2, 7000m, 1400m, 500m, 5100m));
+        var order = NewOrder(Line(2, 7000m, 2800m, 1000m, 10200m));
         order.SetShippingFee(1500m);
 
         order.ApplyWalletCredit(4000m).IsSuccess.Should().BeTrue();

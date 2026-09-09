@@ -58,7 +58,6 @@ public static class SellerWalletEndpoints
     /// Crée une demande de retrait du solde principal (fonds retenus, en attente de
     /// validation admin — pas de versement immédiat).
     ///
-    /// ─────────────────────────────────────────────────────────────────────────────
     /// UNE SEULE DEMANDE EN ATTENTE À LA FOIS.
     ///
     /// Cette route n'avait ni clé d'idempotence ni verrou : deux soumissions
@@ -74,17 +73,20 @@ public static class SellerWalletEndpoints
     /// Ce n'est pas un verrou transactionnel : deux requêtes rigoureusement
     /// simultanées peuvent encore passer. Fermer complètement la fenêtre demande une
     /// contrainte d'unicité partielle en base — à faire, mais avec une migration.
-    /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>
     private static async Task<IResult> WithdrawAsync(ClaimsPrincipal user, WithdrawRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ARGENT, et non vente : c'est le SEUL geste de ce fichier qui fait sortir des
+        // fonds. On passe donc par le droit de RETRAIT, pas par le droit de vendre —
+        // une boutique fermée volontairement doit pouvoir encaisser ce qu'elle a gagné
+        // avant de fermer, seule la suspension gèle. Voir SellerRights.CanWithdraw.
+        var (seller, denied) = await SellerBff.ResolvePayableSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
-        var existing = await sender.Send(new ListWithdrawalsQuery(seller.Id), ct);
+        var existing = await sender.Send(new ListWithdrawalsQuery(seller!.Id), ct);
         if (existing.IsSuccess)
         {
             var pending = existing.Value.FirstOrDefault(w =>
@@ -100,7 +102,7 @@ public static class SellerWalletEndpoints
             }
         }
 
-        return (await sender.Send(new RequestWithdrawalCommand(seller.Id, request.Amount), ct))
+        return (await sender.Send(new RequestWithdrawalCommand(seller!.Id, request.Amount), ct))
             .Match(w => Results.Ok(w));
     }
 

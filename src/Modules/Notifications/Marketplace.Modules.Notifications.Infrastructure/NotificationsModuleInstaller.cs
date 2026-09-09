@@ -221,6 +221,9 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         // réactivation (vendeur, doublées par e-mail : il n'ouvrira pas forcément l'app).
         services.AddScoped<IIntegrationEventHandler<SellerRegisteredIntegrationEvent>, SellerRegisteredAdminNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<SellerClosedIntegrationEvent>, SellerClosedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerSuspendedIntegrationEvent>, SellerSuspendedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerKybRejectedIntegrationEvent>, SellerKybRejectedNotificationHandler>();
+        services.AddScoped<IIntegrationEventHandler<SellerSuspensionLiftedIntegrationEvent>, SellerSuspensionLiftedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<SellerReactivatedIntegrationEvent>, SellerReactivatedNotificationHandler>();
 
         // ACTIVITÉ VENDEUR : nouvel avis, rupture de stock (une vente perdue par heure).

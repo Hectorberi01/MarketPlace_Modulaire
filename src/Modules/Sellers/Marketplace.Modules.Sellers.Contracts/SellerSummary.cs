@@ -4,7 +4,7 @@ namespace Marketplace.Modules.Sellers.Contracts;
 /// Vue COMPLÈTE d'un vendeur — usage INTERNE et PROPRIÉTAIRE/ADMIN uniquement.
 ///
 /// ─────────────────────────────────────────────────────────────────────────────
-/// ⚠️ CE RECORD NE DOIT JAMAIS ÊTRE SÉRIALISÉ VERS UN ENDPOINT ANONYME OU PUBLIC.
+/// CE RECORD NE DOIT JAMAIS ÊTRE SÉRIALISÉ VERS UN ENDPOINT ANONYME OU PUBLIC.
 ///
 /// Son ancien résumé disait « vue publique ». C'était faux, et dangereusement : il
 /// contient le NUMÉRO MOBILE MONEY du vendeur (Payout.AccountNumber), le TAUX DE
@@ -33,7 +33,15 @@ public sealed record SellerSummary(
     IReadOnlyList<KybDocumentSummary> KybDocuments,
     // Informations société déclarées (jsonb). Réservé au propriétaire/admin — jamais
     // dans la vitrine publique (voir ToPublic, qui ne l'inclut pas).
-    SellerCompanyInfoSummary? Metadata = null)
+    SellerCompanyInfoSummary? Metadata = null,
+    // Motif du dernier refus de KYB. Le vendeur voyait « Rejected » sur son écran de
+    // compte sans savoir ce qui n'allait pas, et re-téléversait la pièce refusée.
+    string? KybRejectionReason = null,
+    // Suspension en cours : sa date et son motif. Null hors suspension. Le compte des
+    // suspensions passées, lui, reste dans l'agrégat : c'est un élément de décision
+    // d'administration, pas une information à renvoyer au vendeur.
+    DateTime? SuspendedOnUtc = null,
+    string? SuspensionReason = null)
 {
     /// <summary>
     /// Projette la vitrine PUBLIQUE : uniquement ce qu'un visiteur anonyme a le droit

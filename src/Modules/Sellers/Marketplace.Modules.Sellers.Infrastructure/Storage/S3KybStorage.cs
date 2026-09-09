@@ -7,18 +7,33 @@ using Marketplace.Modules.Sellers.Application.Abstractions;
 namespace Marketplace.Modules.Sellers.Infrastructure.Storage;
 
 /// <summary>
-/// Stockage RÉEL des pièces KYB sur Cloudflare R2 (API compatible S3). Signe
-/// chaque PutObject en AWS Signature V4 (aucune dépendance SDK) et envoie le
-/// fichier vers le bucket. Renvoie l'URL publique (domaine r2.dev / personnalisé).
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// STOCKAGE DES PIÈCES KYB SUR UN SERVICE S3-COMPATIBLE.
+///
+/// S'appelait `CloudflareR2KybStorage`, et le nom mentait déjà à moitié : rien ici
+/// n'est propre à Cloudflare. Tout passe par AWS SigV4 en PATH-STYLE
+/// (« /bucket/clé »), qui est le dénominateur commun de R2, MinIO, Ceph et S3.
+///
+/// Le seul verrou était l'endpoint, calculé depuis un identifiant de compte
+/// Cloudflare. Il est désormais configurable (`ServiceUrl`), et cette classe vise
+/// indifféremment R2 ou un MinIO auto-hébergé, sans une ligne de logique en plus.
+///
+/// PAS DE SDK AWS, ET C'EST UN CHOIX QUI SE PAIE ICI EN LISIBILITÉ. La signature
+/// est écrite à la main plus bas. C'est une dépendance de moins et une surface de
+/// moins, au prix d'un code qu'il faut relire avec attention : la moindre
+/// différence entre l'URI canonique signée et l'URI réellement appelée produit un
+/// « SignatureDoesNotMatch » qui ne dit pas d'où il vient.
+/// ═════════════════════════════════════════════════════════════════════════════════
 /// </summary>
-public sealed class CloudflareR2KybStorage : IKybDocumentStorage
+public sealed class S3KybStorage : IKybDocumentStorage
 {
-    public const string ClientName = "cloudflare-r2";
+    /// <summary>Nom du client HTTP nommé. Ne désigne plus un fournisseur : ce stockage peut être R2 ou MinIO.</summary>
+    public const string ClientName = "kyb-object-storage";
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly CloudflareR2Options _options;
+    private readonly S3StorageOptions _options;
 
-    public CloudflareR2KybStorage(IHttpClientFactory httpClientFactory, CloudflareR2Options options)
+    public S3KybStorage(IHttpClientFactory httpClientFactory, S3StorageOptions options)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
@@ -34,7 +49,20 @@ public sealed class CloudflareR2KybStorage : IKybDocumentStorage
             var now = DateTime.UtcNow;
             var amzDate = now.ToString("yyyyMMddTHHmmssZ");
             var dateStamp = now.ToString("yyyyMMdd");
-            var host = new Uri(_options.Endpoint).Host;
+            // ═══════════════════════════════════════════════════════════════════════
+            // `Authority` ET NON `Host` — LE PORT FAIT PARTIE DE LA SIGNATURE.
+            //
+            // SigV4 signe l'en-tête `host` tel que le client l'enverra. Or
+            // .NET écrit « 10.20.0.2:9000 » dans cet en-tête dès que le port
+            // n'est pas celui du schéma, alors que `Uri.Host` rend
+            // « 10.20.0.2 » tout court. Signer sans le port donnait donc une
+            // signature portant sur un en-tête différent de celui envoyé :
+            // « SignatureDoesNotMatch », sans indication de la cause.
+            //
+            // Invisible avec R2 (https sur 443, donc `Authority` == `Host`).
+            // Systématique avec un MinIO sur 9000.
+            // ═══════════════════════════════════════════════════════════════════════
+            var host = new Uri(_options.Endpoint).Authority;
 
             // Chemin canonique = /bucket/clé (chaque segment de clé encodé, « / » conservés).
             var canonicalUri = "/" + _options.BucketName + "/" + EncodeKey(key);
@@ -94,7 +122,20 @@ public sealed class CloudflareR2KybStorage : IKybDocumentStorage
             var now = DateTime.UtcNow;
             var amzDate = now.ToString("yyyyMMddTHHmmssZ");
             var dateStamp = now.ToString("yyyyMMdd");
-            var host = new Uri(_options.Endpoint).Host;
+            // ═══════════════════════════════════════════════════════════════════════
+            // `Authority` ET NON `Host` — LE PORT FAIT PARTIE DE LA SIGNATURE.
+            //
+            // SigV4 signe l'en-tête `host` tel que le client l'enverra. Or
+            // .NET écrit « 10.20.0.2:9000 » dans cet en-tête dès que le port
+            // n'est pas celui du schéma, alors que `Uri.Host` rend
+            // « 10.20.0.2 » tout court. Signer sans le port donnait donc une
+            // signature portant sur un en-tête différent de celui envoyé :
+            // « SignatureDoesNotMatch », sans indication de la cause.
+            //
+            // Invisible avec R2 (https sur 443, donc `Authority` == `Host`).
+            // Systématique avec un MinIO sur 9000.
+            // ═══════════════════════════════════════════════════════════════════════
+            var host = new Uri(_options.Endpoint).Authority;
             var scope = $"{dateStamp}/{_options.Region}/s3/aws4_request";
 
             // Paramètres de requête présignés (triés par clé, valeurs encodées RFC 3986).

@@ -59,7 +59,7 @@ public static class SellerOfferEndpoints
     /// barème, elle annonce un prix faux jusqu'à sa prochaine publication sur les
     /// stores, sans que personne ne s'en aperçoive.
     ///
-    /// ⚠️ Ce sont bien les taux GLOBAUX (`PricingOptions`, section « Pricing ») qui
+    /// ATTENTION : Ce sont bien les taux GLOBAUX (`PricingOptions`, section « Pricing ») qui
     /// font foi, et non `Seller.CommissionRate` : ce champ existe encore sur l'agrégat
     /// vendeur mais n'entre plus dans le calcul — sa propre documentation le dit.
     /// Servir celui-là produirait un détail plausible et faux.
@@ -253,18 +253,28 @@ public static class SellerOfferEndpoints
         => await GuardAsync(user, sender, sellers, id, ct,
             () => sender.Send(new DeleteOfferCommand(id), ct));
 
-    /// <summary>Résout le vendeur, vérifie la propriété de l'offre, puis exécute la commande.</summary>
+    /// <summary>
+    /// Résout le vendeur, vérifie SON DROIT DE VENDRE puis la propriété de l'offre,
+    /// et exécute la commande.
+    ///
+    /// Toutes les routes qui passent par ici écrivent : changer un prix, appliquer ou
+    /// retirer une remise, activer ou mettre en pause, supprimer. Le contrôle de
+    /// statut manquait sur les quatre — seule la CRÉATION d'une offre le portait,
+    /// dans le handler. Autrement dit, un vendeur suspendu ne pouvait pas ouvrir une
+    /// offre neuve, mais il pouvait republier celles qu'il avait en pause et casser
+    /// ses prix.
+    /// </summary>
     private static async Task<IResult> GuardAsync(
         ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid offerId, CancellationToken ct,
         Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
-        if (!await SellerBff.OwnsOfferAsync(sender, seller.Id, offerId, ct))
+        if (!await SellerBff.OwnsOfferAsync(sender, seller!.Id, offerId, ct))
         {
             return SellerBff.NotFoundOrForbidden("offer");
         }

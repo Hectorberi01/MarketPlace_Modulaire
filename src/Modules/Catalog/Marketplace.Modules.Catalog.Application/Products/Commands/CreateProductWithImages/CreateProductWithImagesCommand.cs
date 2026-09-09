@@ -35,19 +35,37 @@ internal sealed class CreateProductWithImagesCommandHandler
 {
     private readonly IProductRepository _productRepository;
     private readonly IMediaStorage _mediaStorage;
+    private readonly ProductAttributeGuard _attributeGuard;
     private readonly ICatalogUnitOfWork _unitOfWork;
 
     public CreateProductWithImagesCommandHandler(
-        IProductRepository productRepository, IMediaStorage mediaStorage, ICatalogUnitOfWork unitOfWork)
+        IProductRepository productRepository,
+        IMediaStorage mediaStorage,
+        ProductAttributeGuard attributeGuard,
+        ICatalogUnitOfWork unitOfWork)
     {
         _productRepository = productRepository;
         _mediaStorage = mediaStorage;
+        _attributeGuard = attributeGuard;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<ProductWithImagesResult>> Handle(
         CreateProductWithImagesCommand command, CancellationToken cancellationToken)
     {
+        // 0) LA CATÉGORIE ET SES ATTRIBUTS, AVANT TOUT TÉLÉVERSEMENT.
+        //
+        // L'ordre compte ici plus qu'ailleurs : les images partent au stockage objet
+        // avant la moindre écriture en base, et rien ne les supprime si la suite
+        // échoue. Un refus d'attribut placé après l'upload laisserait donc des objets
+        // orphelins, facturés, jamais référencés. Placé avant, il ne coûte rien.
+        var attributes = await _attributeGuard.ResolveAsync(
+            command.CategoryId, command.Attributes, cancellationToken);
+        if (attributes.IsFailure)
+        {
+            return Result.Failure<ProductWithImagesResult>(attributes.Error);
+        }
+
         // 1) Upload des images vers le service média EN UNE SEULE requête « batch »
         //    (avant toute écriture en base : si l'upload échoue, rien n'est créé).
         var uploads = command.Images
@@ -73,7 +91,7 @@ internal sealed class CreateProductWithImagesCommandHandler
         var result = Product.Create(
             command.SellerId, command.CategoryId, command.Name, command.Description,
             command.BrandId, command.Gtin, command.Ean, command.ProductGroupId,
-            command.Attributes, command.Tags, slug: slugResult.Value);
+            attributes.Value, command.Tags, slug: slugResult.Value);
         if (result.IsFailure)
         {
             return Result.Failure<ProductWithImagesResult>(result.Error);

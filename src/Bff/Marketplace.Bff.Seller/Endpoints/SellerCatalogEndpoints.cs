@@ -254,7 +254,7 @@ public static class SellerCatalogEndpoints
         using var ms = new MemoryStream();
         await image.CopyToAsync(ms, ct);
 
-        // ⚠️ Ce contenu part vers un PROCESSEUR D'IMAGE (Cloudinary). Livrer des octets
+        // Ce contenu part vers un PROCESSEUR D'IMAGE (Cloudinary). Livrer des octets
         // arbitraires à un décodeur d'images en lui annonçant un format choisi par
         // l'attaquant, c'est le vecteur classique des CVE de bibliothèques graphiques.
         var result = await sender.Send(
@@ -298,7 +298,7 @@ public static class SellerCatalogEndpoints
         }
 
         return (await sender.Send(new AddProductMediaCommand(
-                id, request.Url, request.Type ?? "Image", request.AltText, request.IsPrimary, request.ExternalId), ct))
+                id, request.Url, request.Type ?? "Image", request.AltText, request.IsPrimary), ct))
             .Match(mediaId => Results.Ok(new { mediaId }));
     }
 
@@ -459,17 +459,30 @@ public static class SellerCatalogEndpoints
         return (await sender.Send(new DeleteProductCommand(id), ct)).Match(() => Results.NoContent());
     }
 
-    /// <summary>Résout le vendeur, vérifie la propriété du produit, puis exécute la commande.</summary>
+    /// <summary>
+    /// Résout le vendeur, vérifie SON DROIT DE VENDRE puis la propriété du produit,
+    /// et exécute la commande.
+    ///
+    /// Cet enchaînement ne sert que des ÉCRITURES. Le contrôle de statut est donc
+    /// posé ici plutôt que dans chacune des huit routes qui l'utilisent : recopié
+    /// huit fois, il aurait fini par manquer une fois.
+    ///
+    /// L'ORDRE EST VOULU. Le droit de vendre est vérifié AVANT la propriété : à un
+    /// vendeur suspendu, on répond « votre boutique est suspendue » plutôt que
+    /// « produit introuvable ». La seconde réponse serait exacte du point de vue de
+    /// l'anti-énumération, et parfaitement trompeuse pour l'intéressé, qui irait
+    /// chercher un problème dans son catalogue.
+    /// </summary>
     private static async Task<IResult> GuardAsync(
         ClaimsPrincipal user, ICatalogModuleApi catalog, ISellerModuleApi sellers, Guid productId, CancellationToken ct,
         Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
-        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, productId, ct))
+        if (!await SellerBff.OwnsProductAsync(catalog, seller!.Id, productId, ct))
         {
             return SellerBff.NotFoundOrForbidden("product");
         }
@@ -482,7 +495,13 @@ public static class SellerCatalogEndpoints
         Guid? ProductGroupId, IReadOnlyDictionary<string, string>? Attributes, IReadOnlyList<string>? Tags);
 
     public sealed record StatusRequest(string Status);
-    public sealed record MediaRequest(string Url, string? Type, string? AltText, bool IsPrimary, string? ExternalId);
+    /// <summary>
+    /// `ExternalId` A ÉTÉ RETIRÉ DE CE CONTRAT. C'était une clé de stockage fournie
+    /// par le client, et elle servait de clé de SUPPRESSION : un vendeur pouvait
+    /// déclarer l'URL d'une image d'un concurrent, puis la supprimer. Une clé de
+    /// stockage ne peut venir que du service qui a écrit l'objet.
+    /// </summary>
+    public sealed record MediaRequest(string Url, string? Type, string? AltText, bool IsPrimary);
     public sealed record ReorderRequest(IReadOnlyList<Guid> OrderedMediaIds);
     public sealed record VariantRequest(
         string Sku, IReadOnlyDictionary<string, string>? Attributes, string? Barcode, int WeightGrams,

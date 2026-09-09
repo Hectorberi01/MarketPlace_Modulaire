@@ -1,4 +1,4 @@
-# ⚠️  ADMIN BASE DE DONNÉES (pgweb) — ACCÈS LECTURE À LA BASE DE PROD.
+# ADMIN BASE DE DONNÉES (pgweb) — ACCÈS LECTURE À LA BASE DE PROD.
 #
 # pgweb ouvre une interface web : navigation dans les schémas/tables + éditeur SQL.
 # Trois protections superposées :

@@ -100,5 +100,21 @@ internal sealed class OfferModuleApi : IOfferModuleApi
         offer.ProviderFeeAmount,
         offer.BasePrice.Amount,
         offer.CommissionRate,
-        offer.ProviderFeeRate);
+        offer.ProviderFeeRate,
+        // ═══════════════════════════════════════════════════════════════════════
+        // LES DEUX DERNIERS ARGUMENTS, QUE CE MAPPER OUBLIAIT.
+        //
+        // `OfferSummary` a dix-neuf paramètres, les deux derniers optionnels. Ce
+        // constructeur s'arrêtait à `ProviderFeeRate` : `CompareAtAmount` et
+        // `DiscountEndsOnUtc` prenaient donc TOUJOURS leur valeur par défaut nulle,
+        // sans qu'aucun compilateur ne s'en plaigne — c'est le prix des paramètres
+        // optionnels.
+        //
+        // Or les trois surfaces acheteur lisent ces deux champs. La remise
+        // s'appliquait bien (le prix de base la porte), mais aucun prix barré,
+        // aucun badge « en promo » n'apparaissait jamais : le vendeur finançait une
+        // promotion dont l'argument commercial n'atteignait pas l'acheteur.
+        // ═══════════════════════════════════════════════════════════════════════
+        offer.CompareAtPrice?.Amount,
+        offer.DiscountEndsOnUtc);
 }

@@ -97,6 +97,69 @@ internal static class SellerBff
         return await sellers.GetSellerByUserIdAsync(userId, ct);
     }
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE POINT DE PASSAGE DU DROIT DE VENDRE.
+    ///
+    /// Résout la boutique du jeton ET vérifie qu'elle a le droit d'écrire. Renvoie
+    /// soit la boutique, soit la réponse à rendre — jamais les deux, jamais aucun.
+    ///
+    /// `ResolveSellerAsync` rendait la boutique QUEL QUE SOIT SON STATUT, et aucune
+    /// surface d'écriture ne regardait ce statut : un vendeur suspendu conservait
+    /// tous ses droits de modification. Cette méthode existe pour qu'il n'y ait plus
+    /// qu'un geste à faire, et pour que l'oubli se voie — un appelant qui utilise
+    /// encore `ResolveSellerAsync` sur une écriture saute visiblement une étape.
+    ///
+    /// La règle elle-même vit dans <see cref="SellerRights"/>, côté contrats : le BFF
+    /// et les modules doivent l'appliquer à l'identique, et une règle recopiée finit
+    /// toujours par diverger.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static async Task<(SellerSummary? Seller, IResult? Denied)> ResolveSellingSellerAsync(
+        ClaimsPrincipal principal, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await ResolveSellerAsync(principal, sellers, ct);
+        if (seller is null)
+        {
+            return (null, NotASeller());
+        }
+
+        return SellerRights.CanSell(seller.Status)
+            ? (seller, null)
+            : (null, ShopNotAllowed(seller.Status));
+    }
+
+    /// <summary>
+    /// Variante pour l'ARGENT. Une boutique fermée volontairement garde le droit de
+    /// se faire payer ce qu'elle a gagné ; seule la suspension le suspend.
+    /// </summary>
+    public static async Task<(SellerSummary? Seller, IResult? Denied)> ResolvePayableSellerAsync(
+        ClaimsPrincipal principal, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await ResolveSellerAsync(principal, sellers, ct);
+        if (seller is null)
+        {
+            return (null, NotASeller());
+        }
+
+        return SellerRights.CanWithdraw(seller.Status)
+            ? (seller, null)
+            : (null, ShopNotAllowed(seller.Status));
+    }
+
+    /// <summary>
+    /// 403 motivé : la boutique existe, mais son état lui interdit cette action.
+    ///
+    /// 403 et non 404 : contrairement aux ressources d'autrui, il n'y a rien à cacher
+    /// ici — le vendeur connaît sa propre boutique, et lui répondre « introuvable »
+    /// l'enverrait chercher un problème qui n'existe pas. Le statut est renvoyé pour
+    /// que l'application puisse afficher le bon écran.
+    /// </summary>
+    public static IResult ShopNotAllowed(string? status)
+        => Results.Json(
+            new { error = "shop_not_allowed", status, message = SellerRights.DenialReason(status) },
+            statusCode: StatusCodes.Status403Forbidden);
+
     /// <summary>403 : l'utilisateur authentifié n'a pas (encore) de boutique.</summary>
     public static IResult NotASeller()
         => Results.Json(new { error = "not_a_seller", hint = "Onboardez la boutique via POST /seller/shop." },
@@ -115,7 +178,7 @@ internal static class SellerBff
     /// <summary>
     /// Cette localisation d'expédition appartient-elle bien à la boutique ?
     ///
-    /// ⚠️ ÉCHOUE FERMÉ : si la liste des lieux ne peut pas être obtenue, on répond
+    /// ATTENTION : ÉCHOUE FERMÉ : si la liste des lieux ne peut pas être obtenue, on répond
     /// « non ». Traiter l'incertitude comme une autorisation, c'est ouvrir la porte
     /// précisément le jour où quelque chose ne va pas.
     /// </summary>

@@ -4,7 +4,6 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ActivateSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.AddKybDocument;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.ApproveKyb;
-using Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.RejectKyb;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SetPayoutAccount;
 using Marketplace.Modules.Sellers.Application.Sellers.Commands.SuspendSeller;
@@ -33,25 +32,31 @@ public static class SellerEndpoints
 
     private static void MapSelfService(IEndpointRouteBuilder app)
     {
-        var group = app.MapAuthenticatedGroup("/api/sellers").WithTags("Sellers · Boutique");
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE RÔLE, ET LA ROUTE D'ONBOARDING EN MOINS.
+        //
+        // Ce groupe partait de `MapAuthenticatedGroup` : authentifié, sans rôle. Les
+        // cinq hôtes partageant la clé de signature, un jeton d'acheteur l'ouvrait.
+        //
+        // `POST /api/sellers/` est SUPPRIMÉE, et pas seulement protégée. Elle créait
+        // une boutique sans jamais attribuer le rôle `Seller` — chemin parallèle à
+        // `/seller/auth/verify`, qui est le seul à l'attribuer. Le compte se
+        // retrouvait avec une boutique inaccessible ET l'impossibilité de repasser
+        // par le bon chemin, celui-ci refusant en 409 dès qu'une boutique existe :
+        // enfermé définitivement, avec en prime le squat de noms de boutique.
+        //
+        // Une fois le rôle exigé, cette route n'avait plus d'appelant possible : qui
+        // a le rôle a déjà une boutique, et `RegisterSeller` refuse la seconde. Une
+        // route dont toutes les réponses sont des erreurs n'est pas une route.
+        // L'ouverture de boutique passe par `/seller/auth/register` + `/verify`, ou
+        // par la route d'administration.
+        // ═════════════════════════════════════════════════════════════════════════
+        var group = app.MapSellerGroup("/api/sellers").WithTags("Sellers · Boutique");
 
-        group.MapPost("/", OnboardAsync).WithName("OnboardSeller");
         group.MapGet("/me", GetMyShopAsync).WithName("GetMyShop");
         group.MapPut("/me", UpdateMyShopAsync).WithName("UpdateMyShop");
         group.MapPut("/me/payout", SetMyPayoutAsync).WithName("SetMyPayout");
         group.MapPost("/me/kyb", AddMyKybDocumentAsync).WithName("AddMyKybDocument");
-    }
-
-    /// <summary>Onboarde le compte authentifié comme vendeur (boutique en attente).</summary>
-    private static async Task<IResult> OnboardAsync(OnboardRequest request, ClaimsPrincipal principal, ISender sender, CancellationToken ct)
-    {
-        if (CurrentUserId(principal) is not { } userId)
-        {
-            return Results.Unauthorized();
-        }
-
-        var result = await sender.Send(new RegisterSellerCommand(userId, request.ShopName), ct);
-        return result.Match(id => Results.Created($"/api/sellers/{id}", new { id }));
     }
 
     /// <summary>Renvoie la boutique du vendeur authentifié.</summary>
@@ -159,10 +164,15 @@ public static class SellerEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Rejette le KYB d'un vendeur (Admin).</summary>
-    private static async Task<IResult> RejectKybAsync(Guid id, ISender sender, CancellationToken ct)
+    /// <summary>
+    /// Rejette le KYB d'un vendeur (Admin). Le MOTIF est obligatoire : il part au
+    /// vendeur par notification et par e-mail, et c'est la seule chose qui lui
+    /// permette de corriger son dossier plutôt que de re-téléverser la même pièce.
+    /// </summary>
+    private static async Task<IResult> RejectKybAsync(
+        Guid id, RejectKybRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new RejectKybCommand(id), ct);
+        var result = await sender.Send(new RejectKybCommand(id, request.Reason), ct);
         return result.Match(() => Results.NoContent());
     }
 
@@ -173,10 +183,16 @@ public static class SellerEndpoints
         return result.Match(() => Results.NoContent());
     }
 
-    /// <summary>Suspend un vendeur (Admin).</summary>
-    private static async Task<IResult> SuspendAsync(Guid id, ISender sender, CancellationToken ct)
+    /// <summary>
+    /// Suspend un vendeur (Admin). Le MOTIF est obligatoire, comme sur la console :
+    /// il part au vendeur par notification et par e-mail. Le laisser optionnel ici
+    /// aurait fait de cette route une porte qui refuse toujours, le validateur de la
+    /// commande exigeant le motif.
+    /// </summary>
+    private static async Task<IResult> SuspendAsync(
+        Guid id, SuspendSellerRequest request, ISender sender, CancellationToken ct)
     {
-        var result = await sender.Send(new SuspendSellerCommand(id), ct);
+        var result = await sender.Send(new SuspendSellerCommand(id, request.Reason), ct);
         return result.Match(() => Results.NoContent());
     }
 
@@ -190,7 +206,12 @@ public static class SellerEndpoints
 
     // ------------------------------------------------------- Contrats d'entrée
 
-    public sealed record OnboardRequest(string ShopName);
+    /// <summary>Corps de la suspension : le motif, communiqué au vendeur.</summary>
+    public sealed record SuspendSellerRequest(string Reason);
+
+    /// <summary>Corps du refus de KYB : le motif, communiqué au vendeur.</summary>
+    public sealed record RejectKybRequest(string Reason);
+
     public sealed record UpdateShopRequest(string ShopName, string? LogoUrl, string? Description);
     public sealed record PayoutRequest(string Provider, string AccountNumber, string AccountName);
     public sealed record KybRequest(string Type, string FileUrl);

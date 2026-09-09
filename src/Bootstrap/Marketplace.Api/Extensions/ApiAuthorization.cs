@@ -17,7 +17,7 @@ namespace Marketplace.Api.Extensions;
 ///
 /// D'où cette seconde couche : les groupes sensibles exigent un RÔLE.
 ///
-/// ⚠️ RÈGLE À TENIR : tout nouveau groupe de l'API part de `MapAdminGroup` ou
+/// RÈGLE À TENIR : tout nouveau groupe de l'API part de `MapAdminGroup` ou
 /// `MapAuthenticatedGroup`. Jamais de `MapGroup` nu. Le jour où l'on en écrira un par
 /// distraction, la FallbackPolicy le rendra au moins authentifié — mais elle ne le
 /// rendra pas administrateur, et c'est bien là le piège qu'on vient de refermer.
@@ -53,4 +53,21 @@ public static class ApiAuthorization
     /// </summary>
     public static RouteGroupBuilder MapAuthenticatedGroup(this IEndpointRouteBuilder app, string prefix)
         => app.MapGroup(prefix).RequireAuthorization();
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// GROUPE RÉSERVÉ AUX VENDEURS.
+    ///
+    /// La constante <see cref="SellerRole"/> existait depuis toujours et n'avait
+    /// AUCUN usage dans le dépôt : le groupe `/api/sellers` partait de
+    /// <see cref="MapAuthenticatedGroup"/>, donc sans rôle. Or les cinq hôtes
+    /// partagent émetteur, audience et clé de signature — un jeton d'acheteur
+    /// ouvrait la surface vendeur de l'API.
+    ///
+    /// L'authentification ne suffit pas plus ici qu'ailleurs : elle dit qui parle.
+    /// Les handlers vérifient ensuite que la boutique est bien la sienne.
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static RouteGroupBuilder MapSellerGroup(this IEndpointRouteBuilder app, string prefix)
+        => app.MapGroup(prefix).RequireAuthorization(policy => policy.RequireRole(SellerRole));
 }

@@ -107,7 +107,7 @@ public static class CatalogEndpoints
     /// <summary>Ajoute un média (image ou vidéo) à un produit.</summary>
     private static async Task<IResult> AddProductMediaAsync(Guid id, AddMediaRequest request, ISender sender, CancellationToken ct)
     {
-        var command = new AddProductMediaCommand(id, request.Url, request.Type, request.AltText, request.IsPrimary, request.ExternalId);
+        var command = new AddProductMediaCommand(id, request.Url, request.Type, request.AltText, request.IsPrimary);
         var result = await sender.Send(command, ct);
         return result.Match(mediaId => Results.Created($"/api/catalog/products/{id}", new { mediaId }));
     }
@@ -233,7 +233,9 @@ public static class CatalogEndpoints
         string Sku, IReadOnlyDictionary<string, string>? Attributes, string? Barcode,
         int WeightGrams, int? LengthMm, int? WidthMm, int? HeightMm);
 
-    public sealed record AddMediaRequest(string Url, string Type, string? AltText, bool IsPrimary, string? ExternalId);
+    /// <summary>`ExternalId` retiré : voir <c>AddProductMediaCommand</c>. Une clé de
+    /// stockage fournie par l'appelant permettait de supprimer l'objet d'autrui.</summary>
+    public sealed record AddMediaRequest(string Url, string Type, string? AltText, bool IsPrimary);
     public sealed record CreateBrandRequest(string Name, string? LogoUrl, string? Description);
     public sealed record UpdateBrandRequest(string Name, string? LogoUrl, string? Description);
     public sealed record CreateCategoryRequest(string Name, Guid? ParentId, string? ImageUrl, string? AttributeSchema);

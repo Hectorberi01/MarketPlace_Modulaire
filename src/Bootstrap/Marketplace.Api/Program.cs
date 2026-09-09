@@ -82,7 +82,7 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]
     ?? throw new InvalidOperationException("Clé de signature JWT absente (Jwt:SigningKey).");
 
-// ⚠️ REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
+// REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
 // committée dans le dépôt). Avec elle, n'importe qui forge un jeton « Admin ».
 // Le compose impose déjà l'override ; ceci est la seconde barrière — pour tous les
 // autres chemins de déploiement. Voir JwtKeyGuard.
@@ -140,7 +140,7 @@ builder.Services.AddProxyForwardedHeaders();
 // métadonnée explicite, et elle prime sur la politique de repli. C'est le cas des
 // webhooks PSP, du retour de paiement, de la connexion, et des sondes de santé.
 //
-// ⚠️ La politique de repli protège contre l'ANONYME. Elle ne protège PAS contre un
+// La politique de repli protège contre l'ANONYME. Elle ne protège PAS contre un
 // acheteur authentifié qui appellerait une route d'administration : les 5 hôtes
 // partagent la même clé JWT, donc un jeton acheteur est valide ici. C'est pourquoi
 // chaque groupe sensible exige EN PLUS un rôle (voir ApiAuthorization).
@@ -158,6 +158,7 @@ builder.Services.AddAuthorization(options =>
 // sommes cassés ». Enregistré AVANT AddProblemDetails : le premier handler qui traite
 // l'exception gagne.
 builder.Services.AddConcurrencyExceptionHandler();
+builder.Services.AddUniqueViolationExceptionHandler();
 
 builder.Services.AddProblemDetails();
 
@@ -193,7 +194,7 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
+// EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
 //
 // Restaure la vraie IP du client (Traefik la transmet en X-Forwarded-For). Tout ce qui
 // suit — journalisation, authentification, limitation de débit — lit RemoteIpAddress.
@@ -401,7 +402,7 @@ app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ⚠️ APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
+// APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
 //
 // Le limiteur partitionne par IDENTIFIANT DE COMPTE quand l'utilisateur est
 // authentifié (mitigation du CGNAT). Or cette identité n'existe qu'APRÈS

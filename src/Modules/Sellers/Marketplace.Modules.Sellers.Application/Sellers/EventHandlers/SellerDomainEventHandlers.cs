@@ -60,6 +60,62 @@ public sealed class SellerClosedDomainEventHandler : IDomainEventHandler<SellerC
             cancellationToken);
 }
 
+/// <summary>Publie l'event d'intégration « KYB rejeté » (Notifications informe le vendeur).</summary>
+public sealed class SellerKybRejectedDomainEventHandler : IDomainEventHandler<SellerKybRejectedDomainEvent>
+{
+    private readonly IIntegrationEventPublisher _publisher;
+
+    public SellerKybRejectedDomainEventHandler(IIntegrationEventPublisher publisher)
+        => _publisher = publisher;
+
+    public Task HandleAsync(SellerKybRejectedDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        => _publisher.PublishAsync(
+            new SellerKybRejectedIntegrationEvent
+            {
+                SellerId = domainEvent.SellerId,
+                UserId = domainEvent.UserId,
+                Reason = domainEvent.Reason
+            },
+            cancellationToken);
+}
+
+/// <summary>Publie l'event d'intégration « vendeur suspendu » (Catalog dépublie, Notifications prévient).</summary>
+public sealed class SellerSuspendedDomainEventHandler : IDomainEventHandler<SellerSuspendedDomainEvent>
+{
+    private readonly IIntegrationEventPublisher _publisher;
+
+    public SellerSuspendedDomainEventHandler(IIntegrationEventPublisher publisher)
+        => _publisher = publisher;
+
+    public Task HandleAsync(SellerSuspendedDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        => _publisher.PublishAsync(
+            new SellerSuspendedIntegrationEvent
+            {
+                SellerId = domainEvent.SellerId,
+                UserId = domainEvent.UserId,
+                Reason = domainEvent.Reason
+            },
+            cancellationToken);
+}
+
+/// <summary>Publie l'event d'intégration « suspension levée ».</summary>
+public sealed class SellerSuspensionLiftedDomainEventHandler : IDomainEventHandler<SellerSuspensionLiftedDomainEvent>
+{
+    private readonly IIntegrationEventPublisher _publisher;
+
+    public SellerSuspensionLiftedDomainEventHandler(IIntegrationEventPublisher publisher)
+        => _publisher = publisher;
+
+    public Task HandleAsync(SellerSuspensionLiftedDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        => _publisher.PublishAsync(
+            new SellerSuspensionLiftedIntegrationEvent
+            {
+                SellerId = domainEvent.SellerId,
+                UserId = domainEvent.UserId
+            },
+            cancellationToken);
+}
+
 /// <summary>Publie l'event d'intégration « vendeur réactivé ».</summary>
 public sealed class SellerReactivatedDomainEventHandler : IDomainEventHandler<SellerReactivatedDomainEvent>
 {

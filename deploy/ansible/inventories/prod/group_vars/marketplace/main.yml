@@ -13,6 +13,37 @@ image_tag: latest
 registry_host: ghcr.io
 registry_username: hectorberi01
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# OÙ VIT LA BASE — LE SEUL INTERRUPTEUR DE LA MIGRATION.
+#
+# `false` : la base est le conteneur `postgres` du compose, sur cette machine.
+#           C'est l'état actuel de la production.
+# `true`  : la base est le VPS dédié, joint par le tunnel WireGuard.
+#
+# CE DRAPEAU NE MIGRE RIEN. Il dit seulement où l'application doit se connecter.
+# Le retourner sans avoir restauré les données sur le VPS base ferait démarrer
+# l'API sur une base VIDE — et comme elle applique ses migrations au démarrage,
+# elle créerait les 26 schémas, sèmerait l'admin, et se déclarerait en bonne santé.
+# La plateforme remonterait vide, sans une seule erreur, pendant que les vraies
+# données dormiraient intactes sur l'autre machine.
+#
+# La procédure de bascule est dans docs/RUNBOOK_Bascule_Base.md. Elle se termine
+# par ce drapeau, elle ne commence pas par lui.
+# ═══════════════════════════════════════════════════════════════════════════════
+use_external_database: false
+
+# Construite à partir de `postgres_db` / `postgres_user` (group_vars/all), pour que
+# l'identité de la base soit écrite à UN seul endroit. `marketplace_connection`
+# défini à la main dans le vault reste prioritaire — voir env.j2.
+#
+# PAS DE `SSL Mode` : la confidentialité vient du tunnel, qui chiffre déjà tout ce
+# qui passe entre les deux machines. Exiger TLS par-dessus imposerait de gérer des
+# certificats côté Postgres pour rechiffrer un flux qui l'est déjà. En revanche, si
+# la base cessait un jour de passer par le tunnel, cette ligne devrait changer avant
+# tout le reste.
+marketplace_connection_external: >-
+  Host={{ wg_db_ip }};Port=5432;Database={{ app_db_name }};Username={{ app_db_user }};Password={{ postgres_password }};Maximum Pool Size={{ npgsql_max_pool_size }}
+
 #postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
 # Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
 root_domain: hba-express.org

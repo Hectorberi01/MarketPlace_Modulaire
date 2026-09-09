@@ -233,7 +233,25 @@ services:
   # sur le réseau Docker interne par l'API et les BFF. Pour une base EXTERNE
   # (Neon/Supabase), retire ce service + le depends_on postgres de l'API, et mets
   # MARKETPLACE_CONNECTION sur l'endpoint externe.
+  # ═══════════════════════════════════════════════════════════════════════════
+  # POSTGRES LOCAL — SOUS PROFIL, DONC ABSENT DÈS QUE LA BASE EST AILLEURS.
+  #
+  # `profiles: [local-db]` fait que ce service n'est démarré QUE si
+  # COMPOSE_PROFILES contient « local-db ». `env.j2` ne l'y met que tant que
+  # `use_external_database` vaut false.
+  #
+  # POURQUOI CE N'EST PAS UN DÉTAIL. Après la bascule vers le VPS base, laisser ce
+  # conteneur tourner donnerait une base VIDE juste à côté de la vraie, sur le même
+  # réseau Docker, répondant au nom `postgres`. La moindre variable mal résolue —
+  # un `.env` régénéré, un repli qui reprend le dessus — y renverrait l'application.
+  # Elle appliquerait alors ses vingt-six migrations sur cette base vide, sèmerait
+  # l'admin, et se déclarerait en bonne santé. La plateforme remonterait vide, sans
+  # une seule erreur.
+  #
+  # Un service qui n'existe pas ne peut pas recevoir ce trafic-là.
+  # ═══════════════════════════════════════════════════════════════════════════
   postgres:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     restart: always
     shm_size: "256mb"          # évite les erreurs "could not resize shared memory" sur les gros tris/index
@@ -302,8 +320,12 @@ services:
       Identity__Bootstrap__AdminLastName: "${ADMIN_LAST_NAME:-Plateforme}"
       Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
     depends_on:
+      # `required: false` : sans lui, Compose refuse de démarrer `api` dès que
+      # `postgres` n'est pas dans le profil actif — c'est-à-dire exactement le jour
+      # où la base est sur sa propre machine et où tout devrait bien se passer.
       postgres:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
     labels:

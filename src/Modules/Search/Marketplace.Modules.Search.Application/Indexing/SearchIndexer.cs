@@ -45,6 +45,38 @@ public sealed class SearchIndexer
         await _unitOfWork.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// RÉÉCRITURE COMPLÈTE D'UN DOCUMENT DEPUIS LE CATALOGUE (reconstruction).
+    ///
+    /// Distinct d'<see cref="UpsertProductAsync"/>, qui répond à un ÉVÉNEMENT et ne
+    /// touche donc qu'à ce que l'événement porte. Ici l'appelant a lu le catalogue
+    /// lui-même : il connaît aussi la visibilité et l'image, et il les impose.
+    ///
+    /// Prix et note ne sont pas touchés — ils appartiennent à Offers et Reviews.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public async Task ReindexProductAsync(
+        Guid productId, Guid sellerId, Guid categoryId, string name, string slug,
+        bool visible, string? imageUrl, CancellationToken ct)
+    {
+        var doc = await _repository.GetByProductAsync(productId, ct);
+        if (doc is null)
+        {
+            doc = SearchDocument.FromProduct(productId, sellerId, categoryId, name, slug);
+            await _repository.AddAsync(doc, ct);
+        }
+        else
+        {
+            doc.UpdateProduct(sellerId, categoryId, name, slug);
+        }
+
+        doc.SetImage(imageUrl);
+        doc.SetVisible(visible);
+
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
     public async Task ApplyOfferPriceAsync(Guid productId, decimal price, string currency, CancellationToken ct)
     {
         var doc = await EnsureAsync(productId, ct);

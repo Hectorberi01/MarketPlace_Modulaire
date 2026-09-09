@@ -1,0 +1,24 @@
+---
+wg_interface: wg0
+wg_port: 51820
+wg_subnet: "10.20.0.0/24"
+# Préfixe écrit à part : le déduire du CIDR exigerait la collection
+# ansible.netcommon pour un chiffre qui ne change jamais.
+wg_prefix: 24
+wg_app_ip: "10.20.0.1"
+wg_db_ip: "10.20.0.2"
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# LE RELANCE-CONNEXION, ET POURQUOI IL N'EST POSÉ QUE D'UN CÔTÉ.
+#
+# `PersistentKeepalive` envoie un paquet vide toutes les N secondes pour maintenir
+# ouverte l'association NAT du côté qui INITIE. Il n'a de sens que sur le pair qui
+# se trouve derrière un NAT ou un pare-feu à état — ici, le VPS applicatif, qui
+# compose vers la base.
+#
+# Le poser des deux côtés ne casse rien mais double le trafic de maintien pour rien.
+# Le poser d'aucun côté donne des tunnels qui « marchent » puis se taisent après
+# quelques minutes d'inactivité : la panne la plus difficile à diagnostiquer, parce
+# qu'elle disparaît dès qu'on teste.
+# ═════════════════════════════════════════════════════════════════════════════════
+wg_keepalive: 25

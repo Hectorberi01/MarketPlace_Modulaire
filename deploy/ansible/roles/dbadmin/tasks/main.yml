@@ -3,7 +3,7 @@
 # enable_db_admin + tag dbadmin. Exécuté APRÈS le rôle marketplace (réseau Traefik,
 # conteneur postgres démarré, deploy/ synchronisé).
 #
-# ⚠️ Sécurité (triple verrou) :
+# Sécurité (triple verrou) :
 #   1. utilisateur PostgreSQL `readonly` (pg_read_all_data → SELECT partout) ;
 #   2. pgweb --readonly + --lock-session (connexion figée) ;
 #   3. Traefik dbadmin-guard : liste blanche d'IP + auth HTTP (deny-by-default).
@@ -24,7 +24,18 @@
 # -c). Le mot de passe est lu via \getenv depuis l'environnement du conteneur
 # (docker exec -e RO_PW) puis injecté avec :'ro_pw' → jamais sur une ligne de
 # commande, aucun souci d'échappement (même avec " ou $). Idempotent (bloc DO).
+# ═══════════════════════════════════════════════════════════════════════════════
+# UNIQUEMENT QUAND LA BASE EST LE CONTENEUR LOCAL.
+#
+# Cette tâche fait `docker compose exec postgres` : elle suppose donc un conteneur
+# Postgres sur CETTE machine. Dès que la base est sur son propre VPS, il n'y en a
+# plus, et la commande échouerait — ou pire, réussirait contre un conteneur local
+# resté allumé, créant le rôle sur une base vide pendant que la vraie n'en a pas.
+#
+# Le rôle `postgres_host` s'en charge alors, là où est la base.
+# ═══════════════════════════════════════════════════════════════════════════════
 - name: Créer/mettre à jour le rôle readonly (lecture seule) + droits de lecture
+  when: not (use_external_database | default(false))
   ansible.builtin.shell:
     executable: /bin/bash
     chdir: "{{ app_dir }}"

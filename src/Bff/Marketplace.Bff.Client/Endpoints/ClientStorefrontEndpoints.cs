@@ -65,7 +65,9 @@ public static class ClientStorefrontEndpoints
         var items = new List<ClientCompareItem>(productIds.Count);
         foreach (var id in productIds)
         {
-            var product = await catalog.GetProductAsync(id, ct);
+            // Anonyme : même filtre que la fiche produit. Comparer un brouillon avec
+            // un article en vente n'aurait aucun sens, et le publierait au passage.
+            var product = await catalog.GetPubliclyVisibleProductAsync(id, ct);
             if (product is null)
             {
                 continue; // introuvable : ignoré pour ne pas casser la comparaison.

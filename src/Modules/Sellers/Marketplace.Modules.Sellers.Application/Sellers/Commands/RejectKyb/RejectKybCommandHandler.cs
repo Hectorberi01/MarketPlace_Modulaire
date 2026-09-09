@@ -25,7 +25,14 @@ internal sealed class RejectKybCommandHandler : ICommandHandler<RejectKybCommand
             return Result.Failure(Error.NotFound("sellers.seller.not_found", $"Vendeur {command.SellerId} introuvable."));
         }
 
-        seller.RejectKyb();
+        // Le Result était ignoré. Le domaine exige désormais un motif : sans cette
+        // remontée, un rejet sans motif renverrait 204 sans rien avoir rejeté.
+        var rejection = seller.RejectKyb(command.Reason);
+        if (rejection.IsFailure)
+        {
+            return rejection;
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();

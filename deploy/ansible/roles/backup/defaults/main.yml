@@ -1,0 +1,14 @@
+---
+backup_dir: /var/backups/marketplace
+backup_retention_days: 7
+backup_bucket: hbaexpress-backups
+backup_prefix: postgres
+backup_cron_hour: "*/6"
+backup_cron_minute: "17"
+backup_log: /var/log/marketplace-backup.log
+
+# Bases à sauvegarder. Le dispatch a la sienne : ne pas la nommer, c'est l'oublier.
+backup_databases: "{{ ([app_db_name] + (postgres_extra_databases | default([]))) | join(' ') }}"
+
+# Seuil de `--check`. Deux fois la période : un cycle raté n'alerte pas, deux oui.
+backup_max_age_hours: 13

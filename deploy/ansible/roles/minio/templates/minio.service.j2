@@ -1,0 +1,44 @@
+[Unit]
+Description=MinIO — stockage objet des pièces KYB
+Documentation=https://min.io/docs/minio/linux/index.html
+# Le tunnel doit être monté avant : MinIO écoute sur l'adresse de wg0, et un
+# service qui démarre avant son interface échoue sur « cannot assign requested
+# address » puis abandonne.
+After=network-online.target wg-quick@{{ wg_interface | default('wg0') }}.service
+Wants=network-online.target
+AssertFileIsExecutable=/usr/local/bin/minio
+
+[Service]
+Type=notify
+User={{ minio_user }}
+Group={{ minio_group }}
+EnvironmentFile={{ minio_config_dir }}/minio.env
+ExecStart=/usr/local/bin/minio server {{ minio_data_dir }}
+
+Restart=always
+RestartSec=5s
+
+# ── DURCISSEMENT ────────────────────────────────────────────────────────────────
+#
+# Ce service est joignable depuis la machine applicative. S'il tombait, le
+# cloisonnement systemd est ce qui limite la casse au seul répertoire de données.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Le SEUL chemin où ce service peut écrire.
+ReadWritePaths={{ minio_data_dir }}
+
+LimitNOFILE=65536
+TimeoutStopSec=30s
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

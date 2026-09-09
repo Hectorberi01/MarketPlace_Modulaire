@@ -1,28 +1,34 @@
 ---
-# SECRETS de production. Copier vers group_vars/marketplace/vault.yml PUIS chiffrer :
-#   cp vault.example.yml group_vars/marketplace/vault.yml
-#   ansible-vault encrypt group_vars/marketplace/vault.yml
+# SECRETS de production. Copier vers group_vars/all/vault.yml PUIS chiffrer :
+#   cp vault.example.yml group_vars/all/vault.yml
+#   ansible-vault encrypt group_vars/all/vault.yml
+#
+# SOUS `all/`, ET PLUS SOUS `marketplace/`. Le VPS base a besoin de
+# `postgres_password` pour créer le rôle applicatif, et une variable rangée dans
+# `group_vars/marketplace/` n'est pas visible du groupe `database` : elle serait
+# « undefined » au milieu du playbook, sur la machine qui en a le plus besoin.
 
 # ── BASE DE DONNÉES ──────────────────────────────────────────────────────────
 # Postgres CO-HÉBERGÉ sur le VPS (service `postgres` du compose). Définir SEULEMENT
 # le mot de passe ci-dessous : `env.j2` construit MARKETPLACE_CONNECTION tout seul
 # (host = service `postgres`). Ne pas définir `marketplace_connection` dans ce cas.
 #
-# CETTE VARIABLE COMMANDE PLUS QUE LE MOT DE PASSE.
+# CE MOT DE PASSE SERT DES DEUX CÔTÉS.
 #
-# Sa seule présence conditionne trois comportements des rôles Ansible :
-#   • `env.j2` émet les POSTGRES_* et construit la chaîne de connexion locale ;
-#   • le bloc « Activer pg_stat_statements » s'exécute (il fait `docker compose
-#     exec postgres`, donc il exige le conteneur) ;
-#   • le DSN de postgres-exporter est généré vers l'hôte `postgres`.
+# Sur le VPS base, le rôle `postgres_host` l'utilise pour créer le rôle applicatif.
+# Sur le VPS applicatif, `env.j2` le place dans la chaîne de connexion. C'est la
+# raison pour laquelle ce fichier vit désormais sous `group_vars/all/` : rangé sous
+# `marketplace/`, il aurait été invisible du groupe `database`.
 #
-# Autrement dit : la retirer bascule silencieusement l'ensemble vers le mode « base
-# externe ». C'est voulu, mais il faut le savoir avant de la commenter.
+# CE N'EST PLUS LUI QUI DÉCIDE OÙ VIT LA BASE. C'était le cas avant : sa seule
+# présence ou son absence basculait silencieusement l'ensemble entre base locale et
+# base externe. Le choix est maintenant explicite, dans une variable qui porte son
+# nom — `use_external_database`, dans group_vars/marketplace/main.yml.
 postgres_password: "CHANGE_ME_STRONG_DB_PASSWORD"
 #
 # BASE EXTERNE MANAGÉE — variante, PRIORITAIRE sur la base locale si définie.
 #
-# ⚠️ Vérifier d'abord que le fournisseur accorde « CREATE ON DATABASE » à
+# Vérifier d'abord que le fournisseur accorde « CREATE ON DATABASE » à
 # l'utilisateur applicatif. Cette application crée 25 SCHÉMAS au premier démarrage
 # (un par module). Les offres mutualisées ne le permettent pas : la panne se
 # manifeste par « 42501: permission denied for database », alors même que la
@@ -78,3 +84,85 @@ fcm_service_account_b64: "CHANGE_ME_BASE64_SUR_UNE_LIGNE"
 # Vide = déploiement en échec. Ne jamais réutiliser celui de la console admin :
 # deux surfaces distinctes, deux compromissions indépendantes.
 seller_session_secret: ""
+
+# ── LE SERVICE DE DISPATCH ───────────────────────────────────────────────────
+# Ces trois-là sont exigées par le compose de production avec la syntaxe `${X:?}`,
+# qui fait échouer l'interpolation. Compose interpolant TOUT le fichier avant de
+# créer quoi que ce soit, leur absence n'empêchait pas seulement le dispatch de
+# démarrer : elle arrêtait `pull` et `up` pour la pile entière.
+
+# Secrets CROISÉS. Ce que la marketplace envoie doit valoir ce que le dispatch
+# attend, et réciproquement. Deux valeurs DISTINCTES : une seule valeur partagée
+# ferait qu'un secret compromis ouvre les deux sens.
+#   openssl rand -base64 32
+delivery_webhook_secret: "CHANGE_ME_BASE64_32"
+dispatch_outbound_secret: "CHANGE_ME_AUTRE_BASE64_32"
+
+# Part des frais de livraison versée au coursier. 0.80 = 80 %. Décision
+# commerciale : le service refuse de démarrer sans elle, plutôt que de deviner.
+dispatch_courier_share: "0.80"
+
+# Chaîne de connexion du dispatch. À NE DÉFINIR QUE si la base n'est ni le
+# conteneur local ni le VPS dédié — sinon `env.j2` la construit.
+#   dispatch_connection: "Host=…;Port=5432;Database=dispatch;Username=…;Password=…"
+
+# ── SESSIONS DES CONSOLES ────────────────────────────────────────────────────
+# Exigées en `${X:?}` par le compose (minimum 32 caractères).
+#   openssl rand -base64 32
+admin_session_secret: "CHANGE_ME_BASE64_32"
+# seller_session_secret est déjà plus haut dans ce fichier.
+
+# ── REGISTRE D'IMAGES ────────────────────────────────────────────────────────
+# `use_registry: true` en prod : le serveur se connecte à GHCR avant de tirer.
+# Jeton à portée `read:packages` UNIQUEMENT — un jeton d'écriture sur le serveur
+# de production permettrait de republier les images qu'il déploie.
+registry_token: "ghp_CHANGE_ME"
+
+# ── SUPERVISION ──────────────────────────────────────────────────────────────
+# Sans ces deux-là, Alertmanager rend une configuration à receivers VIDES : il
+# accepte, et abandonne chaque notification en silence. Une alerte qui ne réveille
+# personne n'existe pas.
+grafana_password: "CHANGE_ME_STRONG"
+alertmanager_slack_webhook_url: "https://hooks.slack.com/services/CHANGE/ME"
+smtp_password: "CHANGE_ME"
+
+# ── TERMINAL WEB ─────────────────────────────────────────────────────────────
+# Le rôle ÉCHOUE si ces valeurs manquent, et c'est voulu : ce terminal ouvre un
+# shell sur le serveur de production. Un `0.0.0.0/0` dans l'allowlist passerait
+# ce garde-fou tout en n'en étant pas un.
+#   htpasswd -nbB admin 'motdepasse'   → pour terminal_basic_auth_users
+terminal_allowed_ips:
+  - "A.B.C.D/32"        # votre IP fixe, jamais un /0
+terminal_basic_auth_users:
+  - "admin:$2y$05$CHANGE_ME"
+terminal_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  CHANGE_ME
+  -----END OPENSSH PRIVATE KEY-----
+
+# ── ADMINISTRATION DE LA BASE (pgweb) ────────────────────────────────────────
+# Même logique de garde-fou. Le rôle en lecture seule est créé par Ansible ;
+# ce mot de passe est le sien, distinct de celui du rôle applicatif.
+db_admin_allowed_ips:
+  - "A.B.C.D/32"
+db_admin_basic_auth_users:
+  - "admin:$2y$05$CHANGE_ME"
+db_admin_readonly_password: "CHANGE_ME_STRONG"
+
+# ── TUNNEL WIREGUARD ─────────────────────────────────────────────────────────
+# Les clés PRIVÉES seulement. Les clés publiques ne sont pas des secrets et
+# vivent dans group_vars/all/main.yml, où elles se relisent sans déchiffrer.
+#   wg genkey | tee cle_privee | wg pubkey
+wg_app_private_key: "CHANGE_ME"
+wg_db_private_key: "CHANGE_ME"
+
+# ── STOCKAGE OBJET DES PIÈCES KYB (MinIO) ────────────────────────────────────
+# Deux jeux d'identifiants, et la distinction compte : le compte RACINE administre
+# le service, le compte APPLICATIF ne peut que lire et écrire dans le seul bucket
+# KYB. Donner la clé racine à l'application ferait qu'une compromission du
+# processus web emporterait le magasin de conformité entier.
+#   openssl rand -base64 24
+minio_root_user: "hbaexpress-admin"
+minio_root_password: "CHANGE_ME_BASE64_24"
+minio_app_access_key: "hbaexpress-app"
+minio_app_secret_key: "CHANGE_ME_AUTRE_BASE64_24"

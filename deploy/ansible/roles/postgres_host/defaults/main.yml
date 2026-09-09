@@ -1,0 +1,29 @@
+---
+# Valeurs de repli. Les vraies viennent de group_vars/database/main.yml.
+
+postgres_version: 16
+app_db_name: marketplace
+app_db_user: postgres
+
+# Bases supplémentaires créées dans le même cluster, avec la même collation.
+# Le dispatch a la sienne : ce service réécrit des positions à la seconde, la
+# marketplace tient de l'argent — deux journaux de transactions, deux plans de
+# reprise, un seul moteur.
+postgres_extra_databases:
+  - dispatch
+
+postgres_listen_addresses: "127.0.0.1"
+postgres_allowed_cidr: "10.20.0.0/24"
+
+postgres_locale: "fr_FR.UTF-8"
+postgres_encoding: "UTF8"
+
+postgres_ram_mb: 8192
+postgres_shared_buffers: "2GB"
+postgres_effective_cache_size: "6GB"
+postgres_work_mem: "8MB"
+postgres_maintenance_work_mem: "512MB"
+postgres_max_connections: 100
+
+# Rôle de lecture seule, pour l'explorateur SQL et l'exporter de métriques.
+postgres_readonly_user: readonly

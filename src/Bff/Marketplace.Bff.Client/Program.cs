@@ -99,7 +99,7 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]
     ?? throw new InvalidOperationException("Clé de signature JWT absente (Jwt:SigningKey).");
 
-// ⚠️ REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
+// REFUSE DE DÉMARRER en production avec la clé de dev PUBLIQUE (celle qui est
 // committée dans le dépôt). Avec elle, n'importe qui forge un jeton « Admin ».
 // Le compose impose déjà l'override ; ceci est la seconde barrière — pour tous les
 // autres chemins de déploiement. Voir JwtKeyGuard.
@@ -162,6 +162,7 @@ builder.Services.AddProxyForwardedHeaders();
 // sommes cassés ». Enregistré AVANT AddProblemDetails : le premier handler qui traite
 // l'exception gagne.
 builder.Services.AddConcurrencyExceptionHandler();
+builder.Services.AddUniqueViolationExceptionHandler();
 
 builder.Services.AddProblemDetails();
 
@@ -208,7 +209,7 @@ var dbContextTypes = builder.Services
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
+// EN TOUT PREMIER DANS LE PIPELINE. NE PAS DÉPLACER.
 //
 // Restaure la vraie IP du client (Traefik la transmet en X-Forwarded-For). Tout ce qui
 // suit — journalisation, authentification, limitation de débit — lit RemoteIpAddress.
@@ -259,7 +260,7 @@ app.UseCors(ClientCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ⚠️ APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
+// APRÈS UseAuthentication/UseAuthorization — ET C'EST INDISPENSABLE.
 //
 // Le limiteur partitionne par IDENTIFIANT DE COMPTE quand l'utilisateur est
 // authentifié (mitigation du CGNAT). Or cette identité n'existe qu'APRÈS
@@ -289,7 +290,7 @@ app.MapClientDeepLinkEndpoints();
 
 // Hub temps réel (messagerie). Sous /client pour être routé par Traefik.
 
-// ⚠️ Le hub SignalR est EXEMPTÉ du limiteur de débit.
+// Le hub SignalR est EXEMPTÉ du limiteur de débit.
 //
 // Une connexion WebSocket est une connexion LONGUE : elle négocie, se reconnecte, et
 // pousse des messages. Le limiteur la compterait comme une avalanche de requêtes

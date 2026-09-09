@@ -1,93 +1,168 @@
 #!/usr/bin/env bash
-# =====================================================================
-#  Sauvegarde PostgreSQL (base co-hébergée) → Cloudflare R2
+# ═════════════════════════════════════════════════════════════════════════════════
+# SAUVEGARDE DE LA BASE DE PRODUCTION.
 #
-#  Fait un `pg_dump` logique compressé, l'envoie dans un bucket R2 PRIVÉ,
-#  et purge les anciennes copies locales. C'est le VRAI filet de sécurité :
-#  la sauvegarde quotidienne du VPS (snapshot de volume actif) ne garantit
-#  pas un état Postgres cohérent, et sa granularité est de 24 h.
+# S'exécute SUR LE VPS BASE, en local, sans Docker. La version précédente faisait
+# `docker compose exec postgres pg_dump` : elle supposait que la base était un
+# conteneur sur la machine applicative. Depuis que la base vit sur sa propre
+# machine, cette commande ne dumperait plus rien — ou pire, dumperait le conteneur
+# local resté allumé, c'est-à-dire une base vide, et le dump serait déclaré valide.
 #
-#  À planifier via cron sur l'hôte, ex. toutes les 6 h :
-#     0 */6 * * *  /opt/marketplace/deploy/postgres/backup.sh >> /var/log/mp-backup.log 2>&1
+# Installé et planifié par le rôle Ansible `backup`. Configuration dans
+# /etc/marketplace-backup.env.
 #
-#  Restauration (exemple) :
-#     gunzip -c marketplace-YYYYmmdd-HHMMSS.sql.gz \
-#       | docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -d marketplace
+# ─────────────────────────────────────────────────────────────────────────────────
+# CE QU'IL SAUVEGARDE, ET POURQUOI CES TROIS CHOSES.
 #
-#  Prérequis : Docker (aucune install aws-cli sur l'hôte — on passe par un
-#  conteneur jetable). Les identifiants R2 sont lus dans le .env de prod.
+#   1. Les RÔLES et leurs mots de passe (`pg_dumpall --globals-only`). Sans eux, une
+#      base restaurée sur un cluster neuf n'a pas de compte applicatif : la
+#      restauration « réussit » et l'application ne peut pas se connecter.
+#   2. La base de la place de marché.
+#   3. La base du dispatch. Séparée, donc oubliée si on ne la nomme pas.
 #
-#  Rétention DISTANTE : configure une règle de cycle de vie sur le bucket R2
-#  (expiration après N jours) — plus fiable qu'une purge scriptée.
-# =====================================================================
+# FORMAT `custom` (-Fc), pas du SQL compressé. Il permet `pg_restore --jobs`, qui
+# divise par plusieurs le temps de restauration d'une base à vingt-six schémas, et
+# la restauration sélective d'une seule table le jour où c'est ce qu'on veut. Il est
+# déjà compressé : le gzip d'avant n'apportait rien.
+#
+# ─────────────────────────────────────────────────────────────────────────────────
+# RESTAURATION — voir docs/RUNBOOK_Bascule_Base.md. En résumé :
+#
+#   psql -U postgres -f globals-<horodatage>.sql
+#   pg_restore -U postgres -d HbaExpressDb --clean --if-exists --jobs 4 \
+#              marketplace-<horodatage>.dump
+# ═════════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# --------------------------- réglages --------------------------------
-APP_DIR="${APP_DIR:-/opt/marketplace}"
-COMPOSE_FILE="${COMPOSE_FILE:-$APP_DIR/deploy/docker-compose.prod.yml}"
-ENV_FILE="${ENV_FILE:-$APP_DIR/deploy/.env.prod}"
-BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
+# Les dumps contiennent l'intégralité des données, et celui des rôles contient les
+# hachages de mots de passe. Le répertoire est en 0700, mais un umask hérité de cron
+# donnerait des fichiers en 0644 à l'intérieur : ceinture et bretelles, pour une ligne.
+umask 077
+
+CONFIG_FILE="${CONFIG_FILE:-/etc/marketplace-backup.env}"
+# shellcheck disable=SC1090
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/marketplace}"
 LOCAL_RETENTION_DAYS="${LOCAL_RETENTION_DAYS:-7}"
 BACKUP_BUCKET="${BACKUP_BUCKET:-hbaexpress-backups}"
 BACKUP_PREFIX="${BACKUP_PREFIX:-postgres}"
-PG_SERVICE="${PG_SERVICE:-postgres}"
+PG_USER="${PG_USER:-postgres}"
+# PAS de liste par défaut ici : ce serait une TROISIÈME écriture de l'identité des
+# bases, après le group_vars et les defaults du rôle. C'est exactement la divergence
+# qu'on cherche à supprimer. La configuration la fournit, ou le script s'arrête.
+PG_DATABASES="${PG_DATABASES:-}"
+STATUS_FILE="${STATUS_FILE:-$BACKUP_DIR/.derniere-reussite}"
+
+# Seuil au-delà duquel `--check` considère la sauvegarde en défaut. Deux fois la
+# période nominale : un cycle raté n'alerte pas, deux cycles ratés alertent.
+MAX_AGE_HOURS="${MAX_AGE_HOURS:-13}"
 
 log() { printf '%s  %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { printf '%s  ERREUR: %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; exit 1; }
 
-[ -f "$COMPOSE_FILE" ] || die "compose introuvable : $COMPOSE_FILE"
-[ -f "$ENV_FILE" ]     || die "env introuvable : $ENV_FILE"
-command -v docker >/dev/null || die "docker absent"
+# ─────────────────────────────────────────────────────────────────────────────────
+# MODE `--check` : la sauvegarde a-t-elle réellement eu lieu ?
+#
+# Une sauvegarde qu'on ne surveille pas est une sauvegarde qu'on découvre absente le
+# jour où l'on en a besoin. Ce mode est fait pour être appelé par un cron distinct :
+# il sort en code non nul si la dernière réussite est trop ancienne, ce qui suffit à
+# faire parler cron par e-mail — sans dépendre d'une pile d'observabilité.
+# ─────────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in
+  ""|--check) ;;
+  *) die "argument inconnu : $1 (seul --check est accepté)" ;;
+esac
 
-# Lit une variable dans le .env (dernière occurrence, valeur après le 1er '=').
-get_env() { grep -E "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'; }
+if [ "${1:-}" = "--check" ]; then
+  [ -f "$STATUS_FILE" ] || die "aucune sauvegarde n'a JAMAIS réussi ($STATUS_FILE absent)"
+  last="$(cat "$STATUS_FILE")"
+  # Un marqueur vide ou corrompu — disque plein au moment de l'écrire — ferait
+  # échouer l'arithmétique sur un message bash illisible. Le résultat serait bon
+  # (cron alerte), la raison incompréhensible.
+  case "$last" in ''|*[!0-9]*) die "marqueur de réussite illisible ($STATUS_FILE)" ;; esac
+  age=$(( ( $(date -u +%s) - last ) / 3600 ))
+  [ "$age" -le "$MAX_AGE_HOURS" ] \
+    || die "dernière sauvegarde réussie il y a ${age} h (seuil : ${MAX_AGE_HOURS} h)"
+  log "dernière sauvegarde réussie il y a ${age} h — conforme."
+  exit 0
+fi
 
-PG_DB="$(get_env POSTGRES_DB)";   PG_DB="${PG_DB:-marketplace}"
-PG_USER="$(get_env POSTGRES_USER)"; PG_USER="${PG_USER:-postgres}"
-R2_ACCOUNT_ID="$(get_env R2_ACCOUNT_ID)"
-R2_ACCESS_KEY_ID="$(get_env R2_ACCESS_KEY_ID)"
-R2_SECRET_ACCESS_KEY="$(get_env R2_SECRET_ACCESS_KEY)"
-
+command -v pg_dump >/dev/null || die "pg_dump absent — ce script tourne sur le VPS base"
+[ -n "$PG_DATABASES" ] || die "PG_DATABASES vide dans $CONFIG_FILE — rien à sauvegarder"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
 STAMP="$(date -u +'%Y%m%d-%H%M%S')"
-FILE="marketplace-$STAMP.sql.gz"
-DEST="$BACKUP_DIR/$FILE"
+PRODUITS=()
 
-# --------------------------- dump ------------------------------------
-log "pg_dump de « $PG_DB » → $DEST"
-# `exec -T` : pas de TTY (cron). Connexion locale au socket du conteneur = trust,
-# donc pas de mot de passe requis pour le dump.
-if ! docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T "$PG_SERVICE" \
-      pg_dump -U "$PG_USER" -d "$PG_DB" --no-owner --no-privileges \
-      | gzip -c > "$DEST"; then
-  rm -f "$DEST"
-  die "pg_dump a échoué"
+# ── 1. Les rôles ─────────────────────────────────────────────────────────────────
+GLOBALS="$BACKUP_DIR/globals-$STAMP.sql"
+log "pg_dumpall --globals-only → $GLOBALS"
+if ! pg_dumpall -U "$PG_USER" --globals-only > "$GLOBALS"; then
+  rm -f "$GLOBALS"
+  die "pg_dumpall a échoué"
 fi
+PRODUITS+=("$(basename "$GLOBALS")")
 
-# Garde-fou : un dump vide/tronqué ne doit jamais partir comme « sauvegarde ».
-SIZE=$(stat -c%s "$DEST" 2>/dev/null || stat -f%z "$DEST")
-[ "${SIZE:-0}" -gt 100 ] || die "dump anormalement petit ($SIZE octets) — annulé"
-log "dump OK ($SIZE octets)"
+# ── 2. Les bases ─────────────────────────────────────────────────────────────────
+for db in $PG_DATABASES; do
+  DEST="$BACKUP_DIR/${db}-$STAMP.dump"
+  log "pg_dump de « $db » → $DEST"
 
-# --------------------------- upload R2 -------------------------------
-if [ -n "$R2_ACCOUNT_ID" ] && [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ]; then
-  log "envoi vers r2://$BACKUP_BUCKET/$BACKUP_PREFIX/$FILE"
-  docker run --rm \
-    -e AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
-    -e AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
-    -e AWS_DEFAULT_REGION=auto \
-    -v "$BACKUP_DIR:/backup:ro" \
-    amazon/aws-cli \
-    s3 cp "/backup/$FILE" "s3://$BACKUP_BUCKET/$BACKUP_PREFIX/$FILE" \
-    --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
-    && log "upload R2 OK" \
-    || die "upload R2 échoué (le dump local est conservé : $DEST)"
+  # PAS de --no-owner ici, contrairement à la version précédente. Le propriétaire
+  # et les droits sont l'information qui manquait le plus à la restauration : sans
+  # eux il fallait rejouer les GRANT à la main, sur une base fraîchement restaurée,
+  # un jour d'incident. `pg_restore` sait les ignorer si on le lui demande ; il ne
+  # sait pas les inventer.
+  if ! pg_dump -U "$PG_USER" -d "$db" --format=custom --compress=6 --file="$DEST"; then
+    rm -f "$DEST"
+    die "pg_dump de « $db » a échoué"
+  fi
+
+  # Un dump vide ou tronqué ne doit jamais être compté comme une sauvegarde.
+  SIZE=$(stat -c%s "$DEST" 2>/dev/null || stat -f%z "$DEST")
+  [ "${SIZE:-0}" -gt 1000 ] || die "dump de « $db » anormalement petit ($SIZE octets)"
+
+  # Le dump se relit-il ? `pg_restore --list` parcourt la table des matières sans
+  # rien écrire : c'est le contrôle d'intégrité le moins cher qui existe, et il
+  # attrape le cas où le disque s'est rempli en cours d'écriture.
+  pg_restore --list "$DEST" > /dev/null || die "dump de « $db » illisible"
+
+  log "  OK — $SIZE octets, table des matières lisible"
+  PRODUITS+=("$(basename "$DEST")")
+done
+
+# ── 3. Hors de la machine ────────────────────────────────────────────────────────
+#
+# Un dump qui reste sur le serveur qu'il sauvegarde ne protège de rien : ni de la
+# perte du VPS, ni du chiffrement du disque, ni d'un `rm` malheureux. L'envoi
+# distant EST la sauvegarde ; le fichier local n'en est que la copie de travail.
+if [ -n "${R2_ACCOUNT_ID:-}" ] && [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
+  export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  export AWS_DEFAULT_REGION=auto
+  ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+
+  for f in "${PRODUITS[@]}"; do
+    log "envoi → r2://$BACKUP_BUCKET/$BACKUP_PREFIX/$f"
+    aws s3 cp "$BACKUP_DIR/$f" "s3://$BACKUP_BUCKET/$BACKUP_PREFIX/$f" \
+      --endpoint-url "$ENDPOINT" --only-show-errors \
+      || die "envoi de $f échoué (les dumps locaux sont conservés dans $BACKUP_DIR)"
+  done
+  log "envoi distant terminé"
 else
-  log "⚠ identifiants R2 absents du .env — dump conservé UNIQUEMENT en local"
+  # Volontairement une ERREUR et non un avertissement. Une sauvegarde qui ne quitte
+  # pas la machine sauvegardée n'est pas une sauvegarde, et le dire en jaune dans un
+  # journal que personne ne lit revient à ne pas le dire.
+  die "identifiants R2 absents de $CONFIG_FILE — la sauvegarde N'A PAS quitté la machine"
 fi
 
-# --------------------------- purge locale ----------------------------
-log "purge locale > ${LOCAL_RETENTION_DAYS} j"
-find "$BACKUP_DIR" -name 'marketplace-*.sql.gz' -type f -mtime "+$LOCAL_RETENTION_DAYS" -print -delete || true
+# ── 4. Purge locale ──────────────────────────────────────────────────────────────
+log "purge locale au-delà de ${LOCAL_RETENTION_DAYS} jours"
+find "$BACKUP_DIR" -type f \( -name '*.dump' -o -name 'globals-*.sql' \) \
+  -mtime "+$LOCAL_RETENTION_DAYS" -print -delete || true
 
-log "terminé."
+# ── 5. Marqueur de réussite ──────────────────────────────────────────────────────
+date -u +%s > "$STATUS_FILE"
+log "terminé — ${#PRODUITS[@]} fichier(s) sauvegardés et envoyés."

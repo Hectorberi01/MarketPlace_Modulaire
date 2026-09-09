@@ -117,6 +117,10 @@ namespace Marketplace.Modules.Sellers.Infrastructure.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<string>("KybRejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("KybStatus")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -149,6 +153,18 @@ namespace Marketplace.Modules.Sellers.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("SuspendedOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SuspensionCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");

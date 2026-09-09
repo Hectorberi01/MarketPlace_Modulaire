@@ -61,10 +61,12 @@ public static class SellerShopEndpoints
     /// <summary>Met à jour le profil de la boutique (nom, logo, description).</summary>
     private static async Task<IResult> UpdateProfileAsync(ClaimsPrincipal user, ProfileRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        return seller is null
-            ? SellerBff.NotASeller()
-            : (await sender.Send(new UpdateSellerProfileCommand(seller.Id, request.ShopName, request.LogoUrl, request.Description), ct)).Match(() => Results.NoContent());
+        // ÉCRITURE : nom, logo et description sont la VITRINE. Une boutique suspendue
+        // qui se renomme et change d'enseigne se refait une identité au moment précis
+        // où la plateforme veut la reconnaître. Voir SellerRights.
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        return denied
+            ?? (await sender.Send(new UpdateSellerProfileCommand(seller!.Id, request.ShopName, request.LogoUrl, request.Description), ct)).Match(() => Results.NoContent());
     }
 
     /// <summary>
@@ -77,10 +79,12 @@ public static class SellerShopEndpoints
         ClaimsPrincipal user, IFormFile file,
         ISender sender, IMediaStorage mediaStorage, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ÉCRITURE : le logo est de la vitrine, au même titre que le nom ci-dessus —
+        // et il téléverse en plus un fichier public au nom de la plateforme.
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         var check = await UploadValidation.CheckImageAsync(file, ct);
@@ -103,11 +107,18 @@ public static class SellerShopEndpoints
         }
 
         // On conserve nom + description existants, on ne remplace que le logo.
-        return (await sender.Send(new UpdateSellerProfileCommand(seller.Id, seller.ShopName, upload.Value.Url, seller.Description), ct))
+        return (await sender.Send(new UpdateSellerProfileCommand(seller!.Id, seller!.ShopName, upload.Value.Url, seller!.Description), ct))
             .Match(() => Results.Ok(new { logoUrl = upload.Value.Url }));
     }
 
-    /// <summary>Met à jour les informations société (metadata) de la boutique du jeton.</summary>
+    /// <summary>
+    /// Met à jour les informations société (metadata) de la boutique du jeton.
+    ///
+    /// PAS DE CONTRÔLE DE STATUT ICI, ET C'EST DÉLIBÉRÉ. Raison sociale, RCCM, IFU
+    /// relèvent du DOSSIER de conformité, pas de l'offre commerciale. C'est souvent en
+    /// les corrigeant qu'un vendeur suspendu lève sa suspension : lui fermer cette
+    /// route en ferait un cul-de-sac dont seul le support pourrait le sortir.
+    /// </summary>
     private static async Task<IResult> UpdateMetadataAsync(ClaimsPrincipal user, CompanyInfoRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
@@ -116,16 +127,31 @@ public static class SellerShopEndpoints
             : (await sender.Send(new UpdateSellerMetadataCommand(seller.Id, request.ToDomain()), ct)).Match(() => Results.NoContent());
     }
 
-    /// <summary>Définit le compte de reversement (MoMo, Wave, banque…).</summary>
+    /// <summary>
+    /// Définit le compte de reversement (MoMo, Wave, banque…).
+    ///
+    /// DROIT DE RETRAIT, PAS DROIT DE VENDRE. Ce n'est pas de la vitrine : c'est la
+    /// DESTINATION des fonds. Une boutique fermée doit pouvoir corriger son numéro
+    /// MoMo pour être payée de ce qu'elle a gagné — la bloquer confisquerait. Une
+    /// boutique SUSPENDUE, elle, est sous mesure conservatoire : laisser réécrire la
+    /// destination des fonds pendant qu'on instruit une fraude viderait la retenue de
+    /// son sens, puisqu'il suffirait d'attendre la levée pour encaisser ailleurs.
+    /// C'est exactement la frontière que trace SellerRights.CanWithdraw.
+    /// </summary>
     private static async Task<IResult> SetPayoutAccountAsync(ClaimsPrincipal user, PayoutAccountRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        return seller is null
-            ? SellerBff.NotASeller()
-            : (await sender.Send(new SetPayoutAccountCommand(seller.Id, request.Provider, request.AccountNumber, request.AccountName), ct)).Match(() => Results.NoContent());
+        var (seller, denied) = await SellerBff.ResolvePayableSellerAsync(user, sellers, ct);
+        return denied
+            ?? (await sender.Send(new SetPayoutAccountCommand(seller!.Id, request.Provider, request.AccountNumber, request.AccountName), ct)).Match(() => Results.NoContent());
     }
 
-    /// <summary>Ajoute une pièce KYB (repasse la vérification en revue).</summary>
+    /// <summary>
+    /// Ajoute une pièce KYB (repasse la vérification en revue).
+    ///
+    /// AUCUN CONTRÔLE DE STATUT, comme sur les infos société : déposer une pièce est
+    /// le geste même par lequel un vendeur suspendu ou en attente se met en règle. Le
+    /// verrouiller punirait la mise en conformité.
+    /// </summary>
     private static async Task<IResult> AddKybDocumentAsync(ClaimsPrincipal user, KybDocumentRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);

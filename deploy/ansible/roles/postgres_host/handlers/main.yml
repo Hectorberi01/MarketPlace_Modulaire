@@ -1,0 +1,24 @@
+---
+# ═════════════════════════════════════════════════════════════════════════════════
+# DEUX NIVEAUX, ET LA DIFFÉRENCE COMPTE.
+#
+# `reload` relit pg_hba et les paramètres rechargeables à chaud : aucune connexion
+# n'est coupée. `restart` ferme tout — y compris une migration en cours.
+#
+# On ne notifie `restart` que pour les paramètres qui l'exigent réellement
+# (`shared_buffers`, `max_connections`, `listen_addresses`, `shared_preload_libraries`).
+# Tout le reste passe par `reload`.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+# `systemctl reload postgresql` NE FAIT RIEN sur Debian et Ubuntu : `postgresql.service`
+# est une unité enveloppe `Type=oneshot` dont l'ExecReload est `/bin/true`, et le
+# `PartOf=` qui la relie au vrai cluster propage stop et restart, pas reload. Une
+# modification de pg_hba serait donc restée inerte, en se croyant appliquée.
+- name: reload postgresql
+  ansible.builtin.command: "pg_ctlcluster {{ postgres_version }} main reload"
+  changed_when: true
+
+- name: restart postgresql
+  ansible.builtin.service:
+    name: postgresql
+    state: restarted

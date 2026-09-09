@@ -102,6 +102,4 @@ public sealed class OrderLine : Entity<Guid>
     /// <summary>Taux de frais provider en vigueur au moment de la commande (0.05 = 5 %).</summary>
     public decimal ProviderFeeRate { get; private set; }
 
-    /// <summary>Total payé pour la ligne (prix final unitaire × quantité).</summary>
-
 }

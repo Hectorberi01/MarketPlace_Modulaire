@@ -34,6 +34,11 @@ internal sealed class ChangeProductStatusCommandHandler : ICommandHandler<Change
             return Result.Failure(Error.Validation("catalog.product.status_invalid", "Statut invalide (Active, Archived ou Draft)."));
         }
 
+        // `Draft` sert deux gestes : dépiler un archivage, et REJETER une fiche en
+        // modération. Les deux veulent la même chose — retirer de la vitrine en
+        // laissant la fiche éditable et republiable après revue —, d'où une seule
+        // transition. (Le rejet écrivait auparavant `Archived`, ce qui rendait le
+        // produit définitivement impubliable ; voir AdminProductEndpoints.)
         var transition = target switch
         {
             ProductStatus.Active => product.Activate(),

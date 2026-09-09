@@ -75,7 +75,23 @@ public static class SellerReturnEndpoints
         // qu'un seul franc ne quitte le compte.
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new ApproveReturnRefundCommand(id, request.Amount), ct));
 
-    /// <summary>Résout le vendeur, vérifie la propriété du retour, puis exécute la commande.</summary>
+    /// <summary>
+    /// Résout le vendeur, vérifie la propriété du retour, puis exécute la commande.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// PAS DE CONTRÔLE DE STATUT, POUR LA MÊME RAISON QUE LES EXPÉDITIONS.
+    ///
+    /// Approuver, refuser, suivre, réceptionner, valider un remboursement : chacune de
+    /// ces transitions est un DEVOIR envers un acheteur qui a déjà payé, pas un droit
+    /// commercial que la plateforme accorde. Une boutique suspendue qui ne pourrait
+    /// plus traiter ses retours laisserait ses clients sans recours et ses RMA figés
+    /// en attente — la sanction retomberait sur eux.
+    ///
+    /// À noter pour le remboursement : le vendeur VALIDE ici, l'argent part par la
+    /// main d'un administrateur (voir RefundAsync). Autoriser la validation ne fait
+    /// donc sortir aucun franc d'une boutique sous mesure conservatoire.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
     private static async Task<IResult> GuardAsync(
         ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid returnId, CancellationToken ct,
         Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)

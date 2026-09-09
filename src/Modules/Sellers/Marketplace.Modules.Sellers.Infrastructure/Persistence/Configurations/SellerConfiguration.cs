@@ -28,6 +28,21 @@ internal sealed class SellerConfiguration : IEntityTypeConfiguration<Seller>
         builder.Property(s => s.SalesCount).IsRequired();
         builder.Property(s => s.CreatedOnUtc).IsRequired();
 
+        // Mémoire de la sanction. Les deux premières colonnes sont NULLABLES : elles
+        // décrivent une suspension EN COURS, et la très grande majorité des lignes
+        // n'en a aucune. `SuspensionCount` est requise avec un défaut à 0, ce qui
+        // rend la migration applicable sans reprise de données.
+        builder.Property(s => s.SuspendedOnUtc);
+        builder.Property(s => s.SuspensionReason).HasMaxLength(1000);
+        builder.Property(s => s.SuspensionCount).HasDefaultValue(0).IsRequired();
+
+        // Motif du dernier refus de KYB, affiché au vendeur. Nullable : la plupart
+        // des dossiers n'ont jamais été refusés.
+        builder.Property(s => s.KybRejectionReason).HasMaxLength(1000);
+
+        // Propriété calculée : elle se déduit de Status, il n'y a rien à stocker.
+        builder.Ignore(s => s.IsSuspended);
+
         // PayoutAccount (VO nullable) sérialisé en jsonb. Cast vers le converter
         // non générique car la propriété est nullable.
         builder.Property(s => s.PayoutAccount)

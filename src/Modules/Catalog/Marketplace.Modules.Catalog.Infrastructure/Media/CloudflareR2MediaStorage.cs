@@ -85,9 +85,20 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
             return Result.Success();
         }
 
+        var key = NormalizeKey(externalId);
+        if (key is null)
+        {
+            // Identifiant qui n'est pas une clé de ce stockage — URL, remontée de
+            // chemin, chaîne vide. On ne devine pas ce qu'il désigne, et surtout on
+            // ne le résout pas en objet : ce serait exactement le chemin qui
+            // permettait de supprimer le fichier d'autrui.
+            return Result.Failure(Error.Validation(
+                "media.external_id_invalid",
+                "Identifiant de média invalide : une clé de stockage est attendue."));
+        }
+
         try
         {
-            var key = NormalizeKey(externalId);
             using var request = BuildSignedRequest(HttpMethod.Delete, key, Array.Empty<byte>(), contentType: null);
 
             var response = await CreateClient().SendAsync(request, cancellationToken);
@@ -113,7 +124,12 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
         var now = DateTime.UtcNow;
         var amzDate = now.ToString("yyyyMMddTHHmmssZ");
         var dateStamp = now.ToString("yyyyMMdd");
-        var host = new Uri(_options.Endpoint).Host;
+        // `Authority` et non `Host` : le port fait partie de l'en-tête `host` que
+        // .NET enverra dès qu'il n'est pas celui du schéma, et donc de ce que
+        // SigV4 doit signer. Sans effet sur R2 (https sur 443), mais le jour où cet
+        // adaptateur viserait un service sur un port non standard, la signature
+        // serait rejetée sans que rien n'indique pourquoi.
+        var host = new Uri(_options.Endpoint).Authority;
         var payloadHash = Hex(SHA256.HashData(payload));
         var canonicalUri = "/" + _options.BucketName + "/" + EncodeKey(key);
 
@@ -170,15 +186,41 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
         return string.IsNullOrEmpty(prefix) ? baseKey : $"{prefix}/{baseKey}";
     }
 
-    // Accepte soit une clé (« products/… »), soit une URL publique dont on extrait la clé.
-    private string NormalizeKey(string externalIdOrUrl)
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// UNE CLÉ EST UNE CLÉ. PLUS AUCUNE URL N'EST ACCEPTÉE ICI.
+    ///
+    /// Cette méthode acceptait aussi bien une clé qu'une URL publique, dont elle
+    /// extrayait le chemin. Comme l'identifiant venait, sur un chemin, du CLIENT, et
+    /// que les URL des images produit sont publiques, un vendeur pouvait désigner
+    /// l'objet d'un concurrent et le faire supprimer.
+    ///
+    /// La cause première est corrigée en amont — plus aucune clé n'entre par une
+    /// requête. Ce durcissement est le second rideau : le jour où un appelant
+    /// transmettra de nouveau une chaîne mal contrôlée, elle sera refusée ici plutôt
+    /// que résolue en objet d'autrui.
+    ///
+    /// La remontée de chemin est refusée pour la même raison : `products/../kyb/…`
+    /// est une clé valide pour S3, qui ne normalise pas les segments.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static string? NormalizeKey(string externalId)
     {
-        if (!externalIdOrUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(externalId))
         {
-            return externalIdOrUrl.TrimStart('/');
+            return null;
         }
 
-        return new Uri(externalIdOrUrl).AbsolutePath.TrimStart('/');
+        var key = externalId.Trim().TrimStart('/');
+
+        if (key.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("://", StringComparison.Ordinal)
+            || key.Split('/').Any(segment => segment is ".." or "."))
+        {
+            return null;
+        }
+
+        return key.Length == 0 ? null : key;
     }
 
     private static string EncodeKey(string key)

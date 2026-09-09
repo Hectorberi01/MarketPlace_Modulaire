@@ -23,7 +23,7 @@ public static class SellerAuthEndpoints
         auth.MapPost("/refresh", RefreshAsync).AllowAnonymous();
         auth.MapPost("/logout", LogoutAsync).RequireAuthorization();
 
-        // ⚠️ PAS de route de mot de passe ici. Elles existent déjà, dans
+        // PAS de route de mot de passe ici. Elles existent déjà, dans
         // `SellerRegistrationEndpoints` : `/seller/auth/password/forgot` et
         // `/seller/auth/password/reset`.
         //

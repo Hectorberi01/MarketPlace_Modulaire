@@ -143,9 +143,40 @@
 # conteneur ; un « up -d » ne recrée pas postgres sur simple changement de conf
 # montée. On le redémarre puis on crée l'extension (idempotent). Sans base locale
 # (Neon externe), tout ce bloc est sauté.
+# ═══════════════════════════════════════════════════════════════════════════════
+# pg_stat_statements SUR LE POSTGRES CO-HÉBERGÉ, ET SEULEMENT SUR LUI.
+#
+# Deux corrections par rapport à la version précédente.
+#
+# 1. LA CONDITION. Elle ne portait que sur `postgres_password is defined`, qui reste
+#    vrai après la bascule : le bloc aurait continué de faire `docker compose exec
+#    postgres` sur une machine où ce conteneur n'existe plus. Sur le VPS base, c'est
+#    le rôle `postgres_host` qui s'en charge, par sa configuration.
+#
+# 2. L'ORDRE. L'attente venait APRÈS le test. Si le `psql` tombait pendant que
+#    Postgres finissait de démarrer, sa sortie était vide, `'pg_stat_statements' not
+#    in ''` était VRAI, et Ansible redémarrait Postgres — sous les pieds d'une API
+#    qui appliquait ses vingt-six migrations. Une base tuée en cours de migration,
+#    sans sauvegarde, était le pire état atteignable par cette chaîne.
+#
+#    L'attente passe donc en premier, et le test devient bloquant en cas d'échec :
+#    « je n'ai pas pu lire » n'est plus traité comme « ce n'est pas configuré ».
+# ═══════════════════════════════════════════════════════════════════════════════
 - name: Activer pg_stat_statements (Postgres co-hébergé)
-  when: postgres_password is defined
+  when:
+    - postgres_password is defined
+    - not (use_external_database | default(false))
   block:
+    - name: Attendre que Postgres réponde AVANT de l'interroger
+      ansible.builtin.command:
+        cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} exec -T postgres pg_isready -U {{ postgres_user | default('postgres') }}"
+        chdir: "{{ app_dir }}"
+      register: pg_ready
+      retries: 12
+      delay: 5
+      until: pg_ready.rc == 0
+      changed_when: false
+
     - name: Vérifier si pg_stat_statements est déjà préchargé
       ansible.builtin.command:
         cmd: >-
@@ -154,23 +185,22 @@
         chdir: "{{ app_dir }}"
       register: pg_preload
       changed_when: false
-      failed_when: false
 
     - name: Redémarrer postgres pour charger shared_preload_libraries (si nécessaire)
       ansible.builtin.command:
         cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} restart postgres"
         chdir: "{{ app_dir }}"
-      when: "'pg_stat_statements' not in (pg_preload.stdout | default(''))"
+      when: "'pg_stat_statements' not in pg_preload.stdout"
       changed_when: true
 
-    - name: Attendre que Postgres réponde
+    - name: Réattendre après le redémarrage
       ansible.builtin.command:
         cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} exec -T postgres pg_isready -U {{ postgres_user | default('postgres') }}"
         chdir: "{{ app_dir }}"
-      register: pg_ready
+      register: pg_ready_apres
       retries: 12
       delay: 5
-      until: pg_ready.rc == 0
+      until: pg_ready_apres.rc == 0
       changed_when: false
 
     - name: Créer l'extension pg_stat_statements

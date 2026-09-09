@@ -1,0 +1,12 @@
+---
+# `wg syncconf` plutôt que `systemctl restart` : il applique la nouvelle
+# configuration SANS démonter l'interface, donc sans couper les connexions
+# PostgreSQL établies. Un `restart` en pleine migration EF fermerait la connexion
+# au milieu d'un `ALTER TABLE`.
+- name: reconfigurer wireguard
+  ansible.builtin.shell: >-
+    wg syncconf {{ wg_interface }}
+    <(wg-quick strip {{ wg_interface }})
+  args:
+    executable: /bin/bash
+  changed_when: true

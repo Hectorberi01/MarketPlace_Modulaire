@@ -40,12 +40,25 @@ internal sealed class RemoveProductMediaCommandHandler : ICommandHandler<RemoveP
             return Result.Failure(removed.Error);
         }
 
-        // Suppression côté service média (idempotente). Si elle échoue, on n'écrit
-        // rien en base : le média reste cohérent entre les deux systèmes.
-        var deletion = await _mediaStorage.DeleteAsync(removed.Value.ExternalId ?? string.Empty, cancellationToken);
-        if (deletion.IsFailure)
+        // ═════════════════════════════════════════════════════════════════════════
+        // ON NE SUPPRIME À DISTANCE QUE CE QUE NOUS AVONS ÉCRIT.
+        //
+        // Une clé de stockage n'existe que si c'est la plateforme qui a téléversé le
+        // fichier. Un média attaché par URL n'en a pas — et n'en avait pas non plus
+        // avant, sauf que le client pouvait en fournir une : c'est ce qui permettait
+        // de désigner l'objet d'un concurrent et de le faire effacer.
+        //
+        // Sans clé, il n'y a donc rien à supprimer à distance, et ce n'est pas un
+        // échec. La suppression reste idempotente ; si elle rate, on n'écrit rien en
+        // base, pour que les deux systèmes restent d'accord.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (!string.IsNullOrWhiteSpace(removed.Value.ExternalId))
         {
-            return deletion;
+            var deletion = await _mediaStorage.DeleteAsync(removed.Value.ExternalId, cancellationToken);
+            if (deletion.IsFailure)
+            {
+                return deletion;
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

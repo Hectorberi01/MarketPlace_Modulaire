@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# ═════════════════════════════════════════════════════════════════════════════════
+# Généré par Ansible (rôle minio) — NE PAS ÉDITER À LA MAIN.
+#
+# MIROIR DU BUCKET KYB VERS R2.
+#
+# MinIO tourne ici sur UN disque : pas de code correcteur d'effacement (il en
+# faudrait quatre), pas de réplication. Ce miroir est ce qui rend le choix du
+# stockage souverain défendable — le primaire reste chez nous, la copie de
+# catastrophe part chez Cloudflare.
+#
+# `--preserve` conserve les métadonnées, `--remove` est VOLONTAIREMENT ABSENT : un
+# objet effacé ici ne doit pas disparaître de la copie. Une suppression accidentelle
+# de pièce KYB doit rester rattrapable, et c'est précisément ce qu'un miroir
+# symétrique détruirait.
+# ═════════════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+log() { printf '%s  %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+die() { printf '%s  ERREUR: %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; exit 1; }
+
+command -v mc >/dev/null || die "mc absent"
+
+log "miroir local/{{ minio_bucket_kyb }} → r2backup/{{ minio_mirror_bucket }}"
+
+mc mirror --preserve --overwrite \
+  "local/{{ minio_bucket_kyb }}" \
+  "r2backup/{{ minio_mirror_bucket }}" \
+  || die "le miroir a échoué — la copie hors-site n'est PAS à jour"
+
+# Combien d'objets de chaque côté ? Le miroir peut « réussir » en n'ayant rien
+# copié si l'alias pointe au mauvais endroit : ce décompte le dirait.
+local_n=$(mc ls --recursive "local/{{ minio_bucket_kyb }}" | wc -l)
+distant_n=$(mc ls --recursive "r2backup/{{ minio_mirror_bucket }}" | wc -l)
+log "objets — local : $local_n, copie : $distant_n"
+
+[ "$distant_n" -ge "$local_n" ] \
+  || die "la copie contient MOINS d'objets que la source ($distant_n < $local_n)"
+
+log "terminé."

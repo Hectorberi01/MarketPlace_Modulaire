@@ -380,7 +380,16 @@ public sealed class Product : AggregateRoot<ProductId>
     {
         if (Status == ProductStatus.Archived)
         {
-            return Result.Failure(Error.Conflict("catalog.product.archived", "Un produit archivé ne peut pas être réactivé."));
+            // LE MESSAGE DIT LA SORTIE, PARCE QU'ELLE EXISTE.
+            //
+            // Le refus était exact mais muet : ni le code ni le texte n'indiquaient
+            // que `Unarchive` ramène le produit en brouillon et rouvre la
+            // publication. Un modérateur qui enchaînait « rejeter, corriger,
+            // approuver » — le geste naturel — se prenait un 409 sans issue visible.
+            // Le rejet, lui, ne passe plus par l'archivage (voir la modération).
+            return Result.Failure(Error.Conflict(
+                "catalog.product.archived",
+                "Un produit archivé ne peut pas être publié directement : repassez-le d'abord en brouillon."));
         }
 
         // Idempotent mais émet toujours l'event : re-valider rafraîchit la
@@ -390,7 +399,15 @@ public sealed class Product : AggregateRoot<ProductId>
         return Result.Success();
     }
 
-    /// <summary>Archive le produit (le retire de la vente). Transition terminale.</summary>
+    /// <summary>
+    /// Archive le produit : il quitte la vente et n'est plus publiable en l'état.
+    ///
+    /// PAS « TERMINALE », contrairement à ce que disait cette ligne quatre lignes
+    /// au-dessus d'<see cref="Unarchive"/>, qui la défait. Le mot juste est
+    /// RETRAIT : le produit sort du catalogue actif, et il faut un geste explicite —
+    /// le repasser en brouillon — pour le remettre en jeu. C'est ce détour qui est
+    /// voulu, pas l'irréversibilité.
+    /// </summary>
     public Result Archive()
     {
         Status = ProductStatus.Archived;
@@ -459,6 +476,11 @@ public sealed class Product : AggregateRoot<ProductId>
         ProductGroupId = productGroupId;
         Attributes = attributes is null ? new Dictionary<string, string>() : new Dictionary<string, string>(attributes);
         Tags = tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct().ToList() ?? new List<string>();
+
+        // L'ÉVÉNEMENT QUI MANQUAIT. Sans lui l'index de recherche gardait le nom et
+        // le slug du jour de la création : le produit renommé restait trouvable sous
+        // l'ancien nom, et introuvable sous le nouveau.
+        Raise(new ProductUpdatedDomainEvent(Id.Value, SellerId, CategoryId, Name, Slug.Value));
 
         return Result.Success();
     }

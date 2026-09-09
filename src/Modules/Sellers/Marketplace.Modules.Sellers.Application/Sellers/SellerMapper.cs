@@ -33,7 +33,10 @@ internal static class SellerMapper
                 d.UploadedOnUtc,
                 d.VerifiedAtUtc))
             .ToList(),
-        MapMetadata(seller.Metadata));
+        MapMetadata(seller.Metadata),
+        seller.KybRejectionReason,
+        seller.SuspendedOnUtc,
+        seller.SuspensionReason);
 
     private static SellerCompanyInfoSummary? MapMetadata(SellerCompanyInfo? m) =>
         m is null

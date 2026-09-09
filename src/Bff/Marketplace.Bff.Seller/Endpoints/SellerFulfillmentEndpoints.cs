@@ -170,7 +170,26 @@ public static class SellerFulfillmentEndpoints
     private static async Task<IResult> CancelAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new CancelShipmentCommand(id), ct));
 
-    /// <summary>Résout le vendeur, vérifie la propriété de l'expédition, puis exécute la commande.</summary>
+    /// <summary>
+    /// Résout le vendeur, vérifie la propriété de l'expédition, puis exécute la commande.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// AUCUN CONTRÔLE DE STATUT ICI, ET C'EST UNE DÉCISION, PAS UN OUBLI.
+    ///
+    /// Les autres surfaces d'écriture du BFF passent désormais par
+    /// `ResolveSellingSellerAsync` (voir SellerRights). Celle-ci ne le fait pas :
+    /// préparer, expédier, livrer ou annuler porte sur une commande DÉJÀ PAYÉE.
+    ///
+    /// Bloquer ces transitions ne sanctionnerait pas le vendeur — il a encaissé — mais
+    /// l'ACHETEUR, qui attendrait indéfiniment un colis que plus personne n'a le droit
+    /// de faire partir. La suspension d'une boutique arrête ses ventes FUTURES ; elle
+    /// ne peut pas prendre en otage celles qui sont conclues.
+    ///
+    /// Le levier existe déjà et il est au bon endroit : la suspension coupe la
+    /// publication en amont, et le versement des fonds en aval
+    /// (SellerRights.CanWithdraw). Entre les deux, l'obligation de livrer reste due.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
     private static async Task<IResult> GuardAsync(
         ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, Guid shipmentId, CancellationToken ct,
         Func<Task<Marketplace.BuildingBlocks.Domain.Results.Result>> action)

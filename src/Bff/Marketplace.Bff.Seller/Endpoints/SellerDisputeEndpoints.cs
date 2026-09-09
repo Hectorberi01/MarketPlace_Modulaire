@@ -136,7 +136,15 @@ public static class SellerDisputeEndpoints
         return Results.Ok(dispute.Value);
     }
 
-    /// <summary>Ajoute un message au litige (auteur = utilisateur du jeton).</summary>
+    /// <summary>
+    /// Ajoute un message au litige (auteur = utilisateur du jeton).
+    ///
+    /// PAS DE CONTRÔLE DE STATUT, DÉLIBÉRÉMENT. C'est une écriture, mais son contenu
+    /// n'est ni de la vitrine ni de l'offre : c'est la DÉFENSE du vendeur dans une
+    /// procédure ouverte contre lui. Un litige est d'ailleurs souvent le motif même de
+    /// la suspension — le faire taire à cet instant reviendrait à instruire à charge,
+    /// et priverait la modération de la seule version des faits qu'elle n'a pas.
+    /// </summary>
     private static async Task<IResult> AddMessageAsync(ClaimsPrincipal user, Guid id, MessageRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
     {
         if (SellerBff.CurrentUserId(user) is not { } userId)

@@ -107,6 +107,38 @@ public sealed class Money : ValueObject
     public static bool IsZeroDecimal(string? currency) => DecimalsFor(currency) == 0;
 
     /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// LA DEVISE EST-ELLE UNE DEVISE QUE LA PLACE CONNAÎT ?
+    ///
+    /// <see cref="DecimalsFor"/> ne peut pas répondre à cette question, et c'est
+    /// délibéré : il RETOURNE TOUJOURS un nombre de décimales, y compris pour un code
+    /// absent de la table, parce qu'un calcul déjà engagé doit arrondir de la manière
+    /// la moins destructrice plutôt que d'échouer au milieu d'une addition.
+    ///
+    /// Ce repli est le bon comportement EN AVAL, une fois le montant accepté. Il est le
+    /// mauvais comportement EN AMONT, au moment où un appelant extérieur choisit la
+    /// devise : là, un code inconnu ne doit pas être deviné à deux décimales, il doit
+    /// être refusé. Sans quoi « XYZ » franchit la validation, traverse toute la chaîne
+    /// de prix, et n'échoue qu'au moment de l'encaissement, quand la passerelle
+    /// refusera une devise dont elle n'a jamais entendu parler.
+    ///
+    /// D'où ce prédicat, distinct et explicite : il dit ce que la table CONTIENT, là où
+    /// <see cref="DecimalsFor"/> dit ce qu'il faut faire quand elle ne contient rien.
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static bool IsSupported(string? currency)
+        => !string.IsNullOrWhiteSpace(currency)
+           && DecimalsByCurrency.ContainsKey(currency.Trim());
+
+    /// <summary>
+    /// Les devises que la place sait tarifer, triées. Sert aux messages d'erreur et aux
+    /// écrans d'administration : refuser une devise sans dire lesquelles sont admises
+    /// oblige l'appelant à deviner.
+    /// </summary>
+    public static IReadOnlyCollection<string> SupportedCurrencies { get; } =
+        DecimalsByCurrency.Keys.OrderBy(static c => c, StringComparer.Ordinal).ToArray();
+
+    /// <summary>
     /// Arrondit un montant à la précision de SA devise. C'est la primitive que doivent
     /// appeler tous les calculs monétaires du dépôt — remises, taxes, commissions,
     /// répartitions — à la place d'un <c>decimal.Round(x, 2) </c> écrit en dur.

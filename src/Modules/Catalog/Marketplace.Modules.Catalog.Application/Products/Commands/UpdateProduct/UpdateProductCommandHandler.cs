@@ -13,11 +13,16 @@ namespace Marketplace.Modules.Catalog.Application.Products.Commands.UpdateProduc
 internal sealed class UpdateProductCommandHandler : ICommandHandler<UpdateProductCommand>
 {
     private readonly IProductRepository _productRepository;
+    private readonly ProductAttributeGuard _attributeGuard;
     private readonly ICatalogUnitOfWork _unitOfWork;
 
-    public UpdateProductCommandHandler(IProductRepository productRepository, ICatalogUnitOfWork unitOfWork)
+    public UpdateProductCommandHandler(
+        IProductRepository productRepository,
+        ProductAttributeGuard attributeGuard,
+        ICatalogUnitOfWork unitOfWork)
     {
         _productRepository = productRepository;
+        _attributeGuard = attributeGuard;
         _unitOfWork = unitOfWork;
     }
 
@@ -41,6 +46,19 @@ internal sealed class UpdateProductCommandHandler : ICommandHandler<UpdateProduc
             return Result.Failure(Error.Conflict("catalog.product.slug_taken", $"Le slug « {newSlug} » existe déjà."));
         }
 
+        // LA MODIFICATION EST CONTRÔLÉE COMME LA CRÉATION.
+        //
+        // La catégorie lue est celle du produit : cette commande ne permet pas d'en
+        // changer. Un produit conforme à son schéma à la création pouvait sinon
+        // devenir non conforme à la première modification, ce qui aurait fait du
+        // contrôle une formalité de premier passage.
+        var attributes = await _attributeGuard.ResolveAsync(
+            product.CategoryId, command.Attributes, cancellationToken);
+        if (attributes.IsFailure)
+        {
+            return Result.Failure(attributes.Error);
+        }
+
         var updateResult = product.Update(
             command.Name,
             command.Description,
@@ -48,7 +66,7 @@ internal sealed class UpdateProductCommandHandler : ICommandHandler<UpdateProduc
             command.Gtin,
             command.Ean,
             command.ProductGroupId,
-            command.Attributes,
+            attributes.Value,
             command.Tags);
 
         if (updateResult.IsFailure)

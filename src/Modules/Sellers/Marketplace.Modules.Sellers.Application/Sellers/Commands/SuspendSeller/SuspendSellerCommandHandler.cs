@@ -25,7 +25,14 @@ internal sealed class SuspendSellerCommandHandler : ICommandHandler<SuspendSelle
             return Result.Failure(Error.NotFound("sellers.seller.not_found", $"Vendeur {command.SellerId} introuvable."));
         }
 
-        seller.Suspend();
+        // Le Result était IGNORÉ : une suspension refusée par le domaine (déjà
+        // suspendu) renvoyait un 204 à l'administrateur, qui croyait avoir agi.
+        var suspension = seller.Suspend(command.Reason);
+        if (suspension.IsFailure)
+        {
+            return suspension;
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
