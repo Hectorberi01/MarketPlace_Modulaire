@@ -1,108 +1,109 @@
 # Plan — ce qu'il reste à faire
 
-> Établi le 8 septembre 2026. **Troisième révision**, après le merge dans `develop`, la
-> construction complète de la chaîne de livraison, et l'audit des groupes de routes de
-> l'API. Deux bases de code : le monolithe `marketPlace` et le service
+> Établi le 8 septembre 2026. **Quatrième révision**, après la construction complète de la
+> chaîne de livraison, l'audit des routes, `SKIP LOCKED`, l'observabilité, le déploiement
+> et le hub temps réel. Deux bases de code : le monolithe `marketPlace` et le service
 > `Services/HbaExpress.Dispatch`.
 
 ---
 
 ## 0. L'état réel, sans arrondi
 
-`develop`, `develop_staging` et `wallet` pointent sur le même commit. La chaîne complète
-— commande prête → course → offre → acceptation → livraison → coursier payé — **existe en
-code des deux côtés et n'a jamais été exécutée une seule fois.**
+**Tout ce qui était du code est écrit.** Ce qui reste tient en trois catégories, et deux
+d'entre elles ne se règlent pas dans un éditeur : une vérification à faire tourner, des
+décisions à prendre, et des dettes de moindre gravité.
 
 | Chantier | État |
 |---|---|
-| Lots 1 à 4 — portefeuille, cagnotte, checkout, coursier | fini, testé, mergé |
-| Service dispatch — domaine, application, persistance | fini, testé |
-| Service dispatch — hôte HTTP, routes internes et coursier | fini |
-| Service dispatch — balayage de redispatch | fini |
-| Transport marketplace → dispatch | fini |
-| Annonce de livraison → paiement du coursier | fini |
-| Plafond de rémunération d'une course | fini (relatif + absolu) |
-| Audit des groupes de routes de l'API | fini — 3 failles corrigées |
+| Lots 1 à 4 — portefeuille, cagnotte, checkout, coursier | fini, mergé |
+| Service dispatch — domaine, application, persistance, hôte, routes | fini |
+| Transport marketplace → dispatch, et retour | fini |
+| Plafond de rémunération d'une course | fini |
+| Audit des groupes de routes — 3 failles corrigées | fini |
+| `SKIP LOCKED` | fini sur l'outbox et le redispatch ; volontairement écarté sur la file sortante |
+| Observabilité du dispatch + alertes | fini |
+| Déploiement du dispatch (image, compose ×3, Traefik, base) | fini |
+| Hub temps réel | fini |
 | **Passage de bout en bout** | **script écrit, jamais lancé** |
-| `SKIP LOCKED` | pas commencé — concerne maintenant 3 balayages |
-| Observabilité du service de dispatch | **inexistante** |
-| Déploiement du service de dispatch | **inexistant** |
-| Hub temps réel | pas commencé |
+| Décisions non techniques (§5) | aucune tranchée |
 
 ### Ce qui a été trouvé en construisant, et qu'aucun test ne voyait
 
 - **Le coursier avait deux identifiants et les deux services n'utilisaient pas le même.**
-  Le dispatch enregistrait le `CourierId` (celui qui fait payer) et lisait le `UserId`
-  dans le jeton. Toutes les routes de l'application coursier auraient répondu 404 : un
-  coursier à qui l'on offre des courses et à qui l'on refuse de les prendre. Trouvé en
-  préparant le passage de bout en bout, avant qu'une ligne ne tourne.
-- **`POST /api/returns/{id}/refund` était ouvert à tout compte authentifié**, sans aucun
-  contrôle de propriété, et créditait réellement la cagnotte. Même motif que
-  `POST /api/shipments/{id}/deliver`. Deux autres failles à côté : lecture du fil complet
-  d'un litige d'autrui (photos de preuves comprises) et initiation d'un paiement sur la
-  commande d'un tiers, qui la rendait définitivement impayable.
+  Toutes les routes de l'application coursier auraient répondu 404 : un coursier à qui
+  l'on offre des courses et à qui l'on refuse de les prendre. Trouvé en préparant le
+  passage de bout en bout, avant qu'une ligne ne tourne.
+- **`POST /api/returns/{id}/refund` était ouvert à tout compte authentifié** et créditait
+  réellement la cagnotte. Deux autres à côté : lecture du fil complet d'un litige
+  d'autrui, et initiation d'un paiement sur la commande d'un tiers — qui la rendait
+  définitivement impayable.
 
 ---
 
-## 1. Lancer le passage de bout en bout — avant tout le reste
+## 1. Lancer le passage de bout en bout — ce qui devrait passer devant tout
 
 `scripts/e2e_dispatch.py`, quatre hôtes, aucune dépendance. Il enchaîne le parcours
 complet et s'arrête net au premier écart, requête et corps à l'appui.
 
-C'est le seul point de cette liste qui puisse encore infirmer tout le reste. Les tests
+C'est le seul point de cette liste qui puisse encore infirmer le reste. Les tests
 couvrent les morceaux ; les jointures — un champ renommé, un identifiant qui n'est pas
-celui qu'on croit, un secret croisé à l'envers — n'apparaissent qu'à l'exécution. La
-seule qu'on ait cherchée en a livré une.
+celui qu'on croit, un secret croisé à l'envers — n'apparaissent qu'à l'exécution. **La
+seule qu'on ait cherchée en a livré une.**
+
+Tant qu'il n'a pas tourné une fois, la phrase honnête reste : la chaîne complète existe
+en code et n'a jamais été exécutée.
 
 ---
 
-## 2. Ce qui empêche encore de déployer
+## 2. ~~Ce qui empêchait de déployer~~ — **fait**
 
-### 2.1 Le service de dispatch n'est nulle part dans le déploiement
+### 2.1 Déploiement — fait
 
-Ni `Dockerfile`, ni service dans les trois `docker-compose`, ni règle Traefik, ni base
-`dispatch` provisionnée. Il tourne en développement et ne peut pas quitter la machine.
+Image dans `build-and-push.sh`, service dans les trois composes, base séparée
+(conteneur dédié en dev, `DISPATCH_CONNECTION` obligatoire ailleurs), routage Traefik.
+`deploy-prod.sh` compile et teste désormais **les deux** solutions : le verrou de
+compilation ne couvrait pas le service qui déclenche le paiement des coursiers.
 
-À faire : image, service compose (dev / staging / prod), base dédiée, route d'edge
-restreinte — `/internal` ne doit **jamais** être joignable depuis Internet, seul le
-réseau interne l'appelle ; `/api/courier` l'est, lui, pour l'application mobile.
+**Seul `/api/courier` et `/hubs/courier` sont publiés. `/internal` n'a aucune route** —
+et l'absence EST le contrôle : ces routes créent des courses et décident du droit de
+travailler d'un coursier, leur authentification est une signature et non un jeton.
 
-### 2.2 Le service de dispatch est aveugle
+### 2.2 Observabilité — fait
 
-Aucun Serilog, aucun OpenTelemetry, aucune métrique. Le monolithe a tout cela, et une
-règle d'alerte `OutboxDeadLetter` qui réveille quelqu'un dès la première lettre morte.
+Serilog, OpenTelemetry, compteurs métier, liveness/readiness. Deux compteurs portent une
+alerte : `dispatch_outbound_dead_letters` (une course livrée que personne n'a payée,
+seuil zéro) et `dispatch_jobs_expired` (un acheteur sans livreur, seuil de trois en dix
+minutes). Les métriques passent par le collecteur OTel déjà scrapé — rien à ajouter dans
+`prometheus.yml`.
 
-Côté dispatch, un message sortant abandonné — donc **une course livrée que personne n'a
-payée** — ne produit qu'un journal et une sonde de santé en « dégradé ». Personne ne
-regarde une sonde. Il faut la métrique et la règle jumelle.
+### 2.3 `SKIP LOCKED` — fait, avec une exception assumée
 
-### 2.3 `SKIP LOCKED` — plafond dur, et il concerne trois balayages
-
-Aucun des trois ne pose de verrou de ligne :
-
-| Balayage | Ce que coûte une seconde instance |
+| Balayage | État |
 |---|---|
-| Outbox du monolithe | double dispatch de tous les événements — argent compris |
-| Balayage de redispatch | deux vagues d'offres par course : le même coursier appelé deux fois |
-| File sortante du dispatch | doublon absorbé par l'idempotence de la marketplace — bénin |
+| Outbox du monolithe | verrouillé — **l'API est redevenue réplicable** |
+| Balayage de redispatch | verrouillé |
+| File sortante du dispatch | **délibérément non verrouillé** |
 
-Tant que le premier n'est pas réglé, **l'API ne peut pas être répliquée**. Ce n'est pas
-un problème aujourd'hui ; c'en sera un le jour où il faudra encaisser la charge, et ce
-jour-là il sera trop tard pour le découvrir.
+Le verrou ne tient que jusqu'au commit : le poser sur la file sortante obligerait à garder
+une transaction ouverte pendant les appels HTTP du lot. Le doublon, lui, est absorbé —
+la marketplace ne paie qu'une fois par identifiant de course. Le raisonnement est écrit
+dans le dépôt avec sa condition d'invalidation.
+
+**Restent non répliquables** : `DiscountExpiryService` et `WithdrawalReconciliationService`,
+qui lisent encore sans réserver. `BACKGROUND_JOBS_ENABLED` reste donc nécessaire.
 
 ---
 
-## 3. Le hub temps réel — après, pas avant
+## 3. ~~Le hub temps réel~~ — **fait**
 
-`IOfferNotifier` a été posé comme port exprès : la décision « qui gagne » ne dépend pas du
-transport. Une offre existe en base dès sa création, et un coursier peut l'accepter par
-simple appel HTTP même si le message poussé s'est perdu.
+`/hubs/courier`, groupe dérivé du jeton, aucune méthode appelable par le client, backplane
+Redis. Le backplane n'est pas du confort : depuis `SKIP LOCKED`, le service peut tourner
+en plusieurs instances, et sans lui un coursier connecté à l'une ne recevrait jamais une
+offre dispatchée par l'autre.
 
-Le hub accélère ce qui marche déjà. Le construire avant l'hôte aurait donné un système dont
-on ne peut rien affirmer tant que tout est branché.
-
-Prévoir : reconnexion, registre des coursiers en ligne, et un repli sur le polling — les
-réseaux mobiles béninois coupent.
+Ce qui reste ouvert de ce chapitre : **la reconnexion et le repli côté application
+mobile**. Les réseaux mobiles béninois coupent, et c'est un travail de client, pas de
+serveur — `GET /api/courier/offers` est le rattrapage prévu pour ça.
 
 ---
 
@@ -195,16 +196,18 @@ défaut — mais c'est un choix qui n'a pas été arbitré.
 
 ## 6. Ordre proposé
 
+Il ne reste plus de bloc de code à écrire. L'ordre est donc celui de la vérification et
+des décisions.
+
 | # | Bloc | Pourquoi maintenant |
 |---|---|---|
 | 1 | **Lancer le passage de bout en bout** (§1) | Peut infirmer tout le reste. Rien ne devrait passer devant |
-| 2 | Instruire la BCEAO (§5.1) | Hors code, long, et peut invalider le lot 2 — à lancer en parallèle |
+| 2 | Instruire la BCEAO (§5.1) | Hors code, long, et peut invalider le lot 2 — à lancer le même jour |
 | 3 | Vérifier le contrôle de partie des litiges (§4.1) | Une heure, et c'est peut-être une fonction morte depuis le début |
-| 4 | Déploiement du service de dispatch (§2.1) | Il ne peut pas quitter la machine |
-| 5 | Observabilité + alerte du dispatch (§2.2) | Une course livrée non payée doit réveiller quelqu'un |
-| 6 | `SKIP LOCKED` (§2.3) | Plafond dur, à lever avant d'en avoir besoin |
-| 7 | Hub temps réel (§3) | Accélère ce qui marche déjà |
-| 8 | Repli en cascade / 3PL | Le plus gros bloc restant du CDC |
+| 4 | Déployer en staging et laisser tourner | Vérifier `GET /admin/wallet/reconciliation` → 200, et les alertes du dispatch |
+| 5 | Trancher §5.2, §5.3, §5.4 | Trois décisions produit, pas trois tâches |
+| 6 | Dettes de moindre gravité (§4.5) | Aucune ne bloque, toutes finissent par coûter |
+| 7 | Repli en cascade / 3PL | Le plus gros bloc restant du CDC — et bloqué par une question factuelle |
 
 Les points 1, 2 et 3 se mènent en parallèle : un script à lancer, des démarches à
 engager, une vérification à faire.

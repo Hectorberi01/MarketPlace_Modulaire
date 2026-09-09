@@ -24,6 +24,20 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+
+    <!-- Backplane SignalR : indispensable dès que ce service tourne en plusieurs
+         instances, ce que le verrou de ligne rend désormais possible. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+
+    <!-- Observabilité : mêmes paquets et mêmes versions que le monolithe, pour que les
+         deux services produisent des journaux et des métriques exploitables ensemble. -->
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
 
 </Project>

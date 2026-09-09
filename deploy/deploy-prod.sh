@@ -77,6 +77,11 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SLN="$REPO_ROOT/Marketplace.sln"
+# Le service de dispatch a sa PROPRE solution : il est déployé à part et ne fait pas
+# partie de Marketplace.sln. Sans cette ligne, le verrou de compilation et les tests
+# ne couvriraient pas le service qui tient les courses et déclenche le paiement des
+# coursiers — et une régression y partirait en production sans être vue.
+SLN_DISPATCH="$REPO_ROOT/Services/HbaExpress.Dispatch/HbaExpress.Dispatch.sln"
 ANSIBLE_DIR="$REPO_ROOT/deploy/ansible"
 INVENTORY="$ANSIBLE_DIR/inventories/$ENV_NAME/hosts.ini"
 VAULT="$ANSIBLE_DIR/inventories/$ENV_NAME/group_vars/marketplace/vault.yml"
@@ -139,7 +144,9 @@ if [ "$RUN_BUILD" = 1 ]; then
   step "Build .NET ($CONFIG)"
   dotnet restore "$SLN"
   dotnet build "$SLN" -c "$CONFIG" --no-restore
-  ok "Build OK."
+  dotnet restore "$SLN_DISPATCH"
+  dotnet build "$SLN_DISPATCH" -c "$CONFIG" --no-restore
+  ok "Build OK (marketplace + dispatch)."
 else
   warn "Build sauté (--skip-build)."
 fi
@@ -152,7 +159,9 @@ if [ "$RUN_TESTS" = 1 ]; then
   [ "$RUN_BUILD" = 1 ] && TEST_ARGS+=(--no-build --no-restore)
   # shellcheck disable=SC2086
   dotnet test "$SLN" "${TEST_ARGS[@]}" ${DOTNET_TEST_ARGS:-}
-  ok "Tests OK."
+  # shellcheck disable=SC2086
+  dotnet test "$SLN_DISPATCH" "${TEST_ARGS[@]}" ${DOTNET_TEST_ARGS:-}
+  ok "Tests OK (marketplace + dispatch)."
 else
   warn "Tests sautés (--skip-tests) — À N'UTILISER QU'EN CONNAISSANCE DE CAUSE."
 fi

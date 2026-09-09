@@ -7,6 +7,26 @@ namespace HbaExpress.Dispatch.Application.Abstractions;
 public interface IDispatchUnitOfWork
 {
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exécute un traitement dans UNE SEULE transaction, puis enregistre et valide.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// CE PORT EXISTE POUR UNE RAISON PRÉCISE : LA DURÉE DE VIE DES VERROUS DE LIGNE.
+    ///
+    /// Le balayage de redispatch réserve ses courses par un
+    /// « SELECT … FOR UPDATE SKIP LOCKED », qui tient les lignes JUSQU'À LA FIN DE LA
+    /// TRANSACTION. Sans transaction explicite, la lecture serait validée aussitôt, les
+    /// verrous tomberaient avant qu'on ait traité la première course, et une seconde
+    /// instance reprendrait le même lot — le SQL contiendrait bien « FOR UPDATE » et ne
+    /// protégerait rien.
+    ///
+    /// La couche application n'a pas à connaître EF ; elle a en revanche le droit
+    /// d'exiger que deux gestes tiennent ensemble. C'est ce que ce port exprime.
+    /// ═════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<T> InTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> work, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

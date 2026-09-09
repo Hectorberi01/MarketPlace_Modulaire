@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- Ce BFF référence Marketplace.Api (elle-même une app Web) pour composer
+         les modules in-process. Au publish, l'appsettings.json de l'Api entre en
+         collision avec celui du BFF (NETSDK1152). On tolère le doublon : les
+         valeurs sensibles sont surchargées par variables d'environnement en
+         conteneur. -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
+  <!--
+    BFF CLIENT (acheteur). Née de la fusion des BFF Mobile et Web : le découpage passe
+    de l'APPAREIL à l'AUDIENCE, et cette surface sert la même API à l'application mobile
+    et au site.
+
+    ═════════════════════════════════════════════════════════════════════════════
+    LA FUSION N'EN ÉTAIT PAS UNE : LE BFF WEB N'AVAIT PRESQUE RIEN À APPORTER.
+
+    Sur les huit domaines communs, l'ensemble des commandes et requêtes envoyées par le
+    web était un SOUS-ENSEMBLE STRICT de celles du mobile — pas une seule qui lui fût
+    propre. Là où il était implémenté, il l'était plus pauvrement : son panier rendait
+    les lignes brutes quand le mobile y joint le nom et l'image du produit. Et onze de
+    ses routes répondaient 501 : catégories, pages de contenu, flux produits, adresses
+    de checkout, options d'expédition, devis.
+
+    Deux choses seulement ont été rapportées : le COMPARATEUR multi-produits, et la
+    politique CORS — celle-là indispensable, puisque cette surface se met à servir un
+    navigateur.
+    ═════════════════════════════════════════════════════════════════════════════
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Bootstrap\Marketplace.Api\Marketplace.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+  </ItemGroup>
+
+</Project>

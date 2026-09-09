@@ -1,4 +1,5 @@
 using HbaExpress.Dispatch.Application.Abstractions;
+using HbaExpress.Dispatch.Application.Couriers;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
 using HbaExpress.Dispatch.Domain.Outbound;
@@ -37,6 +38,7 @@ public sealed class JobProgressService
     private readonly IDispatchUnitOfWork _unitOfWork;
     private readonly ILogger<JobProgressService> _logger;
     private readonly TimeProvider _clock;
+    private readonly IDispatchMetrics _metrics;
 
     public JobProgressService(
         IDeliveryJobRepository jobs,
@@ -45,7 +47,8 @@ public sealed class JobProgressService
         CourierPayRule pay,
         IDispatchUnitOfWork unitOfWork,
         ILogger<JobProgressService> logger,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IDispatchMetrics? metrics = null)
     {
         _jobs = jobs;
         _couriers = couriers;
@@ -54,18 +57,20 @@ public sealed class JobProgressService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _metrics = metrics ?? NullDispatchMetrics.Instance;
     }
 
     public Task<Result> StartPickupAsync(
         DeliveryJobId jobId, CourierId courierId, CancellationToken cancellationToken = default)
-        => MutateAsync(jobId, courierId, job => job.StartPickup(), cancellationToken);
+        => MutateAsync(jobId, courierId, job => job.StartPickup(), cancellationToken, requirePosition: true);
 
     public Task<Result> MarkPickedUpAsync(
         DeliveryJobId jobId, CourierId courierId, Guid pickupPointId, CancellationToken cancellationToken = default)
         => MutateAsync(
             jobId, courierId,
             job => job.MarkPickedUp(pickupPointId, _clock.GetUtcNow().UtcDateTime),
-            cancellationToken);
+            cancellationToken,
+            requirePosition: true);
 
     public Task<Result> ReportPickupIncidentAsync(
         DeliveryJobId jobId, CourierId courierId, Guid pickupPointId, string reason,
@@ -74,7 +79,7 @@ public sealed class JobProgressService
 
     public Task<Result> StartTransitAsync(
         DeliveryJobId jobId, CourierId courierId, CancellationToken cancellationToken = default)
-        => MutateAsync(jobId, courierId, job => job.StartTransit(), cancellationToken);
+        => MutateAsync(jobId, courierId, job => job.StartTransit(), cancellationToken, requirePosition: true);
 
     /// <summary>
     /// Course livrée : la course se ferme, le coursier redevient disponible, et la
@@ -105,6 +110,7 @@ public sealed class JobProgressService
             job => job.MarkDelivered(now),
             cancellationToken,
             release: true,
+            requirePosition: true,
             beforeSave: async job =>
             {
                 var amount = _pay.AmountFor(job);
@@ -130,6 +136,8 @@ public sealed class JobProgressService
                         JsonSerializer.Serialize(payload, JsonOptions),
                         now),
                     cancellationToken);
+
+                _metrics.JobDelivered();
 
                 _logger.LogInformation(
                     "Course {JobId} livrée : {Amount} {Currency} en file pour le coursier {CourierId}.",
@@ -193,6 +201,7 @@ public sealed class JobProgressService
         Func<DeliveryJob, Result> mutate,
         CancellationToken cancellationToken,
         bool release = false,
+        bool requirePosition = false,
         Func<DeliveryJob, Task>? beforeSave = null)
     {
         var job = await _jobs.GetByIdAsync(jobId, cancellationToken);
@@ -205,6 +214,19 @@ public sealed class JobProgressService
         {
             return Result.Failure(Error.Forbidden(
                 "job.not_yours", "Cette course est assignée à un autre coursier."));
+        }
+
+        // POSITION FRAÎCHE pour les transitions qui supposent un DÉPLACEMENT ; pas pour
+        // les issues de secours (incident de ramassage, échec de course), qu'un GPS
+        // muet ne doit jamais empêcher. Voir CourierActionPolicy.
+        if (requirePosition)
+        {
+            var courierNow = await _couriers.GetByIdAsync(courierId, cancellationToken);
+            var allowed = CourierActionPolicy.Check(courierNow, _clock.GetUtcNow().UtcDateTime);
+            if (allowed.IsFailure)
+            {
+                return allowed;
+            }
         }
 
         var mutated = mutate(job);

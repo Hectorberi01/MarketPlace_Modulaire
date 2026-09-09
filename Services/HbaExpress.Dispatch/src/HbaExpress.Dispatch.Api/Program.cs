@@ -2,7 +2,9 @@ using System.Text;
 using HbaExpress.Dispatch.Api.BackgroundJobs;
 using HbaExpress.Dispatch.Api.Endpoints;
 using HbaExpress.Dispatch.Api.Extensions;
+using HbaExpress.Dispatch.Api.Observability;
 using HbaExpress.Dispatch.Api.Outbound;
+using HbaExpress.Dispatch.Api.Realtime;
 using HbaExpress.Dispatch.Api.Security;
 using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Application;
@@ -16,9 +18,44 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0. OBSERVABILITÉ — journaux structurés, traces, métriques, sondes.
+//
+// EN PREMIER, et pas par élégance : ce service a deux pannes silencieuses par nature
+// — une course que personne n'accepte, une course livrée dont le paiement ne part pas.
+// Aucune des deux ne produit d'erreur HTTP. Sans mesure, elles ne se découvrent que par
+// la réclamation d'un coursier ou d'un acheteur.
+// ─────────────────────────────────────────────────────────────────────────────
+builder.AddDispatchObservability("hbaexpress-dispatch");
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. LE SERVICE LUI-MÊME.
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddDispatchApplication();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPS RÉEL — le hub qui porte les offres jusqu'au téléphone du coursier.
+//
+// BACKPLANE REDIS, ET IL EST DEVENU NÉCESSAIRE. Depuis que les balayages réservent
+// leurs lignes par « FOR UPDATE SKIP LOCKED », ce service peut tourner en plusieurs
+// instances. Sans backplane, un coursier connecté à l'instance A ne recevrait jamais
+// une offre dispatchée par l'instance B : il la verrait apparaître au rattrapage, vingt
+// secondes plus tard, sur une fenêtre qui en dure vingt-cinq. La panne est
+// intermittente, invisible à une instance, et impossible à reproduire en développement.
+//
+// Sans Redis configuré, SignalR reste en mémoire — correct sur une seule instance.
+// ─────────────────────────────────────────────────────────────────────────────
+var signalr = builder.Services.AddSignalR();
+var redisConnection = builder.Configuration["Redis:ConnectionString"];
+if (!string.IsNullOrWhiteSpace(redisConnection))
+{
+    signalr.AddStackExchangeRedis(redisConnection);
+}
+
+// AVANT AddDispatchInfrastructure, et l'ordre est significatif : celle-ci enregistre
+// LoggingOfferNotifier en TryAdd, donc seulement si le port est encore libre. Enregistré
+// après, il serait ignoré — et le hub existerait sans que rien ne pousse dedans.
+builder.Services.AddScoped<IOfferNotifier, SignalROfferNotifier>();
+
 builder.Services.AddDispatchInfrastructure(builder.Configuration);
 
 // Ce que vaut une course. Lu au démarrage, et le démarrage ÉCHOUE si la part n'est pas
@@ -73,6 +110,33 @@ builder.Services
             ValidAudience = jwtSection["Audience"] ?? "marketplace",
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+
+        // ─────────────────────────────────────────────────────────────────────
+        // LE JETON DU HUB ARRIVE EN QUERY STRING, PAS EN EN-TÊTE.
+        //
+        // Le handshake WebSocket ne permet pas au client de poser un en-tête
+        // Authorization : c'est une limite du protocole, pas un choix. SignalR passe
+        // donc le jeton en « ?access_token= », et il faut le récupérer explicitement.
+        //
+        // RESTREINT AU CHEMIN DU HUB. Accepter un jeton en query string sur toutes les
+        // routes le ferait apparaître dans les journaux d'accès de Traefik, dans
+        // l'historique des navigateurs et dans les en-têtes Referer — un jeton
+        // d'authentification n'a rien à faire dans une URL ailleurs qu'ici.
+        // ─────────────────────────────────────────────────────────────────────
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(accessToken)
+                    && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -132,17 +196,6 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Sonde de santé : la base est la SEULE dépendance dure de ce service. Sans elle il ne
-// peut ni créer, ni offrir, ni accepter une course — répondre « en bonne santé » serait
-// mensonger.
-builder.Services.AddHealthChecks()
-    .AddNpgSql(
-        DispatchInfrastructureServices.ResolveConnectionString(builder.Configuration),
-        name: "dispatch-db")
-    // Les abandons de la file sortante : des courses livrées que personne n'a payées.
-    // Dégradé plutôt qu'en panne — voir OutboundHealthCheck.
-    .AddCheck<OutboundHealthCheck>("dispatch-outbound");
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. TÂCHES DE FOND.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,10 +230,14 @@ app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health").AllowAnonymous();
+app.MapDispatchObservability();
 
 app.MapInternalEndpoints();
 app.MapCourierEndpoints();
+
+// L'autorisation vient de l'attribut [Authorize] du hub ; le rattachement au groupe
+// vient du jeton, jamais du client.
+app.MapHub<CourierHub>("/hubs/courier");
 
 await app.RunAsync();
 

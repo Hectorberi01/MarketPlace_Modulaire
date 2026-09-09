@@ -25,9 +25,12 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Hosting;
 /// aujourd'hui, et la variable dédiée reste disponible le jour où l'on voudra séparer les
 /// deux.
 ///
-/// CELA NE REND PAS L'API RÉPLICABLE POUR AUTANT : deux répliques de l'API = deux
-/// balayages concurrents. C'est la même contrainte de déploiement que l'outbox, et elle
-/// se lèvera avec le même verrou (SELECT … FOR UPDATE SKIP LOCKED).
+/// CES BALAYAGES-CI NE SONT TOUJOURS PAS RÉPLICABLES, CONTRAIREMENT À L'OUTBOX.
+/// L'outbox a reçu son verrou de ligne (SELECT … FOR UPDATE SKIP LOCKED) et supporte
+/// désormais plusieurs instances ; l'expiration des remises et la réconciliation des
+/// retraits, elles, lisent encore sans réserver. Deux répliques les exécuteraient toutes
+/// les deux. D'où cet interrupteur, qui reste nécessaire — à lever balayage par balayage,
+/// avec le même verrou, le jour où on les répliquera.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public static class BackgroundJobs

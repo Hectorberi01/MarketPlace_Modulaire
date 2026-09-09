@@ -37,6 +37,18 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
   Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+  # ── Service de dispatch (livraison par coursier) ────────────────────────────
+  # Adresse INTERNE : la marketplace parle au dispatch par le réseau Docker, jamais
+  # par Traefik. Sans elle, « commande prête » part dans l'outbox, échoue, et finit
+  # en lettre morte — visible, mais aucune course n'est créée.
+  Dispatch__BaseUrl: "${DISPATCH_BASE_URL:-http://dispatch:8080}"
+  # Deux secrets DISTINCTS, un par sens. Vides en développement : les deux services
+  # acceptent alors les appels non signés. En production, secret absent = appel rejeté.
+  Dispatch__OutboundSecret: "${DISPATCH_OUTBOUND_SECRET:-}"
+  Delivery__WebhookSecret: "${DELIVERY_WEBHOOK_SECRET:-}"
+  # Plafond ABSOLU de rémunération d'une course. Le plafond RELATIF — jamais plus que
+  # les frais de livraison encaissés — s'applique toujours, lui, et sans réglage.
+  Settlement__CourierPay__MaxAmount: "${COURIER_PAY_MAX_AMOUNT:-}"
 
 x-app-depends: &app-depends
   postgres:
@@ -69,6 +81,29 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [marketplace-net]
+
+  # Base du service de dispatch — un moteur SÉPARÉ, et c'est délibéré (CDC §11).
+  # Ce service réécrit des positions de coursier à la seconde ; la marketplace tient de
+  # l'argent. Les deux n'ont pas les mêmes profils d'écriture, ni les mêmes exigences de
+  # sauvegarde, et un verrou pris par l'un n'a aucune raison de faire attendre l'autre.
+  postgres-dispatch:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DISPATCH_DB:-dispatch}
+      POSTGRES_USER: ${DISPATCH_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DISPATCH_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+    ports:
+      # 5435 côté hôte : 5432 et 5433 sont souvent pris, 5434 est celui de la
+      # marketplace. Connexion client : localhost:5435.
+      - "5435:5432"
+    volumes:
+      - pgdata-dispatch:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DISPATCH_DB_USER:-postgres} -d ${DISPATCH_DB:-dispatch}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -118,43 +153,27 @@ services:
     networks: [marketplace-net]
 
   # ---------------- BFF ----------------
-  bff-mobile:
+  bff-client:
     restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        PROJECT: src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj
-        APP_DLL: Marketplace.Bff.Mobile.dll
+        PROJECT: src/Bff/Marketplace.Bff.Client/Marketplace.Bff.Client.csproj
+        APP_DLL: Marketplace.Bff.Client.dll
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "false"
       # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
       OUTBOX_ENABLED: "false"
+      # Origines du site en développement (Vite). Vide = repli FERMÉ.
+      Cors__Origins: "${CLIENT_WEB_ORIGINS:-http://localhost:5173}"
     depends_on:
       api:
         condition: service_healthy
     healthcheck: *app-healthcheck
     networks: [marketplace-net]
 
-  bff-web:
-    restart: unless-stopped
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj
-        APP_DLL: Marketplace.Bff.Web.dll
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
-      OUTBOX_ENABLED: "false"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck: *app-healthcheck
-    networks: [marketplace-net]
 
   bff-seller:
     restart: unless-stopped
@@ -194,10 +213,80 @@ services:
     healthcheck: *app-healthcheck
     networks: [marketplace-net]
 
+  # ---------------- BFF Driveur (coursier : compte + portefeuille) ----------------
+  # Quatrième surface, découpée par AUDIENCE : elle sert la même API à l'application
+  # mobile du coursier et à sa console web. Elle ne pilote AUCUNE course — celles-ci
+  # vivent dans le service de dispatch, que l'application appelle directement.
+  bff-driver:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: src/Bff/Marketplace.Bff.Driver/Marketplace.Bff.Driver.csproj
+        APP_DLL: Marketplace.Bff.Driver.dll
+    environment:
+      <<: *app-env
+      RunMigrationsAtStartup: "false"
+      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
+      OUTBOX_ENABLED: "false"
+      # Origines de la console web coursier. Vide = repli FERMÉ.
+      Cors__Origins: "${DRIVER_CONSOLE_ORIGINS:-http://localhost:5173}"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
+  # ---------------- Service de dispatch (coursiers) ----------------
+  # Déployé à part du monolithe : il tient les courses, les offres et les positions,
+  # et n'accède à AUCUNE base de la marketplace. Les deux ne se parlent que par HTTP
+  # signé — voir docs/CDC_Service_Livraison_Coursier.md.
+  dispatch:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PROJECT: Services/HbaExpress.Dispatch/src/HbaExpress.Dispatch.Api/HbaExpress.Dispatch.Api.csproj
+        APP_DLL: HbaExpress.Dispatch.Api.dll
+    environment:
+      ConnectionStrings__Dispatch: "${DISPATCH_CONNECTION:-Host=postgres-dispatch;Port=5432;Database=${DISPATCH_DB:-dispatch};Username=${DISPATCH_DB_USER:-postgres};Password=${DISPATCH_DB_PASSWORD:-${POSTGRES_PASSWORD}}}"
+      # Ce service n'ÉMET aucun jeton : il VÉRIFIE ceux de la marketplace. La clé doit
+      # donc être IDENTIQUE, sinon aucun coursier ne peut s'authentifier.
+      Jwt__Issuer: "marketplace"
+      Jwt__Audience: "marketplace"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY}"
+      # Adresse INTERNE de la marketplace : c'est par là que part l'annonce de course
+      # livrée, celle qui crédite le coursier.
+      Marketplace__BaseUrl: "${MARKETPLACE_BASE_URL:-http://api:8080}"
+      # Secrets croisés : ce qu'on ENVOIE doit valoir Delivery__WebhookSecret côté
+      # marketplace ; ce qu'on REÇOIT doit valoir Dispatch__OutboundSecret là-bas.
+      Marketplace__OutboundSecret: "${DELIVERY_WEBHOOK_SECRET:-}"
+      Marketplace__InboundSecret: "${DISPATCH_OUTBOUND_SECRET:-}"
+      # Part des frais de livraison versée au coursier. AUCUNE VALEUR PAR DÉFAUT DANS
+      # LE CODE : le service refuse de démarrer sans elle. Voir CourierPayGuard, et
+      # docs/PLAN_Reste_A_Faire.md §5.3 — c'est une décision commerciale, pas un réglage.
+      Dispatch__CourierShare: "${DISPATCH_COURIER_SHARE:?DISPATCH_COURIER_SHARE requis (ex. 0.80)}"
+      # Backplane SignalR : nécessaire dès qu'on tourne à plusieurs instances.
+      Redis__ConnectionString: "redis:6379"
+      Otel__Endpoint: "${OTEL_ENDPOINT:-}"
+      RunMigrationsAtStartup: "true"
+    depends_on:
+      postgres-dispatch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    networks: [marketplace-net]
+
 networks:
   marketplace-net:
     name: marketplace-net
 
 volumes:
   pgdata:
+  pgdata-dispatch:
   redisdata:

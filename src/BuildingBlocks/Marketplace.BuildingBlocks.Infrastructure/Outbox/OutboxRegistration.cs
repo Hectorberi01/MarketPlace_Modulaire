@@ -20,18 +20,18 @@ public sealed record OutboxContextRegistration(Type DbContextType, string Module
 /// jusqu'à épuisement (« too many clients »).
 ///
 /// <para>
-/// ⚠️ Et surtout — la raison la plus grave, qui n'était pas écrite : les 5 processeurs
-/// liraient les <b>MÊMES</b> messages et les dispatcheraient <b>5 FOIS</b>. La lecture n'est
-/// protégée par aucun <c>SELECT … FOR UPDATE SKIP LOCKED</c>. Chaque gain vendeur serait
-/// crédité cinq fois, chaque notification envoyée cinq fois. On ne lance donc l'outbox que
-/// là où <c>OUTBOX_ENABLED</c> n'est pas « false » — l'API uniquement ; les BFF la
-/// positionnent à « false » dans le compose de production.
+/// Il y avait une seconde raison, plus grave, et elle a été LEVÉE : les 5 processeurs
+/// liraient les <b>MÊMES</b> messages et les dispatcheraient <b>5 FOIS</b>, chaque gain
+/// vendeur crédité cinq fois. La lecture réserve désormais son lot par
+/// <c>SELECT … FOR UPDATE SKIP LOCKED</c> (voir <c>OutboxProcessor.ClaimBatchAsync</c>) :
+/// les processeurs se partagent le travail au lieu de le dupliquer.
 /// </para>
 ///
 /// <para>
-/// <b>Cela vaut aussi pour la mise à l'échelle horizontale : deux répliques de l'API =
-/// double dispatch.</b> Avant de scaler l'API, il faut implémenter le verrou de ligne.
-/// C'est une contrainte de déploiement, pas une opinion.
+/// <b>La mise à l'échelle horizontale de l'API n'est donc plus interdite par l'outbox.</b>
+/// Ce qui subsiste ici est une question de RESSOURCES, pas de correction : n'ouvrir des
+/// connexions Postgres que là où l'on draine réellement. Les BFF n'ont rien à drainer et
+/// gardent <c>OUTBOX_ENABLED=false</c>.
 /// </para>
 /// </summary>
 public static class OutboxRegistration

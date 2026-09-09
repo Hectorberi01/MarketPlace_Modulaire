@@ -170,6 +170,11 @@ public class DeliveryJobServiceTests
     private sealed class NoOpUnitOfWork : IDispatchUnitOfWork
     {
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+        // Sans base, il n'y a rien à verrouiller : on exécute simplement le travail.
+        public Task<T> InTransactionAsync<T>(
+            Func<CancellationToken, Task<T>> work, CancellationToken cancellationToken = default)
+            => work(cancellationToken);
     }
 
     private sealed class FakeJobRepository : IDeliveryJobRepository

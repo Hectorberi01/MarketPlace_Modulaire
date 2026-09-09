@@ -275,6 +275,67 @@ groups:
             Le module {{ $labels.module }} échoue à publier ses événements depuis 10 min.
             Sans correction, ces messages partiront en lettre morte (10 tentatives, ~2 h).
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SERVICE DE DISPATCH — les deux pannes qui ne font aucun bruit.
+  #
+  # Ce service est déployé à part et n'a pas de client au bout du fil pour se plaindre :
+  # ses échecs ne produisent aucune erreur HTTP. Deux d'entre eux coûtent de l'argent ou
+  # une commande perdue, et aucun ne se verrait sans ces règles.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - name: dispatch
+    rules:
+      - alert: DispatchOutboundDeadLetter
+        # LA MÊME LOGIQUE QUE OutboxDeadLetter, ET LE MÊME ENJEU : un seul suffit.
+        # Un message sortant abandonné, c'est presque toujours une course LIVRÉE dont la
+        # rémunération n'a jamais été annoncée à la marketplace. Le coursier a travaillé,
+        # et rien ne le paiera sans intervention — il n'existe aucun rattrapage
+        # automatique une fois la file épuisée.
+        expr: increase(dispatch_outbound_dead_letters_total[10m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "MESSAGE SORTANT ABANDONNÉ — service de dispatch"
+          description: >-
+            Un message {{ $labels.message_type }} n'a pas pu être transmis à la
+            marketplace après 10 tentatives. S'il s'agit d'une course livrée, LA
+            RÉMUNÉRATION DU COURSIER N'A PAS ÉTÉ VERSÉE. Diagnostiquer (marketplace
+            joignable ? secret correct ? montant refusé par le plafond ?), corriger, puis
+            rejouer à la main depuis la table dispatch.outbound_messages.
+
+      - alert: DispatchOutboundFailuresHigh
+        # L'alerte qui laisse le temps d'agir : à ce rythme, les abandons arrivent dans
+        # les deux heures.
+        expr: sum(rate(dispatch_outbound_send_failures_total[5m])) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Échecs d'envoi soutenus — service de dispatch"
+          description: >-
+            Le service de dispatch échoue à joindre la marketplace depuis 10 min. Sans
+            correction, ces messages partiront en abandon (10 tentatives) et des courses
+            livrées resteront impayées.
+
+      - alert: DispatchJobExpired
+        # UNE COURSE QUE PERSONNE N'A ACCEPTÉE EN CINQ MINUTES.
+        #
+        # Le repli en cascade vers un prestataire externe n'existe pas encore : derrière
+        # cette expiration, il n'y a personne. C'est un acheteur qui attend une livraison
+        # que rien ne viendra faire, et aucune erreur ne le signale.
+        #
+        # Un seuil, contrairement aux lettres mortes : une expiration isolée peut arriver
+        # un dimanche matin sans coursier en ligne. Trois en dix minutes, c'est que le
+        # dispatch ne trouve plus personne — problème de flotte, de zone ou de rayon.
+        expr: increase(dispatch_jobs_expired_total[10m]) > 2
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Courses sans livreur — service de dispatch"
+          description: >-
+            Plusieurs courses ont expiré sans qu'aucun coursier ne les accepte. Le repli
+            en cascade n'étant pas branché, ces commandes n'ont PLUS DE LIVREUR et doivent
+            être traitées à la main. Vérifier le nombre de coursiers en ligne, leurs zones
+            de service et la fraîcheur de leurs positions.
+
   - name: security-vps
     rules:
       - alert: SshBruteForce

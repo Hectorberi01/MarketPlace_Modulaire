@@ -1,3 +1,4 @@
+using HbaExpress.Dispatch.Application.Abstractions;
 using HbaExpress.Dispatch.Domain.Jobs;
 using HbaExpress.Dispatch.Domain.Matching;
 using Marketplace.BuildingBlocks.Domain.Results;
@@ -39,22 +40,39 @@ public sealed class RedispatchService
 
     private readonly IDeliveryJobRepository _jobs;
     private readonly DeliveryJobService _dispatch;
+    private readonly IDispatchUnitOfWork _unitOfWork;
     private readonly ILogger<RedispatchService> _logger;
     private readonly TimeProvider _clock;
+    private readonly IDispatchMetrics _metrics;
 
     public RedispatchService(
         IDeliveryJobRepository jobs,
         DeliveryJobService dispatch,
+        IDispatchUnitOfWork unitOfWork,
         ILogger<RedispatchService> logger,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IDispatchMetrics? metrics = null)
     {
         _jobs = jobs;
         _dispatch = dispatch;
+        _unitOfWork = unitOfWork;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _metrics = metrics ?? NullDispatchMetrics.Instance;
     }
 
-    public async Task<RedispatchOutcome> SweepAsync(int take = 50, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Un passage complet, DANS UNE SEULE TRANSACTION.
+    ///
+    /// Ce n'est pas pour l'atomicité — c'est pour la DURÉE DES VERROUS. La réservation
+    /// des courses pose un « FOR UPDATE SKIP LOCKED » qui ne tient que jusqu'au commit :
+    /// sans cette transaction, les verrous tomberaient avant qu'on ait traité la première
+    /// course, et une seconde instance reprendrait le même lot.
+    /// </summary>
+    public Task<RedispatchOutcome> SweepAsync(int take = 50, CancellationToken cancellationToken = default)
+        => _unitOfWork.InTransactionAsync(ct => SweepCoreAsync(take, ct), cancellationToken);
+
+    private async Task<RedispatchOutcome> SweepCoreAsync(int take, CancellationToken cancellationToken)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
         var pending = await _jobs.ListAwaitingRedispatchAsync(now, take, cancellationToken);
@@ -134,6 +152,11 @@ public sealed class RedispatchService
         //
         // À rétrograder en information le jour où le repli sera branché.
         // ═════════════════════════════════════════════════════════════════════════
+        // Le compteur, en plus du journal : un avertissement se lit après coup, un
+        // compteur se surveille. Tant que le repli en cascade n'existe pas, chaque
+        // incrément est un acheteur sans livreur.
+        _metrics.JobExpired();
+
         _logger.LogWarning(
             "Course {JobId} (commande {OrderId}) EXPIRÉE après {Minutes} min : aucun coursier interne. " +
             "Le repli en cascade n'étant pas encore branché, cette commande n'a plus de livreur — à traiter à la main.",

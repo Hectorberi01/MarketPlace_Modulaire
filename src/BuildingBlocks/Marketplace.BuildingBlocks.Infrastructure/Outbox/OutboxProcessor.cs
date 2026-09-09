@@ -44,13 +44,18 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Outbox;
 /// ═════════════════════════════════════════════════════════════════════════════
 ///
 /// <para>
-/// ⚠️ <b>UNE SEULE INSTANCE À LA FOIS.</b> La lecture n'est pas protégée par un
-/// <c>SELECT … FOR UPDATE SKIP LOCKED</c> : deux processeurs concurrents liraient les mêmes
-/// messages et les dispatcheraient DEUX FOIS. C'est pourquoi les 4 BFF posent
-/// <c>OUTBOX_ENABLED=false</c> et que seule l'API draine.
-/// <b>Ne pas mettre l'API à l'échelle horizontale sans implémenter le verrou de ligne
-/// d'abord</b> — sans quoi chaque gain vendeur serait crédité autant de fois qu'il y a de
-/// répliques.
+/// <b>PLUSIEURS INSTANCES SONT DÉSORMAIS SÛRES.</b> Le lot est réservé par un
+/// <c>SELECT … FOR UPDATE SKIP LOCKED</c> : chaque processeur verrouille les lignes qu'il
+/// prend, et les concurrents SAUTENT ces lignes au lieu de les attendre. Deux répliques se
+/// partagent donc le travail au lieu de le dupliquer.
+/// </para>
+///
+/// <para>
+/// Auparavant, la lecture était un <c>SELECT</c> ordinaire : deux instances lisaient les
+/// mêmes messages et les dispatchaient DEUX FOIS — chaque gain vendeur crédité autant de
+/// fois qu'il y avait de répliques. C'est ce qui interdisait de mettre l'API à l'échelle,
+/// et pourquoi les 4 BFF posent encore <c>OUTBOX_ENABLED=false</c>. Cette répartition
+/// reste saine (les BFF n'ont rien à drainer), mais elle n'est plus une nécessité.
 /// </para>
 /// </summary>
 public sealed class OutboxProcessor<TDbContext> : BackgroundService
@@ -120,22 +125,25 @@ public sealed class OutboxProcessor<TDbContext> : BackgroundService
 
         var nowUtc = DateTime.UtcNow;
 
-        // Sont ÉLIGIBLES les messages non traités, non enterrés, et dont la temporisation
-        // est écoulée.
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA TRANSACTION EXPLICITE N'EST PAS UN DÉTAIL : SANS ELLE, LE VERROU NE SERT
+        // À RIEN.
         //
-        // C'est le filtre `NextAttemptAtUtc` qui supprime le blocage de tête de file : un
-        // message en échec disparaît du lot jusqu'à son heure, laissant la place aux
-        // messages sains. Auparavant, il squattait sa place indéfiniment.
-        var messages = await dbContext.OutboxMessages
-            .Where(m => m.ProcessedOnUtc == null
-                        && m.DeadLetteredOnUtc == null
-                        && (m.NextAttemptAtUtc == null || m.NextAttemptAtUtc <= nowUtc))
-            .OrderBy(m => m.OccurredOnUtc)
-            .Take(BatchSize)
-            .ToListAsync(cancellationToken);
+        // `FOR UPDATE` tient les lignes jusqu'à la fin de la TRANSACTION. Sans
+        // transaction ouverte ici, EF en ouvrirait une implicite le temps du SELECT et
+        // la validerait aussitôt : les verrous tomberaient avant même qu'on ait lu la
+        // première ligne, et une seconde instance reprendrait exactement le même lot.
+        //
+        // Le piège est qu'un tel code A L'AIR correct — le SQL contient bien
+        // « FOR UPDATE SKIP LOCKED » — et ne protège rien. Ne pas retirer ce bloc.
+        // ═════════════════════════════════════════════════════════════════════════
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var messages = await ClaimBatchAsync(dbContext, nowUtc, cancellationToken);
 
         if (messages.Count == 0)
         {
+            await transaction.CommitAsync(cancellationToken);
             return;
         }
 
@@ -162,6 +170,72 @@ public sealed class OutboxProcessor<TDbContext> : BackgroundService
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Réserve un lot de messages : lecture VERROUILLÉE, en sautant ce que d'autres
+    /// traitent déjà.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI DU SQL BRUT ALORS QUE TOUT LE RESTE EST EN LINQ.
+    ///
+    /// `FOR UPDATE SKIP LOCKED` n'a pas d'équivalent LINQ, et c'est la seule construction
+    /// qui répond exactement à la question posée : « donne-moi des lignes que personne
+    /// d'autre n'a prises, et ne m'attends pas ». Sans SKIP LOCKED, un second processeur
+    /// BLOQUERAIT sur les lignes du premier au lieu de passer à côté — on aurait échangé
+    /// le double traitement contre une file d'attente.
+    ///
+    /// Le nom de table et de schéma sont lus dans le MODÈLE EF, pas écrits en dur :
+    /// chaque module a son propre schéma, et une chaîne codée en dur ici viserait la
+    /// mauvaise table pour vingt-cinq modules sur vingt-six.
+    ///
+    /// La requête n'est PAS composée après coup (pas de .Where ni de .Take derrière) :
+    /// EF envelopperait alors le SQL dans une sous-requête, où PostgreSQL refuse
+    /// « FOR UPDATE ». L'ordre, la limite et le verrou sont donc dans la chaîne elle-même.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    ///
+    /// Sont ÉLIGIBLES les messages non traités, non enterrés, et dont la temporisation
+    /// est écoulée. C'est le filtre `NextAttemptAtUtc` qui supprime le blocage de tête de
+    /// file : un message en échec disparaît du lot jusqu'à son heure, laissant la place
+    /// aux messages sains.
+    /// </summary>
+    private static async Task<List<OutboxMessage>> ClaimBatchAsync(
+        TDbContext dbContext, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var entityType = dbContext.Model.FindEntityType(typeof(OutboxMessage))
+            ?? throw new InvalidOperationException(
+                $"La table d'outbox n'est pas dans le modèle de {typeof(TDbContext).Name}.");
+
+        var schema = entityType.GetSchema();
+        var table = entityType.GetTableName()
+            ?? throw new InvalidOperationException(
+                $"La table d'outbox de {typeof(TDbContext).Name} n'a pas de nom.");
+
+        var qualified = string.IsNullOrEmpty(schema) ? $"\"{table}\"" : $"\"{schema}\".\"{table}\"";
+
+        // BatchSize est une constante entière du code : son interpolation ne peut porter
+        // aucune injection. La date, elle, passe en PARAMÈTRE — c'est la seule valeur qui
+        // vienne d'ailleurs que d'un littéral.
+        // DEUX SIGNES DOLLAR, ET C'EST NÉCESSAIRE. Dans une chaîne brute interpolée, le
+        // nombre de `$` fixe combien d'accolades ouvrent un trou — doubler les accolades
+        // n'échappe rien, contrairement aux chaînes ordinaires. Avec `$$`, `{{…}}`
+        // interpole et `{0}` reste littéral : c'est exactement ce qu'il faut, puisque
+        // `{0}` est le marqueur de paramètre attendu par FromSqlRaw.
+        var sql =
+            $$"""
+              SELECT * FROM {{qualified}}
+              WHERE "ProcessedOnUtc" IS NULL
+                AND "DeadLetteredOnUtc" IS NULL
+                AND ("NextAttemptAtUtc" IS NULL OR "NextAttemptAtUtc" <= {0})
+              ORDER BY "OccurredOnUtc"
+              LIMIT {{BatchSize}}
+              FOR UPDATE SKIP LOCKED
+              """;
+
+        return await dbContext.OutboxMessages
+            .FromSqlRaw(sql, nowUtc)
+            .ToListAsync(cancellationToken);
     }
 
     private void HandleFailure(OutboxMessage message, Exception exception)

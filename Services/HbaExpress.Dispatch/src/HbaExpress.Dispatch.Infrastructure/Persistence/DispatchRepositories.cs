@@ -79,20 +79,76 @@ internal sealed class DeliveryJobRepository : IDeliveryJobRepository
             .ThenInclude(p => p.Parcels)
             .FirstOrDefaultAsync(j => j.OrderId == orderId, cancellationToken);
 
-    // SUIVI ACTIVÉ : le balayage de redispatch mute ces courses (ré-offre ou expiration).
+    /// <summary>
+    /// Réserve les courses à ré-offrir, en sautant celles qu'une autre instance traite.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// DEUX TEMPS, PARCE QU'ON NE PEUT PAS FAIRE AUTREMENT.
+    ///
+    /// 1. Du SQL brut réserve les IDENTIFIANTS avec « FOR UPDATE SKIP LOCKED ».
+    /// 2. Une requête EF ordinaire charge les agrégats complets pour ces identifiants.
+    ///
+    /// Pourquoi pas en une fois : `FromSqlRaw` suivi d'un `.Include(...)` est une
+    /// COMPOSITION, et EF enveloppe alors le SQL dans une sous-requête — où PostgreSQL
+    /// refuse « FOR UPDATE ». Et un « FOR UPDATE » posé sur une requête jointe
+    /// verrouillerait aussi les offres et les ramassages, ce qu'on ne demande pas.
+    ///
+    /// Les verrous posés au temps 1 tiennent jusqu'au COMMIT — c'est-à-dire pendant tout
+    /// le temps 2 et tout le traitement qui suit, à condition que l'appelant ait ouvert
+    /// une transaction. Voir IDispatchUnitOfWork.InTransactionAsync : sans elle, ce code
+    /// a l'air correct et ne protège rien.
+    ///
+    /// SANS SKIP LOCKED, une seconde instance ATTENDRAIT les lignes de la première au
+    /// lieu de passer à côté : on aurait échangé le double dispatch contre une file
+    /// d'attente. Avec, les deux instances se partagent le travail.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    ///
+    /// SUIVI EF ACTIVÉ au temps 2 : le balayage mute ces courses (ré-offre ou expiration).
+    /// </summary>
     public async Task<IReadOnlyList<DeliveryJob>> ListAwaitingRedispatchAsync(
         DateTime nowUtc, int take, CancellationToken cancellationToken = default)
-        => await _dbContext.DeliveryJobs
+    {
+        var limit = take <= 0 ? 50 : take;
+
+        // « Created » AUTANT QUE « Offered » : une course qui n'a jamais trouvé de
+        // coursier n'a pas d'offre en cours, et resterait donc invisible d'une requête
+        // qui ne regarde que les courses offertes.
+        //
+        // Le statut est stocké en CHAÎNE (HasConversion<string>) : la comparaison se fait
+        // donc sur des littéraux, pas sur des entiers.
+        const string sql =
+            """
+            SELECT j."Id"
+            FROM "dispatch"."delivery_jobs" j
+            WHERE j."Status" IN ('Created', 'Offered')
+              AND NOT EXISTS (
+                    SELECT 1 FROM "dispatch"."dispatch_offers" o
+                    WHERE o."DeliveryJobId" = j."Id"
+                      AND o."Status" = 'Pending'
+                      AND o."ExpiresAtUtc" > {0})
+            ORDER BY j."CreatedAtUtc"
+            LIMIT {1}
+            FOR UPDATE SKIP LOCKED
+            """;
+
+        var claimed = await _dbContext.Database
+            .SqlQueryRaw<Guid>(sql, nowUtc, limit)
+            .ToListAsync(cancellationToken);
+
+        if (claimed.Count == 0)
+        {
+            return Array.Empty<DeliveryJob>();
+        }
+
+        var ids = claimed.Select(id => new DeliveryJobId(id)).ToList();
+
+        return await _dbContext.DeliveryJobs
             .Include(j => j.Offers)
             .Include(j => j.Pickups)
-            // « Created » AUTANT QUE « Offered » : une course qui n'a jamais trouvé de
-            // coursier n'a pas d'offre en cours, et resterait donc invisible d'une
-            // requête qui ne regarde que les courses offertes.
-            .Where(j => (j.Status == DeliveryJobStatus.Created || j.Status == DeliveryJobStatus.Offered)
-                        && !j.Offers.Any(o => o.Status == DispatchOfferStatus.Pending && o.ExpiresAtUtc > nowUtc))
+            .Where(j => ids.Contains(j.Id))
             .OrderBy(j => j.CreatedAtUtc)
-            .Take(take <= 0 ? 50 : take)
             .ToListAsync(cancellationToken);
+    }
 
     /// <summary>
     /// LECTURE SEULE, SANS SUIVI EF. L'application coursier interroge cette route à

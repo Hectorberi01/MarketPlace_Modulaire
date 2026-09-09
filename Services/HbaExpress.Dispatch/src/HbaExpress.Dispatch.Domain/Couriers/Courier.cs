@@ -200,7 +200,49 @@ public sealed class Courier : AggregateRoot<CourierId>
     public bool CanReceiveOffers(DateTime nowUtc, TimeSpan positionMaxAge)
         => Standing == CourierStanding.Active
            && Availability == CourierAvailability.Online
-           && LastPosition is not null
+           && HasFreshPosition(nowUtc, positionMaxAge);
+
+    /// <summary>
+    /// Le coursier peut-il AGIR sur une course — l'accepter, ramasser, partir, livrer ?
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// « LE COURSIER NE PEUT PAS FAIRE UNE COURSE DEPUIS LE WEB », TRADUIT EN RÈGLE MÉTIER.
+    ///
+    /// La formulation naturelle serait « refuser les navigateurs ». Elle ne tient pas :
+    /// rien, dans une requête HTTP, ne prouve honnêtement de quel appareil elle vient. Un
+    /// en-tête se forge, un User-Agent se change, et un jeton marqué « mobile » s'obtient
+    /// en appelant la route de connexion mobile depuis un script. On aurait un contrôle
+    /// qui a l'air d'un mur et n'en est pas un.
+    ///
+    /// La vraie contrainte n'est pas l'appareil : c'est d'ÊTRE SUR LA ROUTE. Un coursier
+    /// qui accepte une course doit pouvoir aller la chercher, et un coursier qui déclare
+    /// avoir livré doit s'être déplacé. Exiger une position RÉCENTE dit exactement cela,
+    /// se vérifie côté serveur, et ne dépend d'aucune déclaration du client.
+    ///
+    /// Une console web reste parfaitement utilisable pour ce qu'elle doit faire — consulter
+    /// ses gains, son historique, demander un retrait — et devient incapable de faire
+    /// avancer une course, sans qu'on ait eu besoin de la reconnaître.
+    ///
+    /// CE N'EST PAS UN MUR NON PLUS, et il faut le dire : un client déterminé peut envoyer
+    /// des coordonnées inventées. Mais il ment alors sur un fait métier vérifiable — sa
+    /// trace est enregistrée, horodatée, et confrontable aux points de ramassage. C'est
+    /// une fraude qui laisse une preuve, là où un en-tête forgé n'en laisse aucune.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public bool CanActOnJob(DateTime nowUtc, TimeSpan positionMaxAge)
+        => Standing == CourierStanding.Active
+           && HasFreshPosition(nowUtc, positionMaxAge);
+
+    /// <summary>
+    /// Position connue ET récente. Les deux comptent : à quinze minutes, un coursier à
+    /// moto est à dix kilomètres de là.
+    /// </summary>
+    public bool HasFreshPosition(DateTime nowUtc, TimeSpan maxAge)
+        => LastPosition is not null
            && LastPositionAtUtc is { } at
-           && nowUtc - at <= positionMaxAge;
+           && nowUtc - at <= maxAge;
+
+    /// <summary>Âge de la dernière position, ou <c>null</c> s'il n'en a jamais émis.</summary>
+    public TimeSpan? PositionAge(DateTime nowUtc)
+        => LastPositionAtUtc is { } at ? nowUtc - at : null;
 }

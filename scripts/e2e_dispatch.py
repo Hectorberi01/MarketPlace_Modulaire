@@ -14,7 +14,8 @@ l'envers. Rien de tout cela n'apparaît à la compilation.
 PRÉREQUIS
   - Hôte API           http://localhost:5080   (draine l'outbox : OUTBOX_ENABLED non posé)
   - BFF Admin          http://localhost:5003
-  - BFF Mobile         http://localhost:5000
+  - BFF Client         http://localhost:5000
+  - BFF Driveur        http://localhost:5004
   - Service dispatch   http://localhost:5210
   - Un administrateur d'amorçage (Identity:Bootstrap:AdminEmail / AdminPassword)
 
@@ -34,7 +35,8 @@ import uuid
 
 API = os.environ.get("API", "http://localhost:5080")
 ADMIN_BFF = os.environ.get("ADMIN_BFF", "http://localhost:5003")
-MOBILE_BFF = os.environ.get("MOBILE_BFF", "http://localhost:5000")
+CLIENT_BFF = os.environ.get("CLIENT_BFF", "http://localhost:5000")
+DRIVER_BFF = os.environ.get("DRIVER_BFF", "http://localhost:5004")
 DISPATCH = os.environ.get("DISPATCH", "http://localhost:5210")
 
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
@@ -160,7 +162,8 @@ def main():
         )
 
     print(f"\033[1mPassage de bout en bout — exécution {RUN}\033[0m")
-    print(f"  API {API} · Admin {ADMIN_BFF} · Mobile {MOBILE_BFF} · Dispatch {DISPATCH}")
+    print(f"  API {API} · Admin {ADMIN_BFF} · Client {CLIENT_BFF} · "
+          f"Driveur {DRIVER_BFF} · Dispatch {DISPATCH}")
 
     # ── 1. Administrateur ────────────────────────────────────────────────────
     step("Connexion administrateur")
@@ -259,14 +262,14 @@ def main():
     step("Panier, adresse, commande, paiement")
     http("POST", API, "/api/cart/items", buyer_token, {"offerId": offer_id, "quantity": 1})
 
-    _, r = http("POST", MOBILE_BFF, "/mobile/checkout/addresses", buyer_token, {
+    _, r = http("POST", CLIENT_BFF, "/client/checkout/addresses", buyer_token, {
         "label": "Domicile", "recipient": "Acheteur Test", "phone": "0197000003",
         "commune": COMMUNE, "quartier": "Fidjrosse", "landmark": "Après le carrefour Fidjrosse",
         "line1": "Rue 8.112", "latitude": DROPOFF_LAT, "longitude": DROPOFF_LON, "makeDefault": True,
     })
     address_id = pick(r, "id", "addressId")
 
-    _, r = http("POST", MOBILE_BFF, "/mobile/checkout/pay", buyer_token, {
+    _, r = http("POST", CLIENT_BFF, "/client/checkout/pay", buyer_token, {
         "method": "MobileMoney", "provider": "MtnMomo", "flow": "HostedCheckout",
         "payerPhone": "0197000003", "addressId": address_id, "shippingCode": "standard",
     })
@@ -316,17 +319,34 @@ def main():
        f"{pick(offer, 'shippingFee')} {pick(offer, 'currency')}")
 
     # ── 10. Acceptation et progression ───────────────────────────────────────
+    #
+    # LA POSITION EST RENVOYÉE AVANT CHAQUE ACTION, comme le ferait la vraie application.
+    # Accepter, ramasser, partir et livrer exigent une position de MOINS DE CINQ MINUTES
+    # (CourierActionPolicy) : c'est ainsi qu'est traduite la règle « le coursier ne fait
+    # pas une course depuis le web ». Les attentes ci-dessus peuvent durer plus longtemps
+    # que ça — sans ce rafraîchissement, le script échouerait sur une règle qui fait
+    # exactement son travail.
     step("Acceptation, ramassages, transit, livraison")
+
+    def keep_position():
+        http("PUT", DISPATCH, "/api/courier/position", courier_token,
+             {"latitude": COURIER_LAT, "longitude": COURIER_LON}, quiet=True)
+
+    keep_position()
     http("POST", DISPATCH, f"/api/courier/jobs/{job_id}/accept", courier_token)
     ok("course acceptée")
 
+    keep_position()
     http("POST", DISPATCH, f"/api/courier/jobs/{job_id}/pickup", courier_token)
     for pickup in pickups:
         pickup_id = pick(pickup, "pickupPointId")
+        keep_position()
         http("POST", DISPATCH, f"/api/courier/jobs/{job_id}/pickups/{pickup_id}/collected", courier_token)
     ok("colis ramassés")
 
+    keep_position()
     http("POST", DISPATCH, f"/api/courier/jobs/{job_id}/transit", courier_token)
+    keep_position()
     http("POST", DISPATCH, f"/api/courier/jobs/{job_id}/delivered", courier_token)
     ok("livrée — la rémunération est en file côté dispatch")
 
@@ -336,7 +356,10 @@ def main():
     step("Le portefeuille du coursier est crédité")
 
     def wallet_credited():
-        _, body = http("GET", MOBILE_BFF, "/mobile/courier/wallet", courier_token,
+        # LE PORTEFEUILLE A CHANGÉ D'HÔTE. Il vivait sur /mobile/courier/wallet ; depuis
+        # le découpage par audience, il est servi par le BFF Driveur sur /driver/wallet —
+        # la même route pour l'application mobile du coursier et pour sa console web.
+        _, body = http("GET", DRIVER_BFF, "/driver/wallet", courier_token,
                        expect=None, quiet=True)
         if not isinstance(body, dict):
             return None

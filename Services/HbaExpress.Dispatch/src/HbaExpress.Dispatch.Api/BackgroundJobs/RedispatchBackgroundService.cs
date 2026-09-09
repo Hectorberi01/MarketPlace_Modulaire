@@ -18,11 +18,12 @@ namespace HbaExpress.Dispatch.Api.BackgroundJobs;
 /// longtemps qu'elle n'a été offerte, et le délai global de cinq minutes se consommerait
 /// en attente plutôt qu'en vagues d'offres.
 ///
-/// UN SEUL EXÉCUTANT À LA FOIS. La requête de balayage n'utilise pas
-/// « FOR UPDATE SKIP LOCKED » — la même dette que l'outbox du monolithe. Deux instances
-/// liraient les mêmes courses et lanceraient deux vagues d'offres pour chacune : le même
-/// coursier verrait la course deux fois. D'où l'interrupteur ci-dessous, à laisser à VRAI
-/// sur une seule instance le jour où le service sera répliqué.
+/// PLUSIEURS INSTANCES SONT DÉSORMAIS SÛRES. La réservation des courses pose un
+/// « SELECT … FOR UPDATE SKIP LOCKED » et le passage entier tient dans une transaction :
+/// deux balayages concurrents se partagent les courses au lieu de les reprendre chacun.
+/// Auparavant, ils lançaient deux vagues d'offres pour la même course, et le même
+/// coursier la voyait deux fois. L'interrupteur ci-dessous reste utile pour concentrer le
+/// balayage sur une instance.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed class RedispatchBackgroundService : BackgroundService

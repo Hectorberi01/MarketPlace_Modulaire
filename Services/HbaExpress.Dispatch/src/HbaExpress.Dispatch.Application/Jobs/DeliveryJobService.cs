@@ -1,4 +1,5 @@
 using HbaExpress.Dispatch.Application.Abstractions;
+using HbaExpress.Dispatch.Application.Couriers;
 using HbaExpress.Dispatch.Domain.Couriers;
 using HbaExpress.Dispatch.Domain.Jobs;
 using HbaExpress.Dispatch.Domain.Matching;
@@ -27,6 +28,7 @@ public sealed class DeliveryJobService
     private readonly IDispatchUnitOfWork _unitOfWork;
     private readonly ILogger<DeliveryJobService> _logger;
     private readonly TimeProvider _clock;
+    private readonly IDispatchMetrics _metrics;
 
     /// <summary>Délai laissé au coursier pour répondre à une offre.</summary>
     public static readonly TimeSpan OfferWindow = TimeSpan.FromSeconds(25);
@@ -37,7 +39,8 @@ public sealed class DeliveryJobService
         IOfferNotifier notifier,
         IDispatchUnitOfWork unitOfWork,
         ILogger<DeliveryJobService> logger,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IDispatchMetrics? metrics = null)
     {
         _jobs = jobs;
         _couriers = couriers;
@@ -45,6 +48,7 @@ public sealed class DeliveryJobService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _metrics = metrics ?? NullDispatchMetrics.Instance;
     }
 
     /// <summary>
@@ -88,6 +92,7 @@ public sealed class DeliveryJobService
         var job = created.Value;
         await _jobs.AddAsync(job, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _metrics.JobCreated();
 
         // La première vague part APRÈS que la course soit persistée. Si le dispatch
         // échoue, la course existe quand même et le balayage de redispatch la rattrapera.
@@ -158,6 +163,10 @@ public sealed class DeliveryJobService
             "Course {JobId} : offerte à {Count} coursier(s), vague {Round}, rayon {Radius} km.",
             job.Id, matched.Count, job.CurrentRound, policy.RadiusKm);
 
+        // Mesuré PAR VAGUE : c'est le nombre de tours qu'il faut en moyenne pour qu'une
+        // course parte qui dira si le rayon initial de trois kilomètres est le bon.
+        _metrics.OffersSent(matched.Count, job.CurrentRound);
+
         return matched.Count;
     }
 
@@ -175,6 +184,22 @@ public sealed class DeliveryJobService
         }
 
         var now = _clock.GetUtcNow().UtcDateTime;
+
+        // POSITION FRAÎCHE EXIGÉE — voir CourierActionPolicy. Un coursier qui accepte
+        // doit pouvoir aller chercher le colis ; sans position récente, rien ne dit qu'il
+        // est sur la route, et la course serait retirée aux autres pour rien.
+        //
+        // Le coursier est chargé ICI et réutilisé plus bas pour MarkOnDelivery : deux
+        // lectures du même agrégat dans le même scope donneraient la même instance
+        // suivie, mais l'écrire une fois évite d'avoir à s'en souvenir.
+        var courier = await _couriers.GetByIdAsync(courierId, cancellationToken);
+
+        var allowed = CourierActionPolicy.Check(courier, now);
+        if (allowed.IsFailure)
+        {
+            return allowed;
+        }
+
         var losers = job.Offers
             .Where(o => o.CourierId != courierId && o.Status == DispatchOfferStatus.Pending)
             .Select(o => o.CourierId)
@@ -186,10 +211,10 @@ public sealed class DeliveryJobService
             return accepted;
         }
 
-        var courier = await _couriers.GetByIdAsync(courierId, cancellationToken);
-        courier?.MarkOnDelivery();
+        courier!.MarkOnDelivery();
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _metrics.JobAccepted();
 
         // Retirer l'offre des autres téléphones tout de suite : sans cela, ils voient une
         // course qui n'existe plus et essaient de l'accepter pour rien.

@@ -24,10 +24,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # service | projet .csproj | dll d'entrée
 SERVICES="
 api|src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj|Marketplace.Api.dll
-bff-mobile|src/Bff/Marketplace.Bff.Mobile/Marketplace.Bff.Mobile.csproj|Marketplace.Bff.Mobile.dll
-bff-web|src/Bff/Marketplace.Bff.Web/Marketplace.Bff.Web.csproj|Marketplace.Bff.Web.dll
+bff-client|src/Bff/Marketplace.Bff.Client/Marketplace.Bff.Client.csproj|Marketplace.Bff.Client.dll
 bff-seller|src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj|Marketplace.Bff.Seller.dll
 bff-admin|src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj|Marketplace.Bff.Admin.dll
+bff-driver|src/Bff/Marketplace.Bff.Driver/Marketplace.Bff.Driver.csproj|Marketplace.Bff.Driver.dll
+dispatch|Services/HbaExpress.Dispatch/src/HbaExpress.Dispatch.Api/HbaExpress.Dispatch.Api.csproj|HbaExpress.Dispatch.Api.dll
 "
 
 # Un builder buildx dédié (multi-plateforme).
@@ -49,6 +50,6 @@ echo "$SERVICES" | while IFS='|' read -r svc proj dll; do
 done
 
 echo ""
-echo "OK — 5 images poussées : ${IMAGE_PREFIX}/{api,bff-mobile,bff-web,bff-seller,bff-admin}:${IMAGE_TAG}"
+echo "OK — 6 images poussées : ${IMAGE_PREFIX}/{api,bff-client,bff-seller,bff-admin,bff-driver,dispatch}:${IMAGE_TAG}"
 echo "Déploie ensuite sur le serveur (mode pull) :"
 echo "  cd deploy/ansible && ansible-playbook -i inventories/staging/hosts.ini site.yml --tags deploy"

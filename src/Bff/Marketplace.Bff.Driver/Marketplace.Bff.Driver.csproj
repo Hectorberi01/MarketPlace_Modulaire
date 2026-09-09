@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- Ce BFF référence Marketplace.Api (elle-même une app Web) pour composer les
+         modules in-process. Au publish, son appsettings.json entre en collision avec
+         celui du BFF (NETSDK1152). Doublon toléré : les valeurs sensibles sont
+         surchargées par variables d'environnement en conteneur. -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
+  <!--
+    BFF DRIVEUR (coursier). Quatrième surface, découpée par AUDIENCE et non par appareil :
+    elle sert la même API à l'application mobile du coursier et à sa console web.
+
+    ═════════════════════════════════════════════════════════════════════════════
+    CE BFF NE PILOTE AUCUNE COURSE, ET C'EST LA DÉCISION STRUCTURANTE.
+
+    Les courses, les offres, les positions et le hub temps réel appartiennent au service
+    de dispatch, déployé à part (docs/CDC_Service_Livraison_Coursier.md). L'application
+    coursier s'y adresse DIRECTEMENT.
+
+    On aurait pu relayer : une seule adresse côté application, c'est tentant. Mais un
+    relais recopie chaque route ajoutée au dispatch, et se proxifie mal sur un hub
+    WebSocket — deux coûts permanents pour un confort de configuration qu'on paie une fois.
+
+    Ici vit ce que la MARKETPLACE sait du coursier : son compte, ce qu'il a gagné, et ses
+    demandes de retrait. C'est aussi ce qui rend la console web légitime — elle n'a
+    aucune raison de faire rouler qui que ce soit.
+    ═════════════════════════════════════════════════════════════════════════════
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Bootstrap\Marketplace.Api\Marketplace.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+  </ItemGroup>
+
+</Project>

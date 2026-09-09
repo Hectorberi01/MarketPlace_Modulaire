@@ -25,10 +25,12 @@ namespace HbaExpress.Dispatch.Api.BackgroundJobs;
 ///    C'est le message sur lequel brancher une alerte, au même titre que les lettres
 ///    mortes de l'outbox du monolithe.
 ///
-/// UN SEUL EXÉCUTANT. La requête ne pose pas de verrou « FOR UPDATE SKIP LOCKED » : deux
-/// drains enverraient les mêmes messages. Le doublon est inoffensif — la marketplace ne
-/// paie qu'une fois par identifiant de course — mais l'interrupteur ci-dessous existe
-/// pour le jour où le service sera répliqué.
+/// PLUSIEURS EXÉCUTANTS SONT TOLÉRÉS ICI, CONTRAIREMENT AUX DEUX AUTRES BALAYAGES.
+/// La requête ne pose délibérément pas de verrou de ligne : deux drains enverraient les
+/// mêmes messages, et la marketplace ne paie qu'une fois par identifiant de course. Le
+/// verrou coûterait une transaction ouverte pendant les appels HTTP du lot — voir
+/// IOutboundMessageRepository.ListPendingAsync, où le raisonnement est écrit en entier.
+/// L'interrupteur ci-dessous reste utile pour concentrer les envois sur une instance.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed class OutboundDrainService : BackgroundService
@@ -115,6 +117,7 @@ public sealed class OutboundDrainService : BackgroundService
         var marketplace = scope.ServiceProvider.GetRequiredService<IMarketplaceClient>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IDispatchUnitOfWork>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+        var metrics = scope.ServiceProvider.GetRequiredService<IDispatchMetrics>();
 
         var now = clock.GetUtcNow().UtcDateTime;
         var pending = await messages.ListPendingAsync(now, batchSize, cancellationToken);
@@ -134,9 +137,15 @@ public sealed class OutboundDrainService : BackgroundService
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 message.MarkFailed(ex.Message, clock.GetUtcNow().UtcDateTime, MaxAttempts, BaseRetryDelay, MaxRetryDelay);
+                metrics.OutboundSendFailed(message.Type);
 
                 if (message.DeadLetteredAtUtc is not null)
                 {
+                    // LE COMPTEUR AVANT LE JOURNAL. C'est lui qui porte l'alerte
+                    // DispatchOutboundDeadLetter : le journal explique, le compteur
+                    // réveille.
+                    metrics.OutboundDeadLettered(message.Type);
+
                     _logger.LogError(
                         ex,
                         "MESSAGE SORTANT ABANDONNÉ après {Attempts} tentatives — type {Type}, message {MessageId}. "

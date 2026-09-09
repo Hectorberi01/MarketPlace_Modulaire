@@ -17,38 +17,26 @@ http:
       service: api
       middlewares: [edge-chain]
 
-    # --- BFF Mobile ---
-    mobile-host:
-      rule: "Host(`mobile.localhost`)"
+    # --- BFF Client (acheteur : mobile ET site) ---
+    client-host:
+      rule: "Host(`client.localhost`)"
       entryPoints: [web]
-      service: mobile
+      service: client
       middlewares: [edge-chain]
-    mobile-path:
-      rule: "Host(`localhost`) && PathPrefix(`/mobile`)"
+    client-path:
+      rule: "Host(`localhost`) && PathPrefix(`/client`)"
       entryPoints: [web]
-      service: mobile
+      service: client
       middlewares: [edge-chain]
     # Accès depuis un appareil physique (téléphone) via l'IP LAN de l'hôte :
-    # aucune règle d'hôte ne matche l'IP, donc on route le préfixe /mobile
-    # quel que soit l'hôte. /mobile est exclusif au BFF Mobile : pas de conflit.
-    mobile-lan:
-      rule: "PathPrefix(`/mobile`)"
+    # aucune règle d'hôte ne matche l'IP, donc on route le préfixe /client
+    # quel que soit l'hôte. /client est exclusif au BFF Client : pas de conflit.
+    client-lan:
+      rule: "PathPrefix(`/client`)"
       entryPoints: [web]
-      service: mobile
+      service: client
       middlewares: [edge-chain]
       priority: 1
-
-    # --- BFF Web ---
-    web-host:
-      rule: "Host(`web.localhost`)"
-      entryPoints: [web]
-      service: web
-      middlewares: [edge-chain]
-    web-path:
-      rule: "Host(`localhost`) && PathPrefix(`/web`)"
-      entryPoints: [web]
-      service: web
-      middlewares: [edge-chain]
 
     # --- BFF Vendeur ---
     seller-host:
@@ -74,19 +62,79 @@ http:
       service: admin
       middlewares: [edge-chain]
 
+    # --- BFF Driveur ---
+    # Compte et portefeuille du coursier. Les COURSES ne passent pas par ici : elles
+    # vont au service de dispatch, routé juste en dessous.
+    driver-host:
+      rule: "Host(`driver.localhost`)"
+      entryPoints: [web]
+      service: driver
+      middlewares: [edge-chain]
+    driver-path:
+      rule: "Host(`localhost`) && PathPrefix(`/driver`)"
+      entryPoints: [web]
+      service: driver
+      middlewares: [edge-chain]
+    # Depuis un téléphone sur le réseau local : aucune règle d'hôte ne matche une IP.
+    driver-lan:
+      rule: "PathPrefix(`/driver`)"
+      entryPoints: [web]
+      service: driver
+      middlewares: [edge-chain]
+      priority: 1
+
+    # --- Service de dispatch (application coursier) ---
+    #
+    # ═════════════════════════════════════════════════════════════════════════
+    # SEUL /api/courier EST ROUTÉ. /internal NE L'EST PAS, ET NE DOIT JAMAIS L'ÊTRE.
+    #
+    # Les routes /internal créent des courses, en annulent, et décident du droit de
+    # travailler d'un coursier. Leur authentification est une SIGNATURE, pas un jeton :
+    # elles sont anonymes au sens ASP.NET. Fermées par défaut, oui — mais la première
+    # ligne de défense est qu'elles ne soient pas joignables du tout. Seule la
+    # marketplace les appelle, par le réseau interne.
+    #
+    # L'ABSENCE DE ROUTE EST LE CONTRÔLE. Ajouter ici un `PathPrefix(`/internal`)`
+    # « pour tester » ouvrirait la création de courses à Internet.
+    #
+    # `/hubs/courier` est publié avec `/api/courier` : c'est le canal temps réel de la
+    # même application mobile. Traefik relaie l'Upgrade WebSocket sans configuration
+    # particulière.
+    # ═════════════════════════════════════════════════════════════════════════
+    #
+    # PRIORITÉ EXPLICITE : `/api/courier` est plus spécifique que le `/api` du
+    # monolithe. Traefik départage par longueur de règle, ce qui donnerait déjà le bon
+    # résultat — mais dépendre d'un calcul implicite pour savoir quel service reçoit les
+    # appels des coursiers serait fragile. On l'écrit.
+    dispatch-courier-host:
+      rule: "Host(`dispatch.localhost`) && (PathPrefix(`/api/courier`) || PathPrefix(`/hubs/courier`))"
+      entryPoints: [web]
+      service: dispatch
+      middlewares: [edge-chain]
+      priority: 100
+    dispatch-courier-path:
+      rule: "Host(`localhost`) && (PathPrefix(`/api/courier`) || PathPrefix(`/hubs/courier`))"
+      entryPoints: [web]
+      service: dispatch
+      middlewares: [edge-chain]
+      priority: 100
+    # Depuis un téléphone sur le réseau local : aucune règle d'hôte ne matche une IP.
+    dispatch-courier-lan:
+      rule: "(PathPrefix(`/api/courier`) || PathPrefix(`/hubs/courier`))"
+      entryPoints: [web]
+      service: dispatch
+      middlewares: [edge-chain]
+      priority: 50
+
   services:
     api:
       loadBalancer:
         servers:
           - url: "http://api:8080"
-    mobile:
+    client:
       loadBalancer:
         servers:
-          - url: "http://bff-mobile:8080"
-    web:
-      loadBalancer:
-        servers:
-          - url: "http://bff-web:8080"
+          - url: "http://bff-client:8080"
     seller:
       loadBalancer:
         servers:
@@ -95,3 +143,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://bff-admin:8080"
+    driver:
+      loadBalancer:
+        servers:
+          - url: "http://bff-driver:8080"
+    dispatch:
+      loadBalancer:
+        servers:
+          - url: "http://dispatch:8080"
