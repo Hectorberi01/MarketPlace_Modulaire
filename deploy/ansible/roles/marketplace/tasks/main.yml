@@ -88,13 +88,83 @@
     - registry_username is defined
     - registry_token is defined
 
-- name: Récupérer les images depuis le registry
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEUX PULLS, DEUX NIVEAUX D'EXIGENCE.
+#
+# Un `pull` global tirait aussi `console` et `seller-console`, construites par un
+# AUTRE dépôt. Une seule de ces deux images manquante — « failed to resolve
+# reference » — et les six images backend, pourtant publiées, ne se déployaient
+# pas. Voir registry_pull_required / registry_pull_optional dans defaults/main.yml.
+#
+# `postgres` n'est nommé nulle part À DESSEIN : il porte `profiles: [local-db]` et
+# c'est COMPOSE_PROFILES, dans .env.{{ target_env }}, qui décide de son existence.
+# Le nommer ici l'activerait de force et ressusciterait la base locale le jour de
+# la bascule vers le VPS base.
+# ═══════════════════════════════════════════════════════════════════════════════
+- name: Récupérer les images de ce dépôt (échec bloquant)
   ansible.builtin.command:
-    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} pull"
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      pull {{ registry_pull_required | join(' ') }}
     chdir: "{{ app_dir }}"
   register: compose_pull
   changed_when: true
   when: use_registry | default(false)
+
+- name: Récupérer les images des consoles (dépôt séparé, échec toléré)
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      pull {{ registry_pull_optional | join(' ') }}
+    chdir: "{{ app_dir }}"
+  register: compose_pull_optional
+  changed_when: true
+  failed_when: false
+  when:
+    - use_registry | default(false)
+    - registry_pull_optional | length > 0
+
+# Une image de console peut être absente du registry ET absente du disque : la
+# nommer dans le `up` ferait échouer le démarrage de TOUTE la pile. On construit
+# donc la liste des services réellement démarrables. `config --services` respecte
+# COMPOSE_PROFILES, donc `postgres` y figure exactement quand il doit y figurer.
+- name: Déterminer les services démarrables (consoles absentes exclues)
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      COMPOSE="docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}"
+      OPTIONNELS="{{ registry_pull_optional | join(' ') }}"
+      DEMARRABLES=""
+      for svc in $($COMPOSE config --services); do
+        case " $OPTIONNELS " in
+          *" $svc "*)
+            image=$($COMPOSE config --format json 2>/dev/null \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)['services']['$svc'].get('image',''))" || echo "")
+            if [ -n "$image" ] && ! docker image inspect "$image" >/dev/null 2>&1; then
+              echo "IMAGE ABSENTE, SERVICE IGNORE : $svc ($image)" >&2
+              continue
+            fi
+            ;;
+        esac
+        DEMARRABLES="$DEMARRABLES $svc"
+      done
+      echo $DEMARRABLES
+    chdir: "{{ app_dir }}"
+  register: compose_services_demarrables
+  changed_when: false
+  when: use_registry | default(false)
+
+- name: Signaler les consoles non déployées
+  ansible.builtin.debug:
+    msg: >-
+      Consoles non déployées (image ni dans le registry ni sur l'hôte) :
+      {{ registry_pull_optional | difference((compose_services_demarrables.stdout | default('')).split()) | join(', ') }}.
+      Publier ces images depuis leur dépôt, puis relancer ce playbook.
+  when:
+    - use_registry | default(false)
+    - registry_pull_optional | difference((compose_services_demarrables.stdout | default('')).split()) | length > 0
 
 # --- MODE BUILD (défaut) : compilation SÉQUENTIELLE sur l'hôte (RAM) ---
 - name: Construire les images (séquentiel)
@@ -110,9 +180,16 @@
     - compose_build | default(true)
     - not (use_registry | default(false))
 
+# `--remove-orphans` ne retire QUE les conteneurs dont le service a disparu du
+# fichier compose. Les services présents mais non nommés ici — une console dont
+# l'image n'a pas encore été publiée — restent en place, ils ne sont pas arrêtés.
 - name: Démarrer la stack (docker compose up, sans build)
   ansible.builtin.command:
-    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} up -d --no-build --remove-orphans"
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      up -d --no-build --remove-orphans
+      {{ compose_services_demarrables.stdout | default('') if (use_registry | default(false)) else '' }}
     chdir: "{{ app_dir }}"
   register: compose_up
   changed_when: true

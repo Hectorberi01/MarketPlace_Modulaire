@@ -7,3 +7,35 @@ compose_file: docker-compose.yml
 skip_sync: false
 # Reconstruire les images au déploiement.
 compose_build: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# QUELLES IMAGES CE DÉPÔT A-T-IL LE DROIT D'EXIGER ?
+#
+# `docker compose pull` sans argument tire TOUS les services du fichier compose.
+# Or `console` et `seller-console` sont deux applications Next.js construites par
+# un AUTRE dépôt : deploy/build-and-push.sh n'en pousse aucune des deux. Le pull
+# global échouait donc sur « failed to resolve reference » et prenait en otage le
+# déploiement des six images backend, pourtant parfaitement publiées.
+#
+# La réponse n'est PAS `--ignore-pull-failures` : elle rendrait tolérable l'absence
+# de l'image `api` elle-même, et la pile redémarrerait en silence sur l'ancienne.
+# Deux listes, deux niveaux d'exigence :
+#   - registry_pull_required : absence = déploiement en échec.
+#   - registry_pull_optional : absence = avertissement, on continue.
+#
+# Le jour où les consoles seront publiées par la CI de ce dépôt, il suffira de les
+# déplacer d'une liste à l'autre.
+# ═══════════════════════════════════════════════════════════════════════════════
+registry_pull_required:
+  - traefik
+  - redis
+  - rembg
+  - api
+  - bff-client
+  - bff-seller
+  - bff-admin
+  - bff-driver
+  - dispatch
+registry_pull_optional:
+  - console
+  - seller-console
