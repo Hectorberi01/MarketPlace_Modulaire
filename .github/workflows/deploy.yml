@@ -219,6 +219,20 @@ jobs:
           # monitoring,portainer,webterminal,dbadmin : stacks annexes (gated par
           #   enable_* dans group_vars ; sans ces tags, leurs rôles sont sautés
           #   même si enable_*=true).
+          # --limit : LE VPS BASE N'EST PAS ENCORE DANS LE PÉRIMÈTRE DE LA CI.
+          #
+          # L'inventaire de production déclare désormais deux groupes,
+          # `marketplace` et `database`. Le second n'a pas la clé de déploiement de
+          # la CI dans ses authorized_keys : sans cette limite, chaque exécution
+          # se termine par « unreachable=1 » sur prod-db-1 et un code de sortie non
+          # nul, alors que le déploiement applicatif s'est bien passé.
+          #
+          # Le VPS base se pilote pour l'instant depuis un poste, avec
+          #   ansible-playbook -i inventories/prod/hosts.ini site.yml --limit database
+          # Retirer cette ligne le jour où la clé de la CI y sera posée — et pas
+          # avant, sinon on troque une erreur franche contre un déploiement rouge
+          # que plus personne ne regardera.
           ansible-playbook -i "inventories/${ENV_NAME}/hosts.ini" site.yml \
+            --limit marketplace \
             --tags docker,setup,security,deploy,monitoring,portainer,webterminal,dbadmin \
             --vault-password-file "$RUNNER_TEMP/vault.pass"
