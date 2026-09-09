@@ -88,6 +88,19 @@ public sealed class WalletMutations
     /// <summary>Rémunération d'une course livrée, référencée par l'identifiant de la course.</summary>
     public const string CourierDeliveryReferenceType = "courier_delivery";
 
+    /// <summary>
+    /// Part d'un remboursement DIRECT rendue en cagnotte plutôt qu'en espèces.
+    ///
+    /// Une quatrième référence, et non la réutilisation de « return_refund » : celle-là
+    /// appartient au flux « retour », et son verrou d'idempotence est indexé sur un
+    /// identifiant de demande de retour. Les mélanger ferait qu'un rejeu de l'un
+    /// bloquerait l'autre, exactement comme pour la contre-passation vendeur.
+    ///
+    /// Distincte aussi de « refund », sur laquelle porte l'index unique partiel des
+    /// contre-passations : y verser des crédits client rendrait cet index faux.
+    /// </summary>
+    public const string DirectRefundWalletReferenceType = "direct_refund_wallet";
+
     /// <summary>Une écriture existe-t-elle déjà pour cette référence ? (verrou de rejeu)</summary>
     public Task<bool> HasLedgerEntryAsync(string referenceType, Guid referenceId, CancellationToken ct)
         => _ledger.ExistsForReferenceAsync(referenceType, referenceId, ct);
@@ -262,6 +275,31 @@ public sealed class WalletMutations
     /// </summary>
     public Task<bool> CustomerAlreadyRefundedAsync(Guid returnRequestId, CancellationToken ct)
         => _ledger.ExistsForReferenceAsync(ReturnRefundReferenceType, returnRequestId, ct);
+
+    /// <summary>
+    /// Crédite la cagnotte d'un client de la part d'un remboursement DIRECT qui ne peut
+    /// pas sortir en espèces.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI CETTE PART EXISTE.
+    ///
+    /// Une commande réglée pour partie avec la cagnotte n'a fait entrer en caisse que
+    /// `AmountDue`. Rendre l'intégralité du total en Mobile Money ferait sortir en
+    /// espèces une somme dont une partie n'y est jamais entrée : ce n'est pas une
+    /// perte — la cagnotte dépensée était déjà une dette de la plateforme — mais c'est
+    /// une conversion de dette en trésorerie, décidée par un administrateur, à laquelle
+    /// s'ajoutent les frais de versement du prestataire.
+    ///
+    /// Chaque part repart donc par où elle est venue : espèces pour ce qui a été
+    /// encaissé, cagnotte pour ce qui avait été réglé en cagnotte. Le client peut
+    /// toujours retirer cette part — mais quand il le décide, et non parce qu'un
+    /// remboursement a forcé la sortie.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public Task CreditCustomerFromDirectRefundAsync(
+        Guid customerId, decimal amount, string currency, Guid legId, CancellationToken ct)
+        => CreditAsync(WalletOwnerType.Customer, customerId, WalletAccount.Available, amount, currency,
+            "direct_refund_wallet", DirectRefundWalletReferenceType, legId, ct);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Coursier

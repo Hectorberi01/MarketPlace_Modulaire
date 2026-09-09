@@ -18,6 +18,14 @@ public sealed class FakeSettlementModuleApi : ISettlementModuleApi
 
     public ConcurrentBag<(Guid OrderId, decimal Amount)> Reserved { get; } = new();
     public ConcurrentBag<(Guid OrderId, decimal Amount)> Confirmed { get; } = new();
+
+    /// <summary>
+    /// Le Saga de commande n'appelle jamais cette lecture — elle sert au plafond commun
+    /// des deux circuits de remboursement, qui n'existe qu'après la vente. Zéro est donc
+    /// la réponse juste ici, et non un bouchon paresseux.
+    /// </summary>
+    public Task<decimal> SumDirectRefundsForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => Task.FromResult(0m);
     public ConcurrentBag<(Guid OrderId, decimal Amount)> Released { get; } = new();
 
     public Task<decimal> GetSpendableCreditAsync(Guid customerId, CancellationToken cancellationToken = default)

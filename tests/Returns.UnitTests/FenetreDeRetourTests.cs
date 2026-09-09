@@ -95,6 +95,35 @@ public class FenetreDeRetourTests
         resultat.Error.Code.Should().Be("returns.order_not_eligible");
     }
 
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// UNE LIGNE INTÉGRALEMENT REMBOURSÉE NE SE REMBOURSE PAS UNE SECONDE FOIS.
+    ///
+    /// `ExistsOpenAsync` interdit un second retour OUVERT — et exclut délibérément
+    /// l'état « remboursé ». Une fois le versement fait, la ligne repartait donc avec
+    /// son plafond d'origine, autant de fois qu'on ouvrait de retours. L'index
+    /// (OrderId, OfferId) n'est pas unique : rien ne bornait le cumul.
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public async Task Une_ligne_deja_integralement_remboursee_ne_peut_plus_etre_retournee()
+    {
+        var resultat = await OuvrirAsync(EtatCommande("Confirmed"), dejaRembourseSurLaLigne: 10_000m);
+
+        resultat.IsFailure.Should().BeTrue();
+        resultat.Error.Code.Should().Be("returns.line_fully_refunded");
+    }
+
+    [Fact]
+    public async Task Un_remboursement_partiel_laisse_le_reste_retournable()
+    {
+        // 10 000 sur la ligne, 4 000 déjà rendus : le nouveau retour part avec 6 000 de
+        // plafond, pas 10 000.
+        var resultat = await OuvrirAsync(EtatCommande("Confirmed"), dejaRembourseSurLaLigne: 4_000m);
+
+        resultat.IsSuccess.Should().BeTrue();
+    }
+
     // ── Montage ─────────────────────────────────────────────────────────────────
 
     private static OrderSummary EtatCommande(string statut, TimeSpan? livreeIlYA = null)
@@ -109,10 +138,12 @@ public class FenetreDeRetourTests
             },
             DeliveredAtUtc: livreeIlYA is { } age ? DateTime.UtcNow - age : null);
 
-    private static async Task<Marketplace.BuildingBlocks.Domain.Results.Result<Guid>> OuvrirAsync(OrderSummary order)
+    private static async Task<Marketplace.BuildingBlocks.Domain.Results.Result<Guid>> OuvrirAsync(
+        OrderSummary order, decimal dejaRembourseSurLaLigne = 0m)
     {
         var handler = new RequestReturnCommandHandler(
-            new DepotFactice(), new OrderingFactice(order), new PolitiqueDeSeptJours(), new UnitOfWorkFactice());
+            new DepotFactice { DejaRembourseSurLaLigne = dejaRembourseSurLaLigne },
+            new OrderingFactice(order), new PolitiqueDeSeptJours(), new UnitOfWorkFactice());
 
         return await handler.Handle(
             new RequestReturnCommand(Acheteur, Commande, Offre, nameof(ReturnReason.Defective)), default);
@@ -151,6 +182,17 @@ public class FenetreDeRetourTests
 
         public Task<bool> ExistsOpenAsync(Guid orderId, Guid offerId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+
+        /// <summary>Ce qui a déjà été remboursé sur la ligne. Zéro sauf test contraire.</summary>
+        public decimal DejaRembourseSurLaLigne { get; init; }
+
+        public Task<decimal> SumCommittedRefundsForLineAsync(
+            Guid orderId, Guid offerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(DejaRembourseSurLaLigne);
+
+        public Task<decimal> SumCommittedRefundsForOrderAsync(
+            Guid orderId, CancellationToken cancellationToken = default)
+            => Task.FromResult(DejaRembourseSurLaLigne);
 
         public Task<ReturnRequest?> GetByIdAsync(ReturnRequestId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

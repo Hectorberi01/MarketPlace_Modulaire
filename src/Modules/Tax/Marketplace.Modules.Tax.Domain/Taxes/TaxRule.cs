@@ -72,6 +72,34 @@ public sealed class TaxRule : AggregateRoot<TaxRuleId>
     public decimal ComputeTax(decimal amount)
         => Type == TaxType.Exempt ? 0m : decimal.Round(amount * Rate, 2);
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA TAXE CONTENUE DANS UN MONTANT TOUTES TAXES COMPRISES.
+    ///
+    /// L'INVERSE de <see cref="ComputeTax"/>, et non une variante. La place applique
+    /// le régime « TVA comprise » : le prix saisi par le vendeur est le prix payé par
+    /// l'acheteur. La taxe ne s'AJOUTE donc pas au total, elle s'y trouve déjà — il
+    /// s'agit de l'en extraire pour la comptabilité et la facture.
+    ///
+    ///     TTC = HT × (1 + taux)   donc   TVA = TTC × taux / (1 + taux)
+    ///
+    /// LA CONFUSION À NE PAS FAIRE. Appliquer <c>TTC × taux</c> — le réflexe — donne
+    /// un montant trop élevé : à 18 %, 11 800 F donneraient 2 124 F au lieu de
+    /// 1 800 F, soit 324 F de TVA déclarée en trop sur chaque commande. C'est
+    /// précisément parce que les deux formules se ressemblent que ce sont deux
+    /// méthodes nommées, et pas un paramètre booléen.
+    ///
+    /// Arrondi à deux décimales, une seule fois, comme partout ailleurs dans le
+    /// calcul monétaire de la place. Le HT est déduit par SOUSTRACTION chez
+    /// l'appelant, jamais recalculé : c'est ce qui garantit que HT + TVA redonne
+    /// exactement le TTC, sans centime perdu à l'arrondi.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal ExtractIncludedTax(decimal grossAmount)
+        => Type == TaxType.Exempt || Rate == 0m
+            ? 0m
+            : decimal.Round(grossAmount * Rate / (1m + Rate), 2);
+
     public bool IsApplicableAt(DateTime nowUtc) => IsActive && EffectiveFromUtc <= nowUtc;
 
     public void Deactivate() => IsActive = false;

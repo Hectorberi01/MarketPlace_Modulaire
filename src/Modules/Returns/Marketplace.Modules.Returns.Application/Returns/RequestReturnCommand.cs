@@ -138,9 +138,36 @@ internal sealed class RequestReturnCommandHandler : ICommandHandler<RequestRetur
             return Result.Failure<Guid>(Error.Conflict("returns.already_open", "Un retour est déjà ouvert pour cette ligne."));
         }
 
-        // `LineTotal` devient le plafond du futur remboursement, figé au prix payé.
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE PLAFOND EST CE QUI RESTE SUR LA LIGNE, PAS SON TOTAL.
+        //
+        // `LineTotal` était pris tel quel à chaque nouveau retour. Or `ExistsOpenAsync`
+        // n'exclut, à dessein, que les états terminaux : une fois le remboursement
+        // VERSÉ, la ligne redevenait libre — avec son plafond d'origine. On pouvait donc
+        // ouvrir un retour, se faire rembourser, en rouvrir un, recommencer. L'index
+        // `(OrderId, OfferId)` n'est pas unique, et rien ne bornait le cumul.
+        //
+        // Le cas EN COURS avait été fermé avec soin, et son commentaire le raconte. Le
+        // cas CUMULÉ ne l'avait pas été : c'est le second ordre qui manquait, pas la
+        // vigilance.
+        //
+        // ZÉRO RESTANT N'EST PAS UNE ERREUR DE L'ACHETEUR, c'est une ligne déjà
+        // intégralement rendue — d'où un conflit, pas une validation.
+        // ═════════════════════════════════════════════════════════════════════════
+        var alreadyRefundedOnLine = await _repository.SumCommittedRefundsForLineAsync(
+            command.OrderId, command.OfferId, cancellationToken);
+
+        var refundableOnLine = line.LineTotal - alreadyRefundedOnLine;
+        if (refundableOnLine <= 0m)
+        {
+            return Result.Failure<Guid>(Error.Conflict(
+                "returns.line_fully_refunded",
+                "Cette ligne a déjà été intégralement remboursée."));
+        }
+
+        // Le RESTANT devient le plafond du futur remboursement, figé au prix payé.
         var result = ReturnRequest.Create(
-            order.Id, command.OfferId, command.BuyerId, line.SellerId, reason, order.Currency, line.LineTotal);
+            order.Id, command.OfferId, command.BuyerId, line.SellerId, reason, order.Currency, refundableOnLine);
         if (result.IsFailure)
         {
             return Result.Failure<Guid>(result.Error);

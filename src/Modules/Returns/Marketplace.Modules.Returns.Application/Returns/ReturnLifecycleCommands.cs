@@ -1,6 +1,8 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Returns.Application.Abstractions;
+using Marketplace.Modules.Ordering.Contracts;
+using Marketplace.Modules.Settlement.Contracts;
 using Marketplace.Modules.Returns.Domain.Returns;
 
 namespace Marketplace.Modules.Returns.Application.Returns;
@@ -91,12 +93,84 @@ internal sealed class MarkReturnReceivedCommandHandler : ReturnMutationHandlerBa
     public Task<Result> Handle(MarkReturnReceivedCommand c, CancellationToken ct) => MutateAsync(c.ReturnRequestId, r => r.MarkReceived(), ct);
 }
 
-internal sealed class ApproveReturnRefundCommandHandler : ReturnMutationHandlerBase, ICommandHandler<ApproveReturnRefundCommand>
+/// <summary>
+/// Valide le remboursement d'un retour, sous le PLAFOND COMMUN aux deux circuits.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// CE HANDLER N'UTILISE PAS `MutateAsync`, ET C'EST NÉCESSAIRE.
+///
+/// Le contrôle à poser n'est pas local au retour : il faut connaître le total de la
+/// commande, et ce que l'AUTRE circuit — le remboursement direct en Mobile Money — a
+/// déjà versé dessus. Deux lectures inter-modules, donc, avant de muter.
+///
+/// L'agrégat garde son propre plafond, celui de la ligne. Les deux se cumulent : la
+/// ligne borne ce que ce retour peut rendre, la commande borne ce que TOUS les
+/// remboursements réunis peuvent rendre. Aucun des deux ne remplace l'autre — sans le
+/// premier on rembourserait une ligne à 1 000 pour 9 000 sur une commande à 10 000 ;
+/// sans le second, dix lignes intégralement rendues plus un versement direct feraient
+/// le double du total.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+internal sealed class ApproveReturnRefundCommandHandler : ICommandHandler<ApproveReturnRefundCommand>
 {
-    public ApproveReturnRefundCommandHandler(IReturnRequestRepository r, IReturnsUnitOfWork u) : base(r, u) { }
+    private readonly IReturnRequestRepository _repository;
+    private readonly IOrderingModuleApi _orders;
+    private readonly ISettlementModuleApi _settlement;
+    private readonly IReturnsUnitOfWork _unitOfWork;
 
-    public Task<Result> Handle(ApproveReturnRefundCommand c, CancellationToken ct)
-        => MutateAsync(c.ReturnRequestId, r => r.ApproveRefund(c.Amount), ct);
+    public ApproveReturnRefundCommandHandler(
+        IReturnRequestRepository repository,
+        IOrderingModuleApi orders,
+        ISettlementModuleApi settlement,
+        IReturnsUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _orders = orders;
+        _settlement = settlement;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> Handle(ApproveReturnRefundCommand c, CancellationToken ct)
+    {
+        var request = await _repository.GetByIdAsync(new ReturnRequestId(c.ReturnRequestId), ct);
+        if (request is null)
+        {
+            return Result.Failure(Error.NotFound("returns.not_found", "Demande de retour introuvable."));
+        }
+
+        var order = await _orders.GetOrderAsync(request.OrderId, ct);
+        if (order is null)
+        {
+            // La commande a disparu sous le retour : on ne peut plus borner quoi que ce
+            // soit. Refuser est le seul choix sûr — un plafond qu'on ne sait pas calculer
+            // ne doit jamais valoir « pas de plafond ».
+            return Result.Failure(Error.NotFound("returns.order.not_found", "Commande introuvable."));
+        }
+
+        // Ce que les DEUX circuits ont déjà engagé sur cette commande. Le retour courant
+        // n'est pas encore compté : il n'est pas en `RefundPending`, c'est précisément ce
+        // qu'on s'apprête à décider.
+        var byReturns = await _repository.SumCommittedRefundsForOrderAsync(request.OrderId, ct);
+        var byDirect = await _settlement.SumDirectRefundsForOrderAsync(request.OrderId, ct);
+
+        var remainingOnOrder = order.GrandTotal - byReturns - byDirect;
+        if (c.Amount > remainingOnOrder)
+        {
+            return Result.Failure(Error.Validation(
+                "returns.amount_exceeds_order",
+                $"Le remboursement dépasse ce qui reste remboursable sur la commande "
+                + $"({remainingOnOrder:0.##} {order.Currency}), remboursements directs compris."));
+        }
+
+        var result = request.ApproveRefund(c.Amount);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Success();
+    }
 }
 
 internal sealed class ConfirmReturnRefundCommandHandler : ReturnMutationHandlerBase, ICommandHandler<ConfirmReturnRefundCommand>

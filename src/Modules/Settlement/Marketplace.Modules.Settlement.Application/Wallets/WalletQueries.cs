@@ -48,7 +48,8 @@ internal static class WalletMapper
 
     public static CustomerRefundView ToView(CustomerRefund r)
         => new(r.Id.Value, r.OrderId, r.BuyerId, r.Amount, r.Currency, r.Reason, r.Msisdn, r.Provider,
-               r.Status.ToString(), r.ProviderRef, PresentableFailure(r.FailureReason), r.CreatedAtUtc, r.CompletedAtUtc);
+               r.Status.ToString(), r.ProviderRef, PresentableFailure(r.FailureReason), r.CreatedAtUtc, r.CompletedAtUtc,
+               r.Channel.ToString());
 
     public static WalletTransactionView ToView(WalletTransaction t)
         => new(t.Id, t.Account.ToString(), t.Direction.ToString(), t.Amount, t.Currency, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAtUtc);

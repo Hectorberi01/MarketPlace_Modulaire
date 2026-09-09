@@ -5,6 +5,7 @@ using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Shipping.Application.Abstractions;
 using Marketplace.Modules.Shipping.Domain.Carriers;
 using Marketplace.Modules.Shipping.Domain.Shipments;
+using Marketplace.Modules.Shipping.Domain.Zones;
 
 namespace Marketplace.Modules.Shipping.Infrastructure.Persistence;
 
@@ -23,6 +24,9 @@ public sealed class ShippingDbContext : ModuleDbContext, IShippingUnitOfWork
 
     public DbSet<Shipment> Shipments => Set<Shipment>();
     public DbSet<Carrier> Carriers => Set<Carrier>();
+
+    /// <summary>Grille tarifaire par zone géographique. Lue à chaque devis de livraison.</summary>
+    public DbSet<ShippingZone> ShippingZones => Set<ShippingZone>();
 
     protected override string Schema => SchemaName;
 

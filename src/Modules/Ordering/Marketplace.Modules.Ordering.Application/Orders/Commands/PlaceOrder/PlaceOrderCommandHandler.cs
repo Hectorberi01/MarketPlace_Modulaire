@@ -1,10 +1,12 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Inventory.Contracts;
 using Marketplace.Modules.Ordering.Application.Abstractions;
 using Marketplace.Modules.Ordering.Domain.Orders;
 using Marketplace.Modules.Settlement.Contracts;
+using Marketplace.Modules.Tax.Contracts;
 
 namespace Marketplace.Modules.Ordering.Application.Orders.Commands.PlaceOrder;
 
@@ -19,6 +21,7 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
     private readonly ICartModuleApi _cartModuleApi;
     private readonly IInventoryModuleApi _inventoryModuleApi;
     private readonly ISettlementModuleApi _settlementModuleApi;
+    private readonly ITaxModuleApi _taxModuleApi;
     private readonly IOrderRepository _orderRepository;
     private readonly IOrderingUnitOfWork _unitOfWork;
 
@@ -26,12 +29,14 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         ICartModuleApi cartModuleApi,
         IInventoryModuleApi inventoryModuleApi,
         ISettlementModuleApi settlementModuleApi,
+        ITaxModuleApi taxModuleApi,
         IOrderRepository orderRepository,
         IOrderingUnitOfWork unitOfWork)
     {
         _cartModuleApi = cartModuleApi;
         _inventoryModuleApi = inventoryModuleApi;
         _settlementModuleApi = settlementModuleApi;
+        _taxModuleApi = taxModuleApi;
         _orderRepository = orderRepository;
         _unitOfWork = unitOfWork;
     }
@@ -96,6 +101,68 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         // Fige les frais de livraison (forfait choisi) : entrent dans le total et
         // alimenteront le solde « frais de livraison » de la plateforme.
         order.SetShippingFee(command.ShippingFee);
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE PRIX ANNONCÉ EST-IL TOUJOURS LE PRIX DÛ ? ICI, ET NULLE PART AILLEURS.
+        //
+        // Le contrôle est posé APRÈS `SetShippingFee` — qui déclenche le recalcul des
+        // totaux — et AVANT `AddAsync` : c'est le seul point du parcours où le total
+        // définitif existe et où rien n'a encore été écrit. Le placer plus tôt
+        // comparerait un total incomplet ; plus tard obligerait à défaire une commande
+        // enregistrée, avec ses réservations de stock et sa cagnotte engagée.
+        //
+        // Le refuser dans le BFF, avant d'envoyer la commande, aurait laissé une fenêtre :
+        // le panier y est valorisé une fois pour le contrôle, puis une SECONDE fois ici.
+        // Deux valorisations, deux résultats possibles — c'est exactement le défaut qu'on
+        // corrige, reproduit en plus petit. Un seul calcul doit servir de référence, et
+        // c'est celui qui devient la commande.
+        //
+        // ÉGALITÉ STRICTE. Les deux montants viennent de `Money.Create`, arrondi une fois
+        // à deux décimales, puis d'additions de valeurs déjà arrondies : une tolérance
+        // n'aurait rien à absorber, et masquerait un vrai écart de centimes le jour où
+        // l'un des deux chemins change.
+        //
+        // CONFLIT, PAS VALIDATION : la requête est bien formée, c'est le monde qui a
+        // bougé entre l'écran et le bouton. Le montant réel est dans le message pour que
+        // l'application le réaffiche au lieu de renvoyer l'acheteur au panier.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (command.ExpectedTotal is { } expected && order.GrandTotal != expected)
+        {
+            return Result.Failure<Guid>(Error.Conflict(
+                "ordering.total_changed",
+                $"Le montant a changé depuis l'affichage : {order.GrandTotal:0.##} {order.Currency} "
+                + $"au lieu de {expected:0.##} {order.Currency}. Vérifiez votre panier avant de payer."));
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // VENTILATION DE LA TAXE — APRÈS le contrôle de total, et pour cause.
+        //
+        // Le régime est « TVA comprise » : cet appel ne change AUCUN montant. Il note
+        // quelle part du total déjà arrêté est de la taxe, pour la comptabilité et la
+        // facture. Le placer après le contrôle garantit qu'un refus n'aura interrogé
+        // le module Tax pour rien, et surtout que la ventilation ne peut jamais
+        // devenir une raison de faire varier `GrandTotal` : à cet endroit du code, le
+        // total est déjà validé contre celui que l'acheteur a vu.
+        //
+        // CATÉGORIE ABSENTE, ET C'EST ASSUMÉ. `OrderLine` ne porte pas la catégorie du
+        // produit : la résoudre exigerait un aller-retour au catalogue par ligne, au
+        // milieu du chemin critique de la commande. On passe donc `Guid.Empty`, ce qui
+        // ne fait correspondre que les règles de JURIDICTION — le comportement voulu
+        // tant que la place applique un taux unique. Le jour où une catégorie devra
+        // être taxée à part, c'est `OrderLine` qui devra porter sa catégorie, figée
+        // comme le reste ; la ventilation deviendra alors ligne à ligne.
+        //
+        // UNE RÈGLE FISCALE MANQUANTE N'EST PAS UNE ERREUR. Le module renvoie une taxe
+        // nulle, et la commande passe. Une place qui démarre sans barème enregistré
+        // doit vendre ; c'est la déclaration qui attendra, pas l'acheteur.
+        // ═════════════════════════════════════════════════════════════════════════
+        var tax = await _taxModuleApi.ExtractIncludedTaxAsync(
+            order.ShipToCountryCode ?? BeninGeography.CountryCode,
+            Guid.Empty,
+            order.GrandTotal,
+            cancellationToken);
+
+        order.ApplyIncludedTax(tax.TaxAmount, tax.Rate, tax.AppliedRuleId);
 
         await _orderRepository.AddAsync(order, cancellationToken);
 

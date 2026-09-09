@@ -16,6 +16,7 @@ using Marketplace.Modules.Shipping.Contracts;
 using Marketplace.Modules.Shipping.Domain.Carriers;
 using Marketplace.Modules.Shipping.Domain.Shipments;
 using Marketplace.Modules.Shipping.Domain.Shipments.Events;
+using Marketplace.Modules.Shipping.Domain.Zones;
 using Marketplace.Modules.Shipping.Infrastructure.Persistence;
 using Marketplace.Modules.Shipping.Infrastructure.Public;
 
@@ -41,6 +42,10 @@ public sealed class ShippingModuleInstaller : IModuleInstaller
 
         services.AddScoped<IShipmentRepository, ShipmentRepository>();
         services.AddScoped<ICarrierRepository, CarrierRepository>();
+
+        // Grille tarifaire par zone. Lue à chaque devis de livraison, donc sur le
+        // chemin critique du tunnel de commande.
+        services.AddScoped<IShippingZoneRepository, ShippingZoneRepository>();
         services.AddScoped<IShippingModuleApi, ShippingModuleApi>();
 
         services.AddScoped<IDomainEventHandler<ShipmentShippedDomainEvent>, ShipmentShippedDomainEventHandler>();

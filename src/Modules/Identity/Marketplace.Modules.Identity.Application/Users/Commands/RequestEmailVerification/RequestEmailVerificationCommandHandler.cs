@@ -14,13 +14,6 @@ namespace Marketplace.Modules.Identity.Application.Users.Commands.RequestEmailVe
 /// </summary>
 internal sealed class RequestEmailVerificationCommandHandler : ICommandHandler<RequestEmailVerificationCommand>
 {
-    /// <summary>
-    /// Délai minimal entre deux envois pour un même compte. Assez long pour qu'une
-    /// boucle ne serve à rien, assez court pour qu'un e-mail perdu se redemande sans
-    /// que l'utilisateur ait l'impression que le bouton est cassé.
-    /// </summary>
-    private static readonly TimeSpan ResendCooldown = TimeSpan.FromMinutes(1);
-
     private readonly IUserRepository _userRepository;
     private readonly ISecureTokenGenerator _tokenGenerator;
     private readonly IAuthTokenSettings _tokenSettings;
@@ -72,7 +65,7 @@ internal sealed class RequestEmailVerificationCommandHandler : ICommandHandler<R
         if (user.EmailVerificationExpiresOnUtc is { } currentExpiry)
         {
             var issuedAtUtc = currentExpiry - _tokenSettings.EmailVerificationLifetime;
-            if (now - issuedAtUtc < ResendCooldown)
+            if (now - issuedAtUtc < RequestEmailVerificationCommand.ResendCooldown)
             {
                 return Result.Success();
             }

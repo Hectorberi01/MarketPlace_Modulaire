@@ -144,11 +144,37 @@ public static class ClientAuthEndpoints
             _ = await sender.Send(new RequestEmailVerificationCommand(user.Id), ct);
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE MESSAGE NE DIT PLUS « VIENT D'ÊTRE ENVOYÉ », PARCE QUE C'ÉTAIT PARFOIS FAUX.
+        //
+        // Le délai minimal entre deux envois est armé DÈS LA CRÉATION DU COMPTE :
+        // l'inscription pose déjà une expiration de code, dont on déduit l'instant
+        // d'émission. Le geste le plus naturel qui soit — s'inscrire, ne rien voir
+        // arriver en quinze secondes, taper « Renvoyer » — répondait donc « un nouveau
+        // lien vient d'être envoyé » et n'envoyait rien.
+        //
+        // L'utilisateur n'avait aucun moyen de distinguer ce cas d'un envoi réel. Il en
+        // conclut généralement qu'il s'est trompé d'adresse, et recommence une
+        // inscription. Le délai, lui, est JUSTE : deux e-mails en quinze secondes, c'est
+        // bien deux e-mails de trop. Ce n'est pas la règle qui était fautive, c'est ce
+        // qu'on prétendait avoir fait.
+        //
+        // `retryAfterSeconds` EST CONSTANT, et c'est ce qui le rend utilisable : il ne
+        // dépend ni de l'existence du compte ni de l'état du délai, donc il ne divulgue
+        // rien — et il suffit à l'application pour désactiver son bouton pendant une
+        // minute, ce qui supprime le geste dans le vide au lieu de l'expliquer.
+        //
+        // « CODE » ET NON « LIEN » : l'e-mail porte six chiffres à saisir. Le mot
+        // « lien » envoyait l'utilisateur chercher dans son message quelque chose qui ne
+        // s'y trouve pas.
+        // ═════════════════════════════════════════════════════════════════════════
         return Results.Ok(new
         {
             sent = true,
+            retryAfterSeconds = (int)RequestEmailVerificationCommand.ResendCooldown.TotalSeconds,
             message = "Si un compte existe pour cette adresse et n'est pas encore vérifié, "
-                    + "un nouveau lien vient d'être envoyé."
+                    + "un code à 6 chiffres lui a été envoyé. Pensez à regarder vos courriers "
+                    + "indésirables. Un nouvel envoi est possible après une minute."
         });
     }
 
@@ -202,7 +228,8 @@ public static class ClientAuthEndpoints
     /// code). C'est une décision produit, pas une correction.
     /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    private static async Task<IResult> RegisterAsync(RegisterRequest request, ISender sender, CancellationToken ct)
+    private static async Task<IResult> RegisterAsync(
+        RegisterRequest request, ISender sender, ILoggerFactory loggers, CancellationToken ct)
     {
         var created = await sender.Send(new RegisterUserCommand(
             request.FirstName, request.LastName, request.Email,
@@ -215,6 +242,44 @@ public static class ClientAuthEndpoints
         if (created.IsFailure && !IsExistingAccountConflict(created.Error.Code))
         {
             return created.Match(_ => Results.Ok());
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // UN NUMÉRO DÉJÀ PRIS BLOQUE DÉFINITIVEMENT, ET C'EST LE PRIX DE L'UNIFORMITÉ.
+        //
+        // Adresse LIBRE mais numéro déjà rattaché à un autre compte — carte SIM
+        // réattribuée, numéro familial, second compte : `RegisterUserCommandHandler`
+        // refuse, AUCUN COMPTE N'EST CRÉÉ, et l'appelant reçoit quand même la réponse
+        // uniforme. Ensuite, tout lui répond « oui » : le renvoi de code ne trouve rien
+        // et dit « envoyé », la connexion dit « identifiants invalides », le mot de passe
+        // oublié dit « envoyé » sans rien envoyer. Quatre routes qui annoncent un succès,
+        // et une personne définitivement bloquée.
+        //
+        // ON NE PEUT PAS LE LUI DIRE : le lui dire, c'est confirmer qu'un compte existe
+        // derrière ce numéro — la même énumération qu'on vient de fermer sur l'adresse,
+        // déplacée d'un identifiant à l'autre.
+        //
+        // ALORS ON LE DIT À QUELQU'UN D'AUTRE. Ce journal est la seule chose qui rende
+        // l'incident résoluble : sans lui, personne dans l'entreprise ne sait qu'il s'est
+        // produit, et l'assistance n'a rien à chercher quand la personne appelle. Le
+        // message d'inscription l'invite précisément à appeler.
+        //
+        // L'ADRESSE ET LE NUMÉRO SONT TOUS DEUX JOURNALISÉS, en connaissance de cause :
+        // ce sont des données personnelles, et c'est aussi le seul couple qui permette de
+        // résoudre le cas. Aucun compte n'existe pour cette adresse — on ne peut donc pas
+        // retrouver le numéro autrement.
+        // ═════════════════════════════════════════════════════════════════════════
+        // `IsFailure` est répété : sur cette surface, le SUCCÈS tombe aussi jusqu'ici.
+        // `Error` vaut alors `Error.None`, donc le test passerait quand même — mais se
+        // reposer là-dessus rendrait le code juste par accident.
+        if (created.IsFailure && created.Error.Code == "identity.user.phone_taken")
+        {
+            loggers.CreateLogger(LoggerCategory).LogWarning(
+                "INSCRIPTION BLOQUÉE SUR NUMÉRO DÉJÀ UTILISÉ. Adresse {Email}, numéro {Phone} : "
+                + "aucun compte n'a été créé, et la réponse est volontairement muette (anti-énumération). "
+                + "Cette personne ne pourra ni s'inscrire, ni se connecter, ni recevoir de code — "
+                + "l'assistance doit trancher à qui appartient le numéro.",
+                request.Email, request.PhoneNumber);
         }
 
         return Results.Ok(new
@@ -237,6 +302,17 @@ public static class ClientAuthEndpoints
     /// </summary>
     private static bool IsExistingAccountConflict(string code)
         => code is "identity.user.email_taken" or "identity.user.phone_taken";
+
+    /// <summary>
+    /// Catégorie de journal des incidents d'inscription de cette surface.
+    ///
+    /// Une CONSTANTE plutôt qu'un `ILogger&lt;T&gt;` : la classe est statique, et une classe
+    /// statique ne peut pas servir d'argument de type générique. On passe donc par la
+    /// fabrique. Le nom est écrit en toutes lettres pour rester filtrable côté
+    /// exploitation même quand la classe sera renommée.
+    /// </summary>
+    private const string LoggerCategory = "Marketplace.Auth.Registration";
+
 
     /// <summary>Connexion : renvoie access + refresh token.</summary>
     /// <summary>

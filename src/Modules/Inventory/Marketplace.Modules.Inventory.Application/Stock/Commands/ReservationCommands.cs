@@ -10,7 +10,32 @@ namespace Marketplace.Modules.Inventory.Application.Stock.Commands;
 // ---- Réservation ----------------------------------------------------------
 
 /// <summary>Réserve du stock d'un SKU sur une localisation pour une commande.</summary>
-public sealed record ReserveStockCommand(string Sku, Guid LocationId, Guid OrderId, int Quantity, int ExpiresInMinutes = 15) : ICommand;
+/// <param name="ExpiresInMinutes">
+/// Durée d'immobilisation du stock. SIX HEURES, ALIGNÉES SUR LE BALAYEUR DES COMMANDES
+/// ABANDONNÉES — et non plus quinze minutes.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// LES DEUX NOMBRES DOIVENT S'ACCORDER, ET C'EST LE PLUS LONG QUI COMMANDE.
+///
+/// La valeur était de quinze minutes, mais `ExpiresAtUtc` n'était lue par personne : en
+/// pratique le stock restait immobilisé jusqu'à ce que `AbandonedOrderSweeper` annule la
+/// commande, six heures plus tard. Rendre l'expiration effective SANS toucher à la durée
+/// aurait donc libéré le stock au bout de quinze minutes — alors que la plateforme
+/// accepte encore un paiement Mobile Money pendant six heures. Le premier arrivant aurait
+/// pris l'article, et la confirmation du payeur lent aurait fait passer le stock physique
+/// sous zéro : une survente, créée par une correction.
+///
+/// La fenêtre de réservation ne peut pas être plus courte que la fenêtre de paiement. Si
+/// tu veux libérer le stock plus vite, c'est le SEUIL DU BALAYEUR qu'il faut baisser
+/// d'abord, et celui-ci ensuite — jamais l'inverse.
+///
+/// CE QUE CETTE CORRECTION APPORTE MALGRÉ TOUT : l'expiration devient un second filet,
+/// indépendant du balayeur. Avant, une commande que le balayeur ne traitait pas — hôte
+/// arrêté, lot en échec — immobilisait son stock INDÉFINIMENT.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </param>
+public sealed record ReserveStockCommand(
+    string Sku, Guid LocationId, Guid OrderId, int Quantity, int ExpiresInMinutes = 360) : ICommand;
 
 public sealed class ReserveStockCommandValidator : AbstractValidator<ReserveStockCommand>
 {

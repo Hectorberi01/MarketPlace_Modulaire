@@ -126,12 +126,38 @@ public sealed class DisputeResolvedNotificationHandler : IIntegrationEventHandle
             return;
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // CE MESSAGE PROMETTAIT UN VERSEMENT QUE PERSONNE N'EXÉCUTAIT.
+        //
+        // Il disait « vous serez remboursé » et « un remboursement de X vous sera
+        // versé ». Or `DisputeResolvedIntegrationEvent` n'a QU'UN SEUL consommateur dans
+        // tout le dépôt : celui-ci. Settlement n'en a aucun. Zéro franc ne bougeait, et
+        // aucune tâche n'était créée nulle part.
+        //
+        // C'est pire qu'un trou d'argent : c'est un engagement écrit, envoyé par
+        // notification ET par e-mail, sans contrepartie et sans trace pour le support.
+        //
+        // LE LITIGE ARBITRE, IL NE PAIE PAS — c'est le choix retenu. Le remboursement
+        // reste une décision humaine, exécutée par l'un des deux circuits existants
+        // (retour ou versement direct), tous deux sous le plafond commun de la commande.
+        // Le message annonce donc la DÉCISION, et dit qu'on revient vers l'acheteur. Il
+        // ne fixe ni montant ni délai, parce qu'aucun des deux n'est encore engagé.
+        //
+        // La contrepartie est en face : `GET /admin/disputes/refunds-outstanding` liste
+        // ce qui a été accordé et ce qui a réellement été versé. Sans cette route, le
+        // message ci-dessous serait devenu une promesse aussi vide que la précédente,
+        // seulement moins précise.
+        // ═════════════════════════════════════════════════════════════════════════
         var body = e.Resolution.ToLowerInvariant() switch
         {
-            "refundbuyer" => "Votre litige est tranché : vous serez remboursé intégralement.",
+            "refundbuyer" =>
+                "Votre litige est tranché en votre faveur : un remboursement vous est accordé. "
+                + "Notre service client revient vers vous pour les modalités.",
             "partialrefund" => e.RefundAmount is { } amount
-                ? $"Votre litige est tranché : un remboursement de {amount:0.00} vous sera versé."
-                : "Votre litige est tranché : un remboursement partiel vous sera versé.",
+                ? $"Votre litige est tranché : un remboursement partiel de {amount:0.00} vous est accordé. "
+                  + "Notre service client revient vers vous pour les modalités."
+                : "Votre litige est tranché : un remboursement partiel vous est accordé. "
+                  + "Notre service client revient vers vous pour les modalités.",
             "releasetoseller" => "Votre litige est tranché : après examen, la vente est maintenue.",
             _ => "Votre litige a été tranché. Consultez le détail dans l'application.",
         };

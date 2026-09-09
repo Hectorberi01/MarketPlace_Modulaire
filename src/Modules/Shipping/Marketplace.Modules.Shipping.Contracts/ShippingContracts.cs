@@ -37,3 +37,40 @@ public sealed record ShipmentSummary(
     /// </summary>
     string? DeliveryMode,
     IReadOnlyList<ShipmentItemSummary> Items);
+
+/// <summary>
+/// Une option de livraison proposée à l'acheteur pour une destination donnée.
+///
+/// <paramref name="ZoneCode"/> est nul quand l'option vient du FORFAIT DE REPLI codé
+/// en dur — c'est-à-dire quand aucune grille n'est encore enregistrée. Le distinguer
+/// permet à l'administration de voir d'un coup d'œil qu'elle regarde le tarif de
+/// secours et non une zone qu'elle croirait avoir configurée.
+/// </summary>
+public sealed record ShippingRateOption(
+    string ServiceCode,
+    string Label,
+    string Eta,
+    decimal Amount,
+    string Currency,
+    string? ZoneCode,
+    string? ZoneName);
+
+/// <summary>Vue publique d'une zone de livraison et de sa grille.</summary>
+public sealed record ShippingZoneSummary(
+    Guid Id,
+    string Code,
+    string Name,
+    bool IsFallback,
+    bool IsActive,
+    IReadOnlyList<string> CommuneCodes,
+    IReadOnlyList<ShippingRateOption> Rates,
+    DateTime CreatedAtUtc);
+
+/// <summary>
+/// Les communes qu'aucune zone explicite ne couvre. Elles fonctionnent — le repli les
+/// prend — mais au tarif le plus large. L'écran d'administration les affiche pour
+/// qu'une commune ne reste pas au tarif national pendant des mois faute d'y avoir pensé.
+/// </summary>
+public sealed record ShippingCoverageGapView(
+    IReadOnlyList<string> UncoveredCommuneCodes,
+    bool HasActiveFallback);

@@ -58,4 +58,24 @@ public interface ISettlementModuleApi
     /// </summary>
     Task ReleaseCreditAsync(
         Guid customerId, Guid orderId, decimal amount, string currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Somme des remboursements DIRECTS non échoués d'une commande — ceux versés en
+    /// Mobile Money par l'administrateur, à la charge de la plateforme.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LECTURE SEULE, ET C'EST LE PENDANT D'`IReturnsModuleApi`.
+    ///
+    /// Les deux circuits de remboursement — le retour et le versement direct — ne se
+    /// voyaient pas : chacun plafonnait sur ses propres écritures, si bien qu'une même
+    /// commande pouvait être remboursée deux fois en totalité, chaque contrôle passant
+    /// proprement de son côté. Ces deux méthodes symétriques sont ce qui leur donne un
+    /// plafond commun.
+    ///
+    /// « Non échoués » veut dire en cours ET terminés : un versement dont l'issue est
+    /// indéterminée est peut-être parti, et doit donc consommer le plafond. Seul un
+    /// refus définitif du prestataire le libère.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<decimal> SumDirectRefundsForOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 }

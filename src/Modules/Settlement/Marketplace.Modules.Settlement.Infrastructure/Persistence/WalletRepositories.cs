@@ -104,10 +104,23 @@ internal sealed class CustomerRefundRepository : ICustomerRefundRepository
             .Where(r => r.OrderId == orderId && r.Status != CustomerRefundStatus.Failed)
             .SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
 
+    public async Task<decimal> SumActiveCashForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => await _dbContext.CustomerRefunds
+            .Where(r => r.OrderId == orderId
+                        && r.Status != CustomerRefundStatus.Failed
+                        && r.Channel == CustomerRefundChannel.Cash)
+            .SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
+
     // SUIVI activé (pas de AsNoTracking) : la réconciliation mute ces entités.
+    //
+    // Le filtre sur le canal est REDONDANT — une jambe cagnotte naît « Completed » et ne
+    // peut donc pas apparaître ici. Il est explicite quand même : c'est la garantie que
+    // la réconciliation n'ira jamais interroger FedaPay sur un versement qui n'a jamais
+    // existé, y compris si quelqu'un fait un jour repasser une ligne en « Processing ».
     public async Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(CancellationToken cancellationToken = default)
         => await _dbContext.CustomerRefunds
-            .Where(r => r.Status == CustomerRefundStatus.Processing)
+            .Where(r => r.Status == CustomerRefundStatus.Processing
+                        && r.Channel == CustomerRefundChannel.Cash)
             .OrderBy(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 }

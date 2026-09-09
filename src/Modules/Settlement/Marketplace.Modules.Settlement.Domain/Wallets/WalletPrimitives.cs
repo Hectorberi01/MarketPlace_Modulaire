@@ -37,6 +37,35 @@ public enum CustomerRefundStatus
 }
 
 /// <summary>
+/// Par quel canal la somme est rendue au client.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// POURQUOI LES DEUX CANAUX PARTAGENT UNE SEULE TABLE.
+///
+/// Un remboursement direct peut se répartir entre un versement Mobile Money et un
+/// crédit de cagnotte. La tentation est de ne persister que la jambe espèces et de
+/// laisser l'autre vivre dans le grand livre — c'est un piège : le plafond « ne pas
+/// rembourser plus que la valeur de la commande » se calcule en sommant cette table,
+/// et une jambe absente de la table est une jambe que le plafond ne voit pas. Deux
+/// appels successifs rembourseraient alors la commande une fois et demie, chaque
+/// contrôle passant proprement.
+///
+/// Les deux jambes sont donc deux LIGNES, distinguées par ce discriminant. La jambe
+/// cagnotte naît <see cref="CustomerRefundStatus.Completed"/> — il n'y a rien à
+/// attendre d'un prestataire — et la réconciliation, qui ne regarde que les lignes
+/// « en cours », ne la voit jamais.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public enum CustomerRefundChannel
+{
+    /// <summary>Versement Mobile Money : de l'argent sort réellement.</summary>
+    Cash = 0,
+
+    /// <summary>Crédit de cagnotte : la dette change de forme, la trésorerie ne bouge pas.</summary>
+    Wallet = 1
+}
+
+/// <summary>
 /// Les quatre acteurs qui détiennent un portefeuille. Persisté en CHAÎNE (voir la
 /// configuration EF) : ajouter un acteur ne renumérote donc rien et ne demande aucune
 /// reprise de données.

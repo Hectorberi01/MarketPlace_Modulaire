@@ -20,7 +20,7 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
 
     private CustomerRefund(
         CustomerRefundId id, Guid orderId, Guid buyerId, decimal amount, string currency,
-        string reason, string msisdn, string provider)
+        string reason, string msisdn, string provider, CustomerRefundChannel channel)
         : base(id)
     {
         OrderId = orderId;
@@ -30,9 +30,19 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
         Reason = reason;
         Msisdn = msisdn;
         Provider = provider;
-        Status = CustomerRefundStatus.Processing;
+        Channel = channel;
+
+        // La jambe CAGNOTTE est terminée dès sa création : aucun prestataire n'a rien à
+        // confirmer, l'écriture de portefeuille est faite dans la même transaction. La
+        // laisser en « Processing » la ferait entrer dans la file de réconciliation, qui
+        // interrogerait FedaPay sur un versement qui n'existe pas.
+        Status = channel == CustomerRefundChannel.Wallet
+            ? CustomerRefundStatus.Completed
+            : CustomerRefundStatus.Processing;
+
         CreatedAtUtc = DateTime.UtcNow;
-        SentToPspAtUtc = CreatedAtUtc;
+        SentToPspAtUtc = channel == CustomerRefundChannel.Cash ? CreatedAtUtc : null;
+        CompletedAtUtc = channel == CustomerRefundChannel.Wallet ? CreatedAtUtc : null;
     }
 
     public Guid OrderId { get; private set; }
@@ -42,6 +52,10 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
     public string Reason { get; private set; } = default!;
     public string Msisdn { get; private set; } = default!;
     public string Provider { get; private set; } = default!;
+
+    /// <summary>Espèces (versement Mobile Money) ou cagnotte. Voir <see cref="CustomerRefundChannel"/>.</summary>
+    public CustomerRefundChannel Channel { get; private set; }
+
     public CustomerRefundStatus Status { get; private set; }
     public string? ProviderRef { get; private set; }
     public string? FailureReason { get; private set; }
@@ -52,11 +66,25 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
     /// <summary>En cours de versement au PSP, en attente de confirmation (réconciliation).</summary>
     public bool IsProcessing => Status == CustomerRefundStatus.Processing;
 
-    public static CustomerRefund Create(
+    /// <summary>Jambe ESPÈCES : un versement Mobile Money part vers le numéro du client.</summary>
+    public static CustomerRefund CreateCash(
         Guid orderId, Guid buyerId, decimal amount, string currency, string reason, string msisdn, string provider)
         => new(CustomerRefundId.New(), orderId, buyerId, amount,
-            string.IsNullOrWhiteSpace(currency) ? "XOF" : currency.Trim().ToUpperInvariant(),
-            reason.Trim(), msisdn.Trim(), provider.Trim());
+            NormalizeCurrency(currency), reason.Trim(), msisdn.Trim(), provider.Trim(),
+            CustomerRefundChannel.Cash);
+
+    /// <summary>
+    /// Jambe CAGNOTTE : rien ne sort, le client est crédité. Ni numéro ni opérateur —
+    /// les exiger obligerait à inventer une donnée qu'aucune écriture n'utilisera.
+    /// </summary>
+    public static CustomerRefund CreateWallet(
+        Guid orderId, Guid buyerId, decimal amount, string currency, string reason)
+        => new(CustomerRefundId.New(), orderId, buyerId, amount,
+            NormalizeCurrency(currency), reason.Trim(), string.Empty, string.Empty,
+            CustomerRefundChannel.Wallet);
+
+    private static string NormalizeCurrency(string currency)
+        => string.IsNullOrWhiteSpace(currency) ? "XOF" : currency.Trim().ToUpperInvariant();
 
     /// <summary>
     /// Versement DEMANDÉ au PSP (start accepté) ou issue indéterminée : on garde le
@@ -95,8 +123,20 @@ public interface ICustomerRefundRepository
 
     Task<CustomerRefund?> GetByIdAsync(CustomerRefundId id, CancellationToken cancellationToken = default);
 
-    /// <summary>Somme des remboursements NON échoués (Processing + Completed) d'une commande.</summary>
+    /// <summary>
+    /// Somme des remboursements NON échoués (Processing + Completed) d'une commande,
+    /// LES DEUX CANAUX CONFONDUS. C'est le plafond de VALEUR : on ne rembourse jamais
+    /// plus que la commande ne vaut, quel que soit le canal.
+    /// </summary>
     Task<decimal> SumActiveForOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Somme des seules jambes ESPÈCES non échouées. C'est un plafond DIFFÉRENT du
+    /// précédent : il borne ce qui peut encore sortir de la caisse, quand l'autre borne
+    /// la valeur totale rendue. Les confondre ferait ressortir en espèces une part qui
+    /// n'y était jamais entrée.
+    /// </summary>
+    Task<decimal> SumActiveCashForOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     /// <summary>Remboursements clients encore « en cours » (pour la réconciliation).</summary>
     Task<IReadOnlyList<CustomerRefund>> ListProcessingAsync(CancellationToken cancellationToken = default);

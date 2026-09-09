@@ -77,6 +77,38 @@ public sealed class User : AggregateRoot<UserId>
     public DateTime? EmailVerificationExpiresOnUtc { get; private set; }
     public string? PasswordResetTokenHash { get; private set; }
     public DateTime? PasswordResetExpiresOnUtc { get; private set; }
+
+    /// <summary>
+    /// Nombre d'essais INFRUCTUEUS sur le code en cours. Remis à zéro à chaque nouvelle
+    /// émission, et à chaque succès.
+    /// </summary>
+    public int EmailVerificationAttempts { get; private set; }
+
+    /// <summary>Idem pour le code de réinitialisation de mot de passe.</summary>
+    public int PasswordResetAttempts { get; private set; }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// SANS CE PLAFOND, UN CODE À SIX CHIFFRES N'EST PAS UN SECRET.
+    ///
+    /// Les codes de vérification et de réinitialisation vivent dans un espace de 10⁶.
+    /// Un essai raté ne décrémentait rien, ne verrouillait rien, et ne purgeait pas le
+    /// code en attente : on pouvait les essayer tous. Le seul frein était le limiteur
+    /// `auth`, trente requêtes par minute et PAR ADRESSE IP — et `AuthRateLimiter` dit
+    /// lui-même que ça ne protège pas un compte précis d'une attaque lente et
+    /// distribuée, et que la vraie parade est un verrouillage par compte. La voici.
+    ///
+    /// Le code de réinitialisation vit une heure et mène à une prise de contrôle
+    /// complète ; celui de vérification vit QUARANTE-HUIT heures. C'est la conjonction
+    /// — espace étroit, durée longue, essais illimités — qui rendait la chose atteignable,
+    /// pas l'un des trois isolément.
+    ///
+    /// CINQ ESSAIS, PUIS LE CODE MEURT. On purge plutôt que de verrouiller le compte :
+    /// verrouiller offrirait à un attaquant un déni de service sur la victime, alors que
+    /// purger ne lui coûte qu'un nouveau code à demander. La gêne est du bon côté.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private const int MaxCodeAttempts = 5;
     public DateTime CreatedOnUtc { get; private set; }
 
     /// <summary>
@@ -183,17 +215,30 @@ public sealed class User : AggregateRoot<UserId>
     }
 
     /// <summary>
-    /// Confirme l'e-mail à partir du hash du token reçu par lien.
+    /// Confirme l'e-mail à partir du hash du code reçu par e-mail.
     ///
-    /// ⚠️ N'ACTIVE PLUS LE COMPTE. Prouver qu'on relève bien cette boîte aux lettres
-    /// n'est pas la même chose qu'être autorisé à entrer — c'est l'administrateur qui
-    /// décide, via <see cref="Approve"/>.
+    /// N'ACTIVE PAS LE COMPTE ICI. Prouver qu'on relève bien cette boîte aux lettres
+    /// n'est pas la même chose qu'être autorisé à entrer : l'agrégat enregistre le FAIT,
+    /// et la décision d'activer appartient à l'appelant.
     ///
-    /// Cette méthode est aujourd'hui dormante : aucun service d'e-mailing n'est
-    /// branché, donc personne ne reçoit de lien. Elle a néanmoins été corrigée
-    /// maintenant, et non « le jour venu » : si elle avait gardé son `Status = Active`,
-    /// le premier développeur qui câblera un envoi d'e-mails rendrait l'approbation
-    /// administrateur contournable — sans le savoir, et sans que rien ne le signale.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CE COMMENTAIRE DISAIT « c'est l'administrateur qui décide ». CE N'EST PLUS VRAI,
+    /// ET LE CROIRE A COÛTÉ CHER.
+    ///
+    /// `ConfirmEmailCommandHandler` appelle `Approve()` juste après cette méthode : un
+    /// acheteur qui saisit son code s'active lui-même, sans administrateur. La phrase
+    /// décrivait un état du monde antérieur, et elle est restée.
+    ///
+    /// Ce n'est pas une coquette imprécision de documentation. Le même raisonnement
+    /// périmé se lit dans `LoginCommandHandler`, où il justifiait de répondre « votre
+    /// compte est en attente de validation, vous serez prévenu » à un acheteur qui
+    /// n'avait qu'à saisir son code — et qui attendait donc une notification que
+    /// personne n'envoie jamais. Un commentaire faux est une consigne fausse.
+    ///
+    /// Il disait aussi la méthode « dormante, aucun service d'e-mailing branché ». Il
+    /// l'est depuis (voir SendEmailVerificationHandler), et l'e-mail porte un CODE à six
+    /// chiffres, pas un lien.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     public Result ConfirmEmail(string providedTokenHash, DateTime nowUtc)
     {
@@ -214,12 +259,12 @@ public sealed class User : AggregateRoot<UserId>
 
         if (!FixedTimeEquals(EmailVerificationTokenHash, providedTokenHash))
         {
+            RegisterFailedEmailVerificationAttempt();
             return Result.Failure(Error.Validation("identity.user.verification_invalid", "Lien de vérification invalide."));
         }
 
         EmailVerified = true;
-        EmailVerificationTokenHash = null;
-        EmailVerificationExpiresOnUtc = null;
+        ClearEmailVerificationCode();
 
         // Aucune bascule de `Status` ici : voir le commentaire de la méthode.
         // L'e-mail vérifié est un FAIT ; l'activation est une DÉCISION.
@@ -245,6 +290,11 @@ public sealed class User : AggregateRoot<UserId>
 
         EmailVerificationTokenHash = tokenHash;
         EmailVerificationExpiresOnUtc = expiresOnUtc;
+
+        // NOUVEAU CODE, COMPTEUR NEUF. Le conserver ferait qu'un utilisateur ayant tâtonné
+        // sur un code périmé démarrerait le suivant déjà à moitié consommé — et qu'un
+        // attaquant, lui, verrait son quota se reconstituer sans jamais repartir de zéro.
+        EmailVerificationAttempts = 0;
         return Result.Success();
     }
 
@@ -272,12 +322,12 @@ public sealed class User : AggregateRoot<UserId>
 
         if (!FixedTimeEquals(EmailVerificationTokenHash, providedTokenHash))
         {
+            RegisterFailedEmailVerificationAttempt();
             return Result.Failure(Error.Validation("identity.user.verification_invalid", "Code de vérification invalide."));
         }
 
         EmailVerified = true;
-        EmailVerificationTokenHash = null;
-        EmailVerificationExpiresOnUtc = null;
+        ClearEmailVerificationCode();
 
         Raise(new UserEmailConfirmedDomainEvent(Id.Value, Email.Value));
         return Result.Success();
@@ -311,8 +361,7 @@ public sealed class User : AggregateRoot<UserId>
 
         EmailVerified = true;
         EmailVerifiedByAdminOnUtc = nowUtc;
-        EmailVerificationTokenHash = null;
-        EmailVerificationExpiresOnUtc = null;
+        ClearEmailVerificationCode();
 
         Raise(new UserEmailConfirmedDomainEvent(Id.Value, Email.Value));
         return Result.Success();
@@ -362,6 +411,7 @@ public sealed class User : AggregateRoot<UserId>
 
         PasswordResetTokenHash = tokenHash;
         PasswordResetExpiresOnUtc = expiresOnUtc;
+        PasswordResetAttempts = 0;
         return Result.Success();
     }
 
@@ -380,6 +430,7 @@ public sealed class User : AggregateRoot<UserId>
 
         if (!FixedTimeEquals(PasswordResetTokenHash, providedTokenHash))
         {
+            RegisterFailedPasswordResetAttempt();
             return Result.Failure(Error.Validation("identity.user.reset_invalid", "Lien de réinitialisation invalide."));
         }
 
@@ -389,12 +440,61 @@ public sealed class User : AggregateRoot<UserId>
         }
 
         PasswordHash = newPasswordHash;
-        PasswordResetTokenHash = null;
-        PasswordResetExpiresOnUtc = null;
+        ClearPasswordResetCode();
         RegenerateSecurityStamp();
         RevokeAllRefreshTokens();
         Raise(new UserPasswordChangedDomainEvent(Id.Value));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Un essai de plus sur le code de vérification. Au-delà du plafond, le code est
+    /// PURGÉ : il devient inutilisable, et l'utilisateur doit en redemander un.
+    ///
+    /// Les états « aucun code en attente » et « code expiré » n'incrémentent RIEN, et la
+    /// distinction est celle du sens : on ne compte que les tentatives de DEVINER un code
+    /// qui existe. Compter les autres reviendrait à brûler le quota d'un utilisateur
+    /// simplement lent, et à laisser un attaquant l'épuiser à distance sans jamais rien
+    /// tenter.
+    /// </summary>
+    private void RegisterFailedEmailVerificationAttempt()
+    {
+        EmailVerificationAttempts++;
+        if (EmailVerificationAttempts >= MaxCodeAttempts)
+        {
+            ClearEmailVerificationCode();
+        }
+    }
+
+    private void RegisterFailedPasswordResetAttempt()
+    {
+        PasswordResetAttempts++;
+        if (PasswordResetAttempts >= MaxCodeAttempts)
+        {
+            ClearPasswordResetCode();
+        }
+    }
+
+    /// <summary>
+    /// Purge le code de vérification ET son compteur, ensemble.
+    ///
+    /// Les trois champs ne doivent jamais être remis à zéro séparément : un compteur
+    /// oublié derrière un code purgé condamnerait le code SUIVANT à mourir au premier
+    /// essai. C'est le genre d'oubli qu'on ne voit qu'en production, sur un utilisateur
+    /// qui n'y arrive plus sans que rien ne l'explique.
+    /// </summary>
+    private void ClearEmailVerificationCode()
+    {
+        EmailVerificationTokenHash = null;
+        EmailVerificationExpiresOnUtc = null;
+        EmailVerificationAttempts = 0;
+    }
+
+    private void ClearPasswordResetCode()
+    {
+        PasswordResetTokenHash = null;
+        PasswordResetExpiresOnUtc = null;
+        PasswordResetAttempts = 0;
     }
 
     public Result AssignRole(Guid roleId)
@@ -427,7 +527,7 @@ public sealed class User : AggregateRoot<UserId>
     /// <summary>
     /// Approbation par un administrateur : le compte peut désormais se connecter.
     ///
-    /// ⚠️ Cette méthode ne touche PAS <see cref="EmailVerified"/>, et c'est
+    /// Cette méthode ne touche PAS <see cref="EmailVerified"/>, et c'est
     /// délibéré. Un administrateur qui valide un compte ne prouve pas que l'adresse
     /// e-mail appartient bien à cette personne — il atteste que le compte est
     /// légitime, ce qui n'est pas la même chose. Écrire `EmailVerified = true` ici
@@ -509,10 +609,10 @@ public sealed class User : AggregateRoot<UserId>
     /// CE QUI RESTE : l'identifiant technique et la date de création — le strict
     /// nécessaire pour que les commandes passées restent rattachables à « un » acheteur.
     ///
-    /// ⚠️ IRRÉVERSIBLE, et sans retour possible : les données d'origine n'existent plus.
+    /// IRRÉVERSIBLE, et sans retour possible : les données d'origine n'existent plus.
     /// Aucune méthode ne fait sortir de l'état Deleted, et c'est délibéré.
     ///
-    /// ⚠️ L'E-MAIL ANONYME EST DÉRIVÉ DE L'IDENTIFIANT, car la colonne est UNIQUE. Deux
+    /// L'E-MAIL ANONYME EST DÉRIVÉ DE L'IDENTIFIANT, car la colonne est UNIQUE. Deux
     /// suppressions ne doivent pas entrer en collision. Le téléphone, lui, est identique
     /// pour tous les comptes supprimés : son index unique est FILTRÉ pour les exclure
     /// (voir UserConfiguration). Sans ce filtre, la deuxième suppression échouerait —
@@ -561,10 +661,8 @@ public sealed class User : AggregateRoot<UserId>
         MfaSecret = null;
 
         EmailVerified = false;
-        EmailVerificationTokenHash = null;
-        EmailVerificationExpiresOnUtc = null;
-        PasswordResetTokenHash = null;
-        PasswordResetExpiresOnUtc = null;
+        ClearEmailVerificationCode();
+        ClearPasswordResetCode();
         EmailVerifiedByAdminOnUtc = null;
 
         Status = UserStatus.Deleted;
@@ -574,7 +672,7 @@ public sealed class User : AggregateRoot<UserId>
         // être renouvelée, sur aucun appareil.
         RevokeAllRefreshTokens();
 
-        // ⚠️ HONNÊTETÉ SUR CE QUI N'EST PAS FAIT.
+        // HONNÊTETÉ SUR CE QUI N'EST PAS FAIT.
         //
         // Les jetons d'ACCÈS déjà émis restent techniquement valides jusqu'à leur
         // expiration (quelques dizaines de minutes) : ils sont vérifiés par signature,

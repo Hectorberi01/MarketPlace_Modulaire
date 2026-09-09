@@ -67,8 +67,31 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
 
     public IReadOnlyCollection<StockReservation> Reservations => _reservations.AsReadOnly();
 
-    /// <summary>Quantité réservée (somme des réservations en cours).</summary>
-    public int Reserved => _reservations.Sum(r => r.Quantity);
+    /// <summary>
+    /// Quantité réservée — SEULES LES RÉSERVATIONS NON EXPIRÉES COMPTENT.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LES LIGNES EXPIRÉES RESTENT EN BASE, ET C'EST VOLONTAIRE.
+    ///
+    /// Elles ne comptent plus pour la DISPONIBILITÉ — c'est tout l'objet de ce filtre —
+    /// mais elles ne sont pas supprimées pour autant, parce que `ConfirmReservation` en
+    /// a encore besoin : une commande payée doit décrémenter le stock physique même si
+    /// son paiement a mis plus longtemps que prévu. L'expiration gouverne ce qu'on peut
+    /// PROMETTRE à d'autres, pas ce qu'on DOIT à celui qui a payé.
+    ///
+    /// C'est la distinction qui manquait, et c'est aussi pourquoi « filtrer les
+    /// expirées » ne se réduit pas à une ligne : filtrer sans cette précaution aurait
+    /// libéré le stock d'une commande en cours de paiement, l'aurait laissé vendre à un
+    /// autre, et aurait produit une survente au moment de la confirmation.
+    ///
+    /// `DateTime.UtcNow` DANS UN AGRÉGAT, comme ailleurs dans ce dépôt (User, Order,
+    /// Shipment). L'alternative — passer l'heure en paramètre — obligerait chaque lecture
+    /// de disponibilité, y compris les projections, à fournir une horloge ; on aurait
+    /// alors une propriété correcte seulement là où quelqu'un a pensé à la passer, ce qui
+    /// est exactement l'état qu'on corrige.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public int Reserved => _reservations.Where(r => r.IsLiveAt(DateTime.UtcNow)).Sum(r => r.Quantity);
 
     /// <summary>Quantité réellement disponible à la vente.</summary>
     public int Available => OnHand - Reserved;
@@ -130,7 +153,7 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
 
         _reservations.Add(new StockReservation(Guid.NewGuid(), orderId, quantity, expiresAtUtc));
 
-        // ⚠️ INDISPENSABLE. L'ajout ci-dessus est une INSERTION dans une table enfant :
+        // INDISPENSABLE. L'ajout ci-dessus est une INSERTION dans une table enfant :
         // sans Touch(), EF n'émet aucun UPDATE sur inventory_items, la clause
         // `AND xmin = …` n'est jamais évaluée, et deux réservations concurrentes du
         // dernier article passent toutes les deux. C'est la survente.
@@ -154,7 +177,15 @@ public sealed class InventoryItem : AggregateRoot<InventoryItemId>
         return Result.Success();
     }
 
-    /// <summary>Confirme la vente : décrémente le stock physique et solde les réservations.</summary>
+    /// <summary>
+    /// Confirme la vente : décrémente le stock physique et solde les réservations.
+    ///
+    /// L'EXPIRATION N'EST PAS REGARDÉE ICI, DÉLIBÉRÉMENT. La commande est payée : le
+    /// stock physique doit partir, que la réservation ait tenu ou non. Filtrer sur
+    /// l'expiration ferait échouer la confirmation d'un paiement lent — et comme
+    /// `ConfirmOrderPaymentCommandHandler` ignore le résultat, l'échec serait muet : le
+    /// client payé, le stock jamais décrémenté.
+    /// </summary>
     public Result ConfirmReservation(Guid orderId)
     {
         var reserved = _reservations.Where(r => r.OrderId == orderId).Sum(r => r.Quantity);

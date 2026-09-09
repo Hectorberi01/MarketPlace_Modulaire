@@ -219,6 +219,13 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.Property<Guid>("BuyerId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Cash");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -269,6 +276,8 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.HasIndex("OrderId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("OrderId", "Channel");
 
                     b.ToTable("customer_refunds", "settlement");
                 });
@@ -334,6 +343,7 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.ToTable("wallet_accounts", "settlement");
                 });
+
             modelBuilder.Entity("Marketplace.Modules.Settlement.Domain.Wallets.WalletTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -415,10 +425,6 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("ProviderRef")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
@@ -426,6 +432,10 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ProviderRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("SentToPspAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -437,6 +447,12 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.Property<Guid>("WalletId")
                         .HasColumnType("uuid");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 

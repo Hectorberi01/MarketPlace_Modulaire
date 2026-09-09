@@ -131,9 +131,23 @@ internal sealed class CustomerRefundConfiguration : IEntityTypeConfiguration<Cus
         builder.Property(r => r.Amount).HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(r => r.Currency).HasMaxLength(3).IsRequired();
         builder.Property(r => r.Reason).HasMaxLength(500).IsRequired();
+        // Vides et légitimes sur une jambe CAGNOTTE : aucun versement n'a lieu, donc
+        // aucun numéro ni opérateur à retenir. `IsRequired` reste — c'est la chaîne vide
+        // qui est stockée, pas un nul, pour qu'aucun code appelant n'ait à distinguer les
+        // deux formes d'absence.
         builder.Property(r => r.Msisdn).HasMaxLength(30).IsRequired();
         builder.Property(r => r.Provider).HasMaxLength(30).IsRequired();
         builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+
+        // Canal en CHAÎNE, comme les statuts : ajouter un canal ne renumérote rien et ne
+        // demande aucune reprise de données. Défaut « Cash » — toutes les lignes
+        // antérieures étaient des versements Mobile Money, et c'est exactement ce que
+        // cette valeur raconte, pas une donnée manquante.
+        builder.Property(r => r.Channel)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired()
+            .HasDefaultValue(CustomerRefundChannel.Cash);
         builder.Property(r => r.ProviderRef).HasMaxLength(200);
         builder.Property(r => r.FailureReason).HasMaxLength(500);
         builder.Property(r => r.CreatedAtUtc).IsRequired();
@@ -142,6 +156,10 @@ internal sealed class CustomerRefundConfiguration : IEntityTypeConfiguration<Cus
 
         builder.HasIndex(r => r.OrderId);
         builder.HasIndex(r => r.Status);
+
+        // Les deux plafonds interrogent cette table par commande, sur le chemin d'un
+        // remboursement : l'un tous canaux, l'autre espèces seules.
+        builder.HasIndex(r => new { r.OrderId, r.Channel });
 
         builder.Ignore(r => r.DomainEvents);
     }
@@ -176,6 +194,26 @@ internal sealed class WithdrawalConfiguration : IEntityTypeConfiguration<Withdra
         builder.Property(w => w.CompletedAtUtc);
 
         builder.HasIndex(w => new { w.OwnerType, w.OwnerId });
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // VERROU OPTIMISTE. LE PORTEFEUILLE EN AVAIT UN ; LE RETRAIT, NON.
+        //
+        // Et c'est le retrait qui déclenche un virement. Deux administrateurs — ou un
+        // double-clic, ou une requête rejouée — chargeaient la même ligne dans deux
+        // portées, passaient tous deux le contrôle « en attente d'approbation », et
+        // appelaient tous deux FedaPay. Deux virements Mobile Money pour un seul débit.
+        //
+        // Le verrou du PORTEFEUILLE ne protégeait pas : le chemin nominal de
+        // l'approbation ne touche pas au portefeuille, seulement au retrait.
+        //
+        // `xmin` suffit ici — le retrait est une ligne unique, sans enfants — donc pas
+        // besoin du compteur de version que `InventoryItem` doit maintenir à la main.
+        //
+        // `UsePostgresRowVersion` et non `UseXminAsConcurrencyToken` : l'API Npgsql est
+        // dépréciée, et le dépôt compile les avertissements en erreurs. C'est la même
+        // mécanique, par l'extension maison.
+        // ═════════════════════════════════════════════════════════════════════════
+        builder.UsePostgresRowVersion();
 
         builder.Ignore(w => w.DomainEvents);
     }
@@ -220,11 +258,11 @@ internal sealed class WalletTransactionConfiguration : IEntityTypeConfiguration<
         // remboursement. Les lignes de commande, elles, sont légitimement multiples
         // pour une même référence.
         //
-        // ⚠️ REQUIERT UNE MIGRATION :
+        // REQUIERT UNE MIGRATION :
         //    dotnet ef migrations add AddRefundReversalIdempotencyIndex \
         //      -p src/Modules/Settlement/Marketplace.Modules.Settlement.Infrastructure
         // ─────────────────────────────────────────────────────────────────────────
-        // ⚠️ Le nom de colonne du filtre est en PascalCase et entre guillemets doubles :
+        // Le nom de colonne du filtre est en PascalCase et entre guillemets doubles :
         // ce projet n'applique AUCUNE convention snake_case (vérifié dans le
         // ModelSnapshot). Écrire `reference_type` produirait un index invalide, et
         // l'erreur ne surgirait qu'au moment d'appliquer la migration.

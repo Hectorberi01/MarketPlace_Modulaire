@@ -13,6 +13,7 @@ using Marketplace.Modules.Payments.Application.Payments.Commands;
 using Marketplace.Modules.Payments.Application.Payments.Commands.InitiatePayment;
 using Marketplace.Modules.Payments.Application.Payments.Queries;
 using Marketplace.Modules.Settlement.Contracts;
+using Marketplace.Modules.Shipping.Contracts;
 
 namespace Marketplace.Bff.Client.Endpoints;
 
@@ -28,7 +29,9 @@ public static class ClientCheckoutEndpoints
 
         checkout.MapPost("/pay", PayAsync);
 
-        // Options de livraison (flat-rate, sans état) + devis final (sous-total + livraison).
+        // Options de livraison, tarifées par ZONE DE DESTINATION (`?commune=`), et devis
+        // final (sous-total + livraison). Sans commune, c'est le tarif de repli qui
+        // répond — l'acheteur consulte souvent avant d'avoir choisi son adresse.
         checkout.MapGet("/shipping-options", ShippingOptions);
         checkout.MapPost("/shipping-options", ShippingOptions);
         checkout.MapGet("/quote", QuoteAsync);
@@ -151,7 +154,7 @@ public static class ClientCheckoutEndpoints
     /// une table et sa migration seraient disproportionnées, et Redis est déjà une
     /// dépendance obligatoire de la pile. Rétention de 24 h.
     ///
-    /// ⚠️ Ce n'est PAS un verrou : deux requêtes rigoureusement simultanées peuvent
+    /// Ce n'est PAS un verrou : deux requêtes rigoureusement simultanées peuvent
     /// encore passer toutes les deux. Le cas visé est le réessai après échec, qui est
     /// celui qu'on observe. Fermer la fenêtre demanderait un SETNX atomique, donc un
     /// accès direct au multiplexeur Redis.
@@ -162,7 +165,7 @@ public static class ClientCheckoutEndpoints
     /// </summary>
     private static async Task<IResult> PayAsync(
         ClaimsPrincipal user, PayRequest request, HttpContext http,
-        ISender sender, IDistributedCache cache, CancellationToken ct)
+        ISender sender, IDistributedCache cache, IShippingModuleApi shipping, CancellationToken ct)
     {
         if (ClientBff.CurrentUserId(user) is not { } buyerId)
         {
@@ -231,15 +234,68 @@ public static class ClientCheckoutEndpoints
             }
         }
 
-        // Forfait de livraison choisi : on résout son montant côté serveur (jamais
-        // depuis le client) pour le figer sur la commande et alimenter le solde
-        // « frais de livraison » de la plateforme.
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE TARIF VIENT DE LA GRILLE, ET DE LA COMMUNE RÉELLEMENT RETENUE.
+        //
+        // Le montant est résolu côté serveur — jamais depuis le client — et il l'est
+        // pour `shipTo.CommuneCode`, c'est-à-dire l'adresse effectivement figée sur la
+        // commande, pas celle que l'écran croyait afficher. Si l'acheteur a changé
+        // d'adresse entre le devis et le paiement, le prix change ici : c'est
+        // `expectedTotal` qui refusera l'écart, proprement, au lieu de le débiter en
+        // silence.
+        //
+        // Un code de service inconnu retombe sur la PREMIÈRE option de la zone, triée
+        // par montant croissant — donc la moins chère. Choisir la plus chère par
+        // défaut ferait payer un client pour une faute de frappe de son application.
+        // ═════════════════════════════════════════════════════════════════════════
         var shippingCode = (request.ShippingCode ?? "standard").ToLowerInvariant();
-        var rate = Array.Find(_rates, r => r.Code == shippingCode);
-        var shippingFee = rate.Code is null ? _rates[0].Amount : rate.Amount;
+        var options = await shipping.GetRatesForCommuneAsync(shipTo?.CommuneCode, ct);
+        var rate = options.FirstOrDefault(r => r.ServiceCode == shippingCode)
+                   ?? options.FirstOrDefault();
+
+        // Le module s'engage à ne jamais renvoyer de liste vide — les forfaits de
+        // secours répondent toujours. Si l'engagement est rompu, on REFUSE la
+        // commande : facturer zéro de livraison serait offrir le transport à toute la
+        // place sans que rien ne le signale, et prendre un montant arbitraire serait
+        // pire encore.
+        if (rate is null)
+        {
+            return Results.Problem(
+                title: "checkout.shipping_unavailable",
+                detail: "Aucun tarif de livraison n'a pu être déterminé pour cette destination.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var shippingFee = rate.Amount;
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE TOTAL ATTENDU EST OBLIGATOIRE SUR CETTE SURFACE, ET LE REFUS EST EXPLICITE.
+        //
+        // C'est la seule surface où un être humain lit un prix avant d'appuyer sur un
+        // bouton ; c'est donc la seule qui puisse s'engager dessus. Le champ est
+        // `nullable` dans le contrat pour une raison précise : s'il était un `decimal`
+        // non nullable, une application qui ne l'envoie pas encore le verrait
+        // désérialiser à ZÉRO, et chaque paiement échouerait sur un écart de montant
+        // incompréhensible — « attendu 0 ». Nul veut dire « pas envoyé », et se dit
+        // comme tel.
+        //
+        // C'est une rupture de contrat assumée : une application qui n'envoie pas
+        // `expectedTotal` ne peut plus payer. Fermé plutôt qu'ouvert, et bruyant plutôt
+        // que silencieux — l'inverse laisserait la protection s'éroder au premier client
+        // qui oublie le champ.
+        // ═════════════════════════════════════════════════════════════════════════
+        if (request.ExpectedTotal is not { } expectedTotal)
+        {
+            return Results.Problem(
+                title: "checkout.expected_total_required",
+                detail: "Le champ `expectedTotal` est obligatoire : renvoyez le total affiché "
+                      + "par /checkout/quote, afin que le serveur refuse de débiter un montant "
+                      + "différent de celui que l'acheteur a vu.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
 
         var placed = await sender.Send(
-            new PlaceOrderCommand(buyerId, shipTo, shippingFee, request.WalletAmount), ct);
+            new PlaceOrderCommand(buyerId, shipTo, shippingFee, request.WalletAmount, expectedTotal), ct);
         if (placed.IsFailure)
         {
             return placed.Match(_ => Results.Ok()); // mappe l'erreur (panier vide, stock…)
@@ -317,7 +373,7 @@ public static class ClientCheckoutEndpoints
     /// <summary>
     /// Options de sérialisation IDENTIQUES à celles de `Results.Ok`.
     ///
-    /// ⚠️ Indispensable, et facile à manquer. `Results.Ok` sérialise avec les
+    /// Indispensable, et facile à manquer. `Results.Ok` sérialise avec les
     /// conventions web d'ASP.NET — noms de propriétés en camelCase. Un
     /// `JsonSerializer.Serialize` nu, lui, conserve le PascalCase des records du
     /// domaine. La réponse rejouée depuis le cache aurait donc porté des noms de
@@ -355,20 +411,40 @@ public static class ClientCheckoutEndpoints
             : Results.NotFound();
     }
 
-    // Tarifs de livraison (forfaits). À terme : calcul géolocalisé via le module Shipping.
-    private static readonly (string Code, string Label, string Eta, decimal Amount)[] _rates =
+    /// <summary>
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// OPTIONS DE LIVRAISON POUR UNE DESTINATION.
+    ///
+    /// La grille codée en dur qui vivait ici a disparu : elle est descendue dans le
+    /// module Shipping, où elle sert désormais de dernier recours quand aucune zone
+    /// n'est configurée. Ce BFF ne connaît plus aucun prix.
+    ///
+    /// LA COMMUNE EST UN PARAMÈTRE, ET SON ABSENCE EST LÉGITIME. L'acheteur consulte
+    /// souvent les tarifs avant d'avoir choisi son adresse ; il reçoit alors le tarif
+    /// de repli. Le prix qui l'engage est celui du devis fait AVEC son adresse, et
+    /// c'est `expectedTotal` qui scelle l'accord au moment de payer.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    private static async Task<IResult> ShippingOptions(
+        string? commune, IShippingModuleApi shipping, CancellationToken ct)
     {
-        ("standard", "Standard", "Livraison sous 24h à 48h", 1500m),
-        ("express", "Express", "Livraison en moins de 3h", 3000m),
-    };
+        var options = await shipping.GetRatesForCommuneAsync(commune, ct);
 
-    /// <summary>Options de livraison disponibles (forfaits).</summary>
-    private static IResult ShippingOptions()
-        => Results.Ok(_rates.Select(r => new { code = r.Code, label = r.Label, eta = r.Eta, amount = r.Amount, currency = "XOF" }));
+        return Results.Ok(options.Select(r => new
+        {
+            code = r.ServiceCode,
+            label = r.Label,
+            eta = r.Eta,
+            amount = r.Amount,
+            currency = r.Currency,
+            zone = r.ZoneName,
+        }));
+    }
 
     /// <summary>Devis : sous-total du panier + livraison choisie = total à payer.</summary>
     private static async Task<IResult> QuoteAsync(
-        ClaimsPrincipal user, string? shipping, ISender sender, ISettlementModuleApi settlement, CancellationToken ct)
+        ClaimsPrincipal user, string? shipping, string? commune,
+        ISender sender, ISettlementModuleApi settlement, IShippingModuleApi shippingModule, CancellationToken ct)
     {
         if (ClientBff.CurrentUserId(user) is not { } buyerId)
         {
@@ -383,10 +459,22 @@ public static class ClientCheckoutEndpoints
 
         var cart = cartResult.Value;
         var code = (shipping ?? "standard").ToLowerInvariant();
-        var rate = Array.Find(_rates, r => r.Code == code);
-        if (rate.Code is null)
+
+        // MÊME APPEL, MÊME COMMUNE que dans `PayAsync`. Deux résolutions différentes
+        // du même tarif — l'une pour afficher, l'autre pour facturer — étaient
+        // exactement le défaut que `expectedTotal` a été posé pour rattraper ; les
+        // faire converger sur un seul chemin évite d'avoir à le rattraper.
+        var options = await shippingModule.GetRatesForCommuneAsync(commune, ct);
+        var rate = options.FirstOrDefault(r => r.ServiceCode == code) ?? options.FirstOrDefault();
+
+        // Un devis sans tarif disponible ne s'invente pas : mieux vaut le dire que
+        // d'afficher un total que le paiement refusera ensuite.
+        if (rate is null)
         {
-            rate = _rates[0];
+            return Results.Problem(
+                title: "checkout.shipping_unavailable",
+                detail: "Aucun tarif de livraison n'a pu être déterminé pour cette destination.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
         var total = cart.GrandTotal + rate.Amount;
@@ -400,8 +488,8 @@ public static class ClientCheckoutEndpoints
         {
             subtotal = cart.Subtotal,
             discount = cart.TotalSellerDiscount + cart.TotalPlatformDiscount,
-            shipping = new { code = rate.Code, label = rate.Label, eta = rate.Eta, amount = rate.Amount },
-            shippingOptions = _rates.Select(r => new { code = r.Code, label = r.Label, eta = r.Eta, amount = r.Amount }),
+            shipping = new { code = rate.ServiceCode, label = rate.Label, eta = rate.Eta, amount = rate.Amount, zone = rate.ZoneName },
+            shippingOptions = options.Select(r => new { code = r.ServiceCode, label = r.Label, eta = r.Eta, amount = r.Amount }),
             total,
             currency = cart.Currency,
             wallet = new
@@ -471,7 +559,14 @@ public static class ClientCheckoutEndpoints
         // Part que l'acheteur choisit de régler avec sa cagnotte. Zéro par défaut : elle
         // ne se dépense jamais sans qu'il l'ait demandé. Le serveur la plafonne au solde
         // réellement disponible et au total de la commande.
-        decimal WalletAmount = 0m);
+        decimal WalletAmount = 0m,
+        /// <summary>
+        /// Le total renvoyé par `/checkout/quote`, réexpédié tel quel. OBLIGATOIRE —
+        /// nullable seulement pour pouvoir refuser son absence avec un message qui
+        /// l'explique, plutôt que de le voir arriver à zéro et produire un écart de
+        /// montant absurde. Voir PayAsync.
+        /// </summary>
+        decimal? ExpectedTotal = null);
 
     /// <summary>
     /// Reprise de paiement sur une commande existante. Volontairement dépourvu

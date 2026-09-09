@@ -9,6 +9,8 @@ using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Returns.Application.Abstractions;
+using Marketplace.Modules.Returns.Contracts;
+using Marketplace.Modules.Returns.Infrastructure.Public;
 using Marketplace.Modules.Returns.Application.Returns;
 using Marketplace.Modules.Returns.Application.Returns.EventHandlers;
 using Marketplace.Modules.Returns.Domain.Returns;
@@ -37,6 +39,7 @@ public sealed class ReturnsModuleInstaller : IModuleInstaller
         services.AddScoped<IReturnsUnitOfWork>(sp => sp.GetRequiredService<ReturnsDbContext>());
 
         services.AddScoped<IReturnRequestRepository, ReturnRequestRepository>();
+        services.AddScoped<IReturnsModuleApi, ReturnsModuleApi>();
 
         // Règles commerciales du retour (fenêtre après livraison). Singleton : elles ne
         // changent pas d'une requête à l'autre, et un redémarrage est le moment normal

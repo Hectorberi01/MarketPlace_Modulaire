@@ -13,6 +13,9 @@
     <ProjectReference Include="..\..\Pricing\Marketplace.Modules.Pricing.Contracts\Marketplace.Modules.Pricing.Contracts.csproj" />
     <ProjectReference Include="..\..\Payments\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
     <ProjectReference Include="..\..\Shipping\Marketplace.Modules.Shipping.Contracts\Marketplace.Modules.Shipping.Contracts.csproj" />
+    <!-- Regime TVA comprise : la ventilation hors taxe / taxe est figee sur la
+         commande au moment ou elle est passee, sans modifier aucun total. -->
+    <ProjectReference Include="..\..\Tax\Marketplace.Modules.Tax.Contracts\Marketplace.Modules.Tax.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,6 +40,13 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.EmailVerificationTokenHash).HasMaxLength(200);
         builder.Property(u => u.EmailVerificationExpiresOnUtc);
         builder.Property(u => u.PasswordResetTokenHash).HasMaxLength(200);
+
+        // OBLIGATOIRES ET À ZÉRO PAR DÉFAUT — contrairement aux colonnes ajoutées
+        // ailleurs aujourd'hui, où nul signifiait « inconnu ». Ici zéro n'est pas une
+        // approximation : un compte antérieur à ce compteur n'a effectivement aucun essai
+        // raté ENREGISTRÉ, et lui en prêter serait inventer une donnée à sa charge.
+        builder.Property(u => u.EmailVerificationAttempts).HasDefaultValue(0).IsRequired();
+        builder.Property(u => u.PasswordResetAttempts).HasDefaultValue(0).IsRequired();
         builder.Property(u => u.PasswordResetExpiresOnUtc);
         builder.Property(u => u.CreatedOnUtc).IsRequired();
 
@@ -75,7 +82,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // Filtre en SQL brut (PostgreSQL) : le nom de colonne est en PascalCase entre
         // guillemets doubles, et le statut est stocké en CHAÎNE (HasConversion<string>).
         //
-        // ⚠️ REQUIERT UNE MIGRATION :
+        // REQUIERT UNE MIGRATION :
         //    dotnet ef migrations add AddAccountDeletion \
         //      -p src/Modules/Identity/Marketplace.Modules.Identity.Infrastructure
         // ─────────────────────────────────────────────────────────────────────────

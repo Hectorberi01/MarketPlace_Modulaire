@@ -31,5 +31,7 @@ internal static class OrderMapper
             : null,
         order.ShippingFee,
         order.WalletApplied,
-        order.DeliveredAtUtc);
+        order.DeliveredAtUtc,
+        order.TaxTotal,
+        order.TaxRate);
 }

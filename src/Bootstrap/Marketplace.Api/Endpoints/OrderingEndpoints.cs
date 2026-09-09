@@ -2,15 +2,19 @@ using System.Security.Claims;
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Ordering.Application.Orders.Commands;
-using Marketplace.Modules.Ordering.Application.Orders.Commands.PlaceOrder;
 using Marketplace.Modules.Ordering.Application.Orders.Queries;
 
 namespace Marketplace.Api.Endpoints;
 
 /// <summary>
-/// Endpoints HTTP du module Ordering : placement de commande (Saga), suivi et
-/// transitions (paiement, annulation). Le placement fige les prix et réserve le
-/// stock ; la confirmation de paiement solde le stock.
+/// Endpoints HTTP du module Ordering : SUIVI et TRANSITIONS d'une commande
+/// (lecture, annulation, confirmation de paiement, livraison).
+///
+/// LE PLACEMENT N'EST PAS ICI. Il vit dans le BFF Client (`POST /client/checkout/pay`),
+/// seule surface qui dispose de l'adresse retenue, du tarif de la zone et du total
+/// affiché à l'acheteur. Cette documentation affirmait le contraire alors que la route
+/// de placement répondait 400 depuis des semaines — voir le commentaire sur le groupe
+/// de routes.
 /// </summary>
 public static class OrderingEndpoints
 {
@@ -19,7 +23,27 @@ public static class OrderingEndpoints
     {
         var orders = app.MapAuthenticatedGroup("/api/orders").WithTags("Ordering");
 
-        orders.MapPost("/", PlaceAsync).WithName("PlaceOrder");
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE PLACEMENT DE COMMANDE N'EST PLUS ICI. `POST /api/orders` A ÉTÉ SUPPRIMÉ.
+        //
+        // La route existait encore et répondait 400 EN PERMANENCE : elle envoyait
+        // `new PlaceOrderCommand(buyerId)` sans adresse, et depuis que l'adresse de
+        // livraison est un invariant du handler, elle ne pouvait plus rien créer. Sa
+        // documentation continuait pourtant d'affirmer qu'elle fonctionnait.
+        //
+        // POURQUOI SUPPRIMER PLUTÔT QUE RÉPARER.
+        //
+        // Placer une commande demande aujourd'hui trois choses que seule une surface
+        // d'achat possède : l'adresse retenue, le tarif de la zone de destination, et
+        // le total que l'acheteur A VU. Rétablir tout cela ici donnerait DEUX
+        // valorisations concurrentes du même panier — précisément le défaut que le
+        // contrôle `expectedTotal` a été posé pour rattraper, reproduit une couche
+        // plus bas et sans personne pour le voir.
+        //
+        // Le placement vit donc en un seul endroit : `POST /client/checkout/pay`, dans
+        // le BFF Client. Les routes ci-dessous restent : elles LISENT une commande ou
+        // la font TRANSITER, ce qui ne demande aucun prix.
+        // ═════════════════════════════════════════════════════════════════════════
         orders.MapGet("/", ListMineAsync).WithName("ListMyOrders");
         orders.MapGet("/{id:guid}", GetAsync).WithName("GetOrder");
         orders.MapPost("/{id:guid}/cancel", CancelAsync).WithName("CancelOrder");
@@ -33,18 +57,6 @@ public static class OrderingEndpoints
             .WithName("MarkOrderDelivered").RequireAuthorization(p => p.RequireRole("Admin"));
 
         return app;
-    }
-
-    /// <summary>Place une commande à partir du panier actif (déclenche le Saga : réservation de stock).</summary>
-    private static async Task<IResult> PlaceAsync(ClaimsPrincipal principal, ISender sender, CancellationToken ct)
-    {
-        if (CurrentUserId(principal) is not { } buyerId)
-        {
-            return Results.Unauthorized();
-        }
-
-        var result = await sender.Send(new PlaceOrderCommand(buyerId), ct);
-        return result.Match(orderId => Results.Created($"/api/orders/{orderId}", new { orderId }));
     }
 
     /// <summary>Liste les commandes de l'acheteur connecté.</summary>

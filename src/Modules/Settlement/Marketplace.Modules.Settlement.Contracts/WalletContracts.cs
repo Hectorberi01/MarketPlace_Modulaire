@@ -65,7 +65,39 @@ public sealed record CustomerRefundView(
     string? ProviderRef,
     string? FailureReason,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    /// <summary>
+    /// « Cash » (versement Mobile Money) ou « Wallet » (crédit de cagnotte). Sans lui,
+    /// deux lignes d'un même remboursement seraient indiscernables à l'écran, et un
+    /// administrateur croirait qu'un versement a été tenté deux fois.
+    /// </summary>
+    string Channel = "Cash");
+
+/// <summary>
+/// Résultat d'un remboursement direct, RÉPARTI ENTRE SES DEUX CANAUX.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// UN REMBOURSEMENT REPART PAR OÙ IL EST VENU.
+///
+/// Une commande de 13 000 réglée 8 000 en Mobile Money et 5 000 en cagnotte n'a fait
+/// entrer que 8 000 en caisse. La rembourser intégralement en espèces sortirait
+/// 13 000 de trésorerie, frais de versement compris, pour une dette dont 5 000
+/// existaient déjà sous forme de cagnotte. <paramref name="CashAmount"/> est donc
+/// plafonné à ce qui a réellement été encaissé, et <paramref name="WalletAmount"/>
+/// porte le reste.
+///
+/// <paramref name="Cash"/> est NUL quand rien ne sort en espèces — commande
+/// entièrement réglée en cagnotte, ou part espèces déjà remboursée. Aucun payout
+/// n'est alors déclenché, et c'est le cas normal, pas un échec.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record CustomerRefundSplitView(
+    Guid OrderId,
+    decimal TotalAmount,
+    decimal CashAmount,
+    decimal WalletAmount,
+    string Currency,
+    CustomerRefundView? Cash);
 
 /// <summary>Une ligne du grand livre wallet (relevé vendeur / plateforme).</summary>
 public sealed record WalletTransactionView(

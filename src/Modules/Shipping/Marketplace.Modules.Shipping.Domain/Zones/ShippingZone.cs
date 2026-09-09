@@ -43,8 +43,14 @@ public sealed class ShippingZone : AggregateRoot<ShippingZoneId>
     public const int MaxCode = 40;
     public const int MaxName = 120;
 
-    private readonly List<string> _communeCodes = [];
-    private readonly List<ShippingRate> _rates = [];
+    // NON `readonly`, ET C'EST UNE CONTRAINTE DE PERSISTANCE, PAS UN OUBLI.
+    //
+    // Les deux collections sont mappées en « field-only properties » : EF matérialise
+    // une liste et l'AFFECTE au champ, ce qu'un champ en lecture seule interdit. Le
+    // domaine, lui, ne réaffecte jamais ces champs — il les vide et les remplit — donc
+    // la garantie perdue ici est purement décorative, et rien d'autre ne l'exploitait.
+    private List<string> _communeCodes = [];
+    private List<ShippingRate> _rates = [];
 
     private ShippingZone()
     {

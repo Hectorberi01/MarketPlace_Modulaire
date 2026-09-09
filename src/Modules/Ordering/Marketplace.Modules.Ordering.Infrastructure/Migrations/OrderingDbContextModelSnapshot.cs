@@ -94,6 +94,9 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<DateTime?>("DeliveredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("GrandTotal")
                         .HasColumnType("numeric(18,2)");
 
@@ -113,19 +116,19 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
-                    b.Property<double?>("ShipToLatitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("ShipToLongitude")
-                        .HasColumnType("double precision");
-
                     b.Property<string>("ShipToLandmark")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<double?>("ShipToLatitude")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("ShipToLine1")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<double?>("ShipToLongitude")
+                        .HasColumnType("double precision");
 
                     b.Property<string>("ShipToPhone")
                         .HasMaxLength(20)
@@ -152,11 +155,29 @@ namespace Marketplace.Modules.Ordering.Infrastructure.Migrations
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<decimal>("TaxRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(9,5)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<Guid?>("TaxRuleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("TaxTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<decimal>("TotalPlatformDiscount")
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<decimal>("TotalSellerDiscount")
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("WalletApplied")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<uint>("xmin")
                         .IsConcurrencyToken()

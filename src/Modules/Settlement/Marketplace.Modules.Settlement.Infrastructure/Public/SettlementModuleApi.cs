@@ -18,20 +18,26 @@ internal sealed class SettlementModuleApi : ISettlementModuleApi
 {
     private readonly IWalletRepository _wallets;
     private readonly WalletMutations _mutations;
+    private readonly ICustomerRefundRepository _refunds;
     private readonly ISettlementUnitOfWork _unitOfWork;
     private readonly ILogger<SettlementModuleApi> _logger;
 
     public SettlementModuleApi(
         IWalletRepository wallets,
         WalletMutations mutations,
+        ICustomerRefundRepository refunds,
         ISettlementUnitOfWork unitOfWork,
         ILogger<SettlementModuleApi> logger)
     {
         _wallets = wallets;
         _mutations = mutations;
+        _refunds = refunds;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
+
+    public Task<decimal> SumDirectRefundsForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => _refunds.SumActiveForOrderAsync(orderId, cancellationToken);
 
     public async Task<decimal> GetSpendableCreditAsync(Guid customerId, CancellationToken cancellationToken = default)
     {

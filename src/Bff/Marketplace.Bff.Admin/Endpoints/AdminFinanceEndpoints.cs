@@ -130,8 +130,14 @@ public static class AdminFinanceEndpoints
         => (await sender.Send(new MarkPayoutPaidCommand(batchId, payoutId, request.ProviderRef), ct)).Match(() => Results.NoContent());
 
     /// <summary>
-    /// Rembourse un CLIENT sur une commande (hors flux retour) : payout FedaPay MoMo vers
-    /// son numéro, coût débité du portefeuille plateforme. Montant plafonné au total payé.
+    /// Rembourse un CLIENT sur une commande (hors flux retour), CHAQUE PART PAR SON CANAL.
+    ///
+    /// Ce qui a été encaissé en espèces repart en payout FedaPay MoMo ; ce qui avait été
+    /// réglé avec la cagnotte y retourne. La réponse détaille les deux parts — l'écran
+    /// doit les montrer, sinon un administrateur croira que 13 000 sont partis sur le
+    /// téléphone du client alors que 5 000 sont revenus en cagnotte.
+    ///
+    /// `msisdn` et `provider` ne sont requis que s'il y a une part en espèces.
     /// </summary>
     private static async Task<IResult> CustomerRefundAsync(CustomerRefundRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(
@@ -151,7 +157,7 @@ public static class AdminFinanceEndpoints
     /// <summary>
     /// Modifie une règle de commission.
     ///
-    /// ⚠️ `EffectiveFromUtc` est transmis TEL QUEL, sans `?? DateTime.UtcNow`.
+    /// ATTENTION : `EffectiveFromUtc` est transmis TEL QUEL, sans `?? DateTime.UtcNow`.
     ///
     /// À la création, ce repli est légitime : une règle neuve sans date entre en vigueur
     /// tout de suite. À la modification, il était destructeur — il transformait « le client
@@ -196,7 +202,10 @@ public static class AdminFinanceEndpoints
     /// <summary><c>SellerId</c> null = tous les vendeurs de la période.</summary>
     public sealed record RunSettlementRequest(DateTime PeriodStartUtc, DateTime PeriodEndUtc, Guid? SellerId = null);
     public sealed record MarkPaidRequest(string ProviderRef);
-    public sealed record CustomerRefundRequest(Guid OrderId, decimal Amount, string Msisdn, string Provider, string Reason);
+    /// <summary>`Msisdn` et `Provider` peuvent être vides si la commande a été réglée
+    /// entièrement avec la cagnotte : aucun versement n'a alors lieu.</summary>
+    public sealed record CustomerRefundRequest(
+        Guid OrderId, decimal Amount, string Reason, string Msisdn = "", string Provider = "");
     public sealed record CommissionRuleRequest(
         string Scope, Guid? TargetId, decimal Rate, decimal FixedFee, string Currency,
         decimal? MinFee, decimal? MaxFee, DateTime? EffectiveFromUtc);

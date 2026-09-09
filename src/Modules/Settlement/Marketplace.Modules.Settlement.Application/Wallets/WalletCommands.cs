@@ -142,6 +142,37 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
             return await FailAndRefundAsync(withdrawal, "Aucun compte de versement Mobile Money configuré.", cancellationToken);
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // ON RÉCLAME LA LIGNE AVANT D'APPELER LE PRESTATAIRE. L'ORDRE EST TOUT.
+        //
+        // L'appel au PSP se faisait AVANT le moindre `SaveChanges`. Deux administrateurs
+        // — ou un double-clic, ou une requête rejouée — chargeaient la même demande,
+        // passaient tous deux le contrôle « en attente d'approbation », et déclenchaient
+        // tous deux un virement Mobile Money. Deux versements pour un seul débit, et
+        // aucun moyen de les rattraper : l'argent est parti chez l'opérateur.
+        //
+        // Écrire d'abord ferme les deux scénarios avec un seul geste :
+        //
+        //  • SIMULTANÉS — les deux ont lu la ligne « en attente » ; tous deux tentent
+        //    d'écrire « en cours ». Le jeton de concurrence (`xmin`) en fait échouer un,
+        //    AVANT son appel au PSP. Il lève, il ne paie pas.
+        //  • SUCCESSIFS — le second lit la ligne déjà « en cours », `IsPendingApproval`
+        //    est faux, il est refusé à la porte.
+        //
+        // Ni l'un ni l'autre ne marchait quand l'écriture venait après : le verrou ne
+        // servait à rien s'il ne protégeait qu'un état déjà payé.
+        //
+        // CE QUE ÇA COÛTE, ET IL FAUT LE DIRE : si l'appel au PSP échoue par exception —
+        // processus tué, réseau coupé — la demande reste « en cours » SANS référence
+        // prestataire. `ReconcileWithdrawalsCommand` ignore ces lignes-là, faute de
+        // pouvoir interroger FedaPay sans sa référence. Elles sont donc à reprendre à la
+        // main, et `SentToPspAtUtc` — posé ici — est ce qui permet de les repérer par
+        // leur âge. C'est un échange délibéré : un versement immobilisé et visible vaut
+        // mieux qu'un versement envoyé deux fois.
+        // ═════════════════════════════════════════════════════════════════════════
+        withdrawal.MarkProcessing(null, "Approbation en cours : versement demandé au prestataire.");
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
         var outcome = await _payouts.SendMobileMoneyPayoutAsync(
             new PayoutInstructionContract(
                 Amount: withdrawal.Amount,

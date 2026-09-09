@@ -139,12 +139,47 @@ internal sealed class LoginCommandHandler : ICommandHandler<LoginCommand, LoginR
         // contrôle vérifiait donc une valeur que le code venait de poser lui-même
         // trois lignes plus haut.
         //
-        // Désormais un compte naît `PendingVerification` et n'en sort que par
-        // l'approbation d'un administrateur. `EmailVerified` redevient ce qu'il
-        // prétend être : le constat qu'une adresse a été confirmée — aujourd'hui
-        // faux pour tout le monde, et honnêtement faux.
+        // ═════════════════════════════════════════════════════════════════════════
+        // `PendingVerification` A DEUX SENS, ET LES CONFONDRE ENFERMAIT L'ACHETEUR.
+        //
+        // Ce bloc répondait `identity.auth.pending_approval` — « votre compte est en
+        // attente de validation, vous serez prévenu dès qu'il sera activé » — à TOUT
+        // compte en attente. Or il y a deux raisons d'y être :
+        //
+        //   • L'acheteur n'a pas encore saisi son code à six chiffres. C'est le cas
+        //     NORMAL de toute inscription en libre-service, et il se résout tout seul :
+        //     `ConfirmEmailCommandHandler` appelle `Approve()`.
+        //   • Le compte attend réellement un administrateur (comptes créés en
+        //     back-office, selon `Identity:Registration`).
+        //
+        // Le message du second était servi au premier. Un acheteur qui s'inscrit, perd
+        // l'e-mail, réinstalle l'application et revient sur l'écran de connexion se
+        // faisait donc dire d'ATTENDRE UNE NOTIFICATION QUE PERSONNE N'ENVOIE JAMAIS —
+        // alors qu'il lui suffisait de demander un nouveau code. Et l'application ne
+        // pouvait pas l'y router : un 403 `pending_approval` était tout ce qu'elle
+        // recevait.
+        //
+        // Le commentaire ci-dessus a sa part de responsabilité : il affirmait qu'un
+        // compte « n'en sort que par l'approbation d'un administrateur ». C'était vrai
+        // à l'écriture, faux depuis que la confirmation active le compte, et personne
+        // n'est revenu le corriger. On raisonne sur ce qu'on lit.
+        //
+        // DEUX CODES DISTINCTS, DONC. Ils ne divulguent rien de plus : il faut déjà
+        // connaître le mot de passe pour les atteindre — la vérification a lieu
+        // au-dessus — et la surface acheteur, ouverte à tous, aurait de toute façon
+        // confirmé l'existence du compte.
+        // ═════════════════════════════════════════════════════════════════════════
         if (user.Status == UserStatus.PendingVerification)
         {
+            if (!user.EmailVerified)
+            {
+                _security.LoginFailed(Method, "email_not_verified", ClientType);
+                return Result.Failure<LoginResponse>(Error.Forbidden(
+                    "identity.auth.email_not_verified",
+                    "Votre adresse e-mail n'est pas encore confirmée. Saisissez le code reçu par e-mail, "
+                    + "ou demandez-en un nouveau."));
+            }
+
             _security.LoginFailed(Method, "pending_approval", ClientType);
             return Result.Failure<LoginResponse>(Error.Forbidden(
                 "identity.auth.pending_approval",

@@ -83,6 +83,43 @@ public sealed class Order : AggregateRoot<OrderId>
     public decimal GrandTotal { get; private set; }
 
     /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// TAXE CONTENUE DANS <see cref="GrandTotal"/>, ET NON AJOUTÉE À LUI.
+    ///
+    /// La place applique le régime « TVA comprise » : le prix saisi par le vendeur est
+    /// le prix payé par l'acheteur. Cette colonne ne modifie donc AUCUN montant du
+    /// parcours — ni le total affiché, ni le montant encaissé, ni la base de
+    /// commission, ni le plafond de remboursement. Elle DÉCRIT une part de
+    /// <see cref="GrandTotal"/>, pour la comptabilité et la facture.
+    ///
+    /// C'est l'invariant à ne jamais casser : le jour où quelqu'un ajoutera
+    /// <c>TaxTotal</c> à <c>GrandTotal</c> « pour que le total soit juste », toutes les
+    /// commandes existantes deviendront fausses et l'acheteur paiera deux fois la TVA.
+    /// D'où <see cref="NetTotal"/> exposé en propriété calculée plutôt qu'en colonne :
+    /// il n'y a qu'une seule vérité stockée, et c'est le total payé.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal TaxTotal { get; private set; }
+
+    /// <summary>
+    /// Taux retenu au moment de la commande (0.18 = 18 %). FIGÉ, pour la même raison
+    /// que <see cref="OrderLine.CommissionRate"/> : un changement de barème fiscal ne
+    /// doit pas réécrire rétroactivement la ventilation des commandes passées, sinon
+    /// une facture réimprimée ne correspond plus à celle qui a été remise au client.
+    /// Zéro quand aucune règle ne s'applique.
+    /// </summary>
+    public decimal TaxRate { get; private set; }
+
+    /// <summary>
+    /// Règle fiscale appliquée, ou <c>null</c> si aucune. Conservée pour qu'un contrôle
+    /// puisse remonter du montant à la règle qui l'a produit.
+    /// </summary>
+    public Guid? TaxRuleId { get; private set; }
+
+    /// <summary>Part hors taxe du total. Un RESTE, jamais un calcul indépendant.</summary>
+    public decimal NetTotal => GrandTotal - TaxTotal;
+
+    /// <summary>
     /// Part de la commande réglée par la CAGNOTTE de l'acheteur, figée au checkout.
     ///
     /// ═════════════════════════════════════════════════════════════════════════════
@@ -229,6 +266,26 @@ public sealed class Order : AggregateRoot<OrderId>
         return trimmed.Length > max ? trimmed[..max] : trimmed;
     }
 
+    /// <summary>
+    /// Fige la ventilation hors taxe / taxe du total, SANS y toucher.
+    ///
+    /// Appelée APRÈS <see cref="SetShippingFee"/> : la taxe porte sur le total
+    /// effectivement payé, frais de livraison compris — c'est un seul montant TTC aux
+    /// yeux de l'acheteur, et le découper reviendrait à inventer une exonération que
+    /// personne n'a décidée.
+    ///
+    /// Le montant est PLAFONNÉ au total plutôt que refusé : une taxe supérieure au prix
+    /// payé n'a aucun sens, et échouer ici ferait perdre une commande valide pour une
+    /// règle fiscale mal saisie en administration. Le plafond rend l'anomalie visible
+    /// (<see cref="NetTotal"/> à zéro) sans casser le parcours d'achat.
+    /// </summary>
+    public void ApplyIncludedTax(decimal taxTotal, decimal rate, Guid? ruleId)
+    {
+        TaxTotal = taxTotal <= 0m ? 0m : Math.Min(taxTotal, GrandTotal);
+        TaxRate = rate < 0m ? 0m : rate;
+        TaxRuleId = ruleId == Guid.Empty ? null : ruleId;
+    }
+
     /// <summary>Fixe les frais de livraison (forfait choisi) et recalcule le total.</summary>
     public void SetShippingFee(decimal fee)
     {
@@ -242,6 +299,14 @@ public sealed class Order : AggregateRoot<OrderId>
         TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount * l.Quantity);
         TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount * l.Quantity);
         GrandTotal = _lines.Sum(l => l.LineTotal) + ShippingFee;
+
+        // La taxe DÉCRIT une part du total : elle ne peut pas lui être supérieure. Si le
+        // total est recalculé à la baisse après la ventilation, on re-plafonne plutôt
+        // que de laisser un NetTotal négatif traverser la comptabilité en silence.
+        if (TaxTotal > GrandTotal)
+        {
+            TaxTotal = GrandTotal;
+        }
     }
 
     /// <summary>
@@ -353,10 +418,31 @@ public sealed class Order : AggregateRoot<OrderId>
         return Result.Success();
     }
 
-    /// <summary>Annulation (réservations à libérer en compensation).</summary>
+    /// <summary>
+    /// Annulation (réservations à libérer en compensation).
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// `Delivered` MANQUAIT DANS CETTE GARDE, ET LA COMPENSATION SE REJOUAIT À VIDE.
+    ///
+    /// La liste bloquait `Confirmed`, `Cancelled` et `Failed`. Elle avait été écrite
+    /// avant que `Delivered` n'existe, et personne ne l'a rouverte en l'ajoutant à
+    /// l'énumération. Un acheteur pouvait donc annuler sa commande LIVRÉE — et
+    /// `CancelOrderCommandHandler` déroulait alors toute la compensation sur des
+    /// engagements déjà consommés : `ReleaseReservationAsync` sur des réservations
+    /// déjà soldées, ce qui gonfle le stock, et `ReleaseCreditAsync` sur une cagnotte
+    /// déjà dépensée, ce qui rend l'argent une seconde fois.
+    ///
+    /// L'incohérence sautait aux yeux une fois posée à plat : une commande CONFIRMÉE
+    /// n'était pas annulable, mais une commande LIVRÉE l'était. Personne n'aurait écrit
+    /// cette règle volontairement.
+    ///
+    /// LA VOIE DE SORTIE APRÈS LIVRAISON EST LE RETOUR, pas l'annulation — et c'est
+    /// exactement ce que `RequestReturnCommand` accepte désormais.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     public Result Cancel(string reason)
     {
-        if (Status is OrderStatus.Confirmed or OrderStatus.Cancelled or OrderStatus.Failed)
+        if (Status is OrderStatus.Confirmed or OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.Failed)
         {
             return Result.Failure(Error.Conflict("ordering.not_cancellable", "La commande n'est plus annulable."));
         }

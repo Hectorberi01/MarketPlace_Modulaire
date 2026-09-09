@@ -62,8 +62,20 @@ public sealed record OrderSummary(
     /// de la date de commande, donc pénaliser l'acheteur pour la lenteur d'une
     /// livraison qu'il ne contrôle pas.
     /// </summary>
-    DateTime? DeliveredAtUtc = null)
+    DateTime? DeliveredAtUtc = null,
+    /// <summary>
+    /// Taxe CONTENUE dans <paramref name="GrandTotal"/>, jamais ajoutée à lui : régime
+    /// « TVA comprise ». Un consommateur qui additionnerait les deux facturerait la
+    /// taxe une seconde fois. Sert la facture et la comptabilité, pas le calcul du
+    /// montant dû.
+    /// </summary>
+    decimal TaxTotal = 0m,
+    /// <summary>Taux retenu et figé au moment de la commande (0.18 = 18 %).</summary>
+    decimal TaxRate = 0m)
 {
+    /// <summary>Part hors taxe du total. Un reste, comme dans l'agrégat.</summary>
+    public decimal NetTotal => GrandTotal - TaxTotal;
+
     /// <summary>
     /// Montant restant à encaisser. Calculé plutôt que transporté : deux champs qui
     /// doivent s'accorder finissent toujours par diverger, et c'est le genre d'écart

@@ -57,6 +57,18 @@ internal sealed class ConfirmEmailCommandHandler : ICommandHandler<ConfirmEmailC
         var result = user.ConfirmEmail(providedHash, DateTime.UtcNow);
         if (result.IsFailure)
         {
+            // ON SAUVEGARDE MÊME EN ÉCHEC, ET C'EST TOUT L'INTÉRÊT DU COMPTEUR.
+            //
+            // L'agrégat vient peut-être d'incrémenter le nombre d'essais ratés, et de
+            // purger le code au cinquième. Sans cette écriture, le compteur ne survivrait
+            // pas à la requête : il repartirait de zéro à chaque tentative, et le plafond
+            // ne plafonnerait rien. C'est le seul endroit du parcours où un échec doit
+            // laisser une trace en base.
+            //
+            // La réponse, elle, ne change pas d'un iota : même code, même message, même
+            // statut — l'uniformité établie plus haut n'est pas entamée.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             // On REMPLACE l'erreur du domaine plutôt que de la propager : elle est
             // précise, et cette précision servirait ici à l'attaquant plus qu'à
             // l'utilisateur, qui n'a de toute façon qu'une action possible — redemander

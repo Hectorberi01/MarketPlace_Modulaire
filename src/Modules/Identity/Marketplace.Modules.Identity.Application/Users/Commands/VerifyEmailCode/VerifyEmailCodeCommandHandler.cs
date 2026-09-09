@@ -53,6 +53,18 @@ internal sealed class VerifyEmailCodeCommandHandler : ICommandHandler<VerifyEmai
         var result = user.ConsumeEmailVerificationCode(providedHash, DateTime.UtcNow);
         if (result.IsFailure)
         {
+            // ON SAUVEGARDE MÊME EN ÉCHEC, ET C'EST TOUT L'INTÉRÊT DU COMPTEUR.
+            //
+            // L'agrégat vient peut-être d'incrémenter le nombre d'essais ratés, et de
+            // purger le code au cinquième. Sans cette écriture, le compteur ne survivrait
+            // pas à la requête : il repartirait de zéro à chaque tentative, et le plafond
+            // ne plafonnerait rien. C'est le seul endroit du parcours où un échec doit
+            // laisser une trace en base.
+            //
+            // La réponse, elle, ne change pas d'un iota : même code, même message, même
+            // statut — l'uniformité établie plus haut n'est pas entamée.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             // On REMPLACE l'erreur du domaine : sa précision servirait ici l'attaquant
             // plus que l'utilisateur, qui n'a de toute façon qu'une action possible.
             return Result.Failure(InvalidVerification);

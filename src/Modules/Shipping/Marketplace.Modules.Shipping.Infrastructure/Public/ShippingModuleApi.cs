@@ -1,5 +1,6 @@
 using MediatR;
 using Marketplace.Modules.Shipping.Application.Shipments.Queries;
+using Marketplace.Modules.Shipping.Application.Zones;
 using Marketplace.Modules.Shipping.Contracts;
 
 namespace Marketplace.Modules.Shipping.Infrastructure.Public;
@@ -15,5 +16,16 @@ internal sealed class ShippingModuleApi : IShippingModuleApi
     {
         var result = await _sender.Send(new ListShipmentsByOrderQuery(orderId), cancellationToken);
         return result.IsSuccess ? result.Value : Array.Empty<ShipmentSummary>();
+    }
+
+    public async Task<IReadOnlyList<ShippingRateOption>> GetRatesForCommuneAsync(
+        string? communeCode, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new GetShippingRatesQuery(communeCode), cancellationToken);
+
+        // Un échec de lecture ne doit pas se traduire par « aucune livraison
+        // possible » à l'écran : la base est indisponible, pas la livraison. Le
+        // secours prend le relais, exactement comme pour une grille vide.
+        return result.IsSuccess ? result.Value : FallbackRates.Options;
     }
 }

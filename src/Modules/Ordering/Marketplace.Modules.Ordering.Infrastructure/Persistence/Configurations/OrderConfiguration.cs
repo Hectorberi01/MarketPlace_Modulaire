@@ -67,6 +67,25 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ShippingFee).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(o => o.GrandTotal).HasColumnType("numeric(18,2)").IsRequired();
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // VENTILATION DE LA TAXE. Trois colonnes qui DÉCRIVENT le total sans jamais
+        // l'augmenter : régime « TVA comprise ».
+        //
+        // Défaut à zéro sur les deux montants : les commandes antérieures n'ont pas
+        // de ventilation, et zéro raconte exactement cela — aucune taxe identifiée,
+        // pas une donnée perdue. `TaxRuleId` reste nul pour la même raison.
+        //
+        // Le taux tient sur 5 décimales : un taux est une proportion, pas de
+        // l'argent, et 0,18 comme 0,05125 doivent survivre à l'aller-retour en base
+        // sans arrondi. `numeric(18,2)` aurait écrasé tout taux sous le pour-cent.
+        // `NetTotal` n'est PAS stocké : c'est GrandTotal moins TaxTotal, et une
+        // colonne de plus serait une troisième vérité à maintenir cohérente.
+        // ─────────────────────────────────────────────────────────────────────────
+        builder.Property(o => o.TaxTotal).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
+        builder.Property(o => o.TaxRate).HasColumnType("numeric(9,5)").IsRequired().HasDefaultValue(0m);
+        builder.Property(o => o.TaxRuleId);
+        builder.Ignore(o => o.NetTotal);
+
         // Part réglée par la cagnotte. Valeur par défaut 0 : toutes les commandes
         // existantes ont été payées intégralement au prestataire, et c'est ce que
         // zéro raconte exactement — pas une donnée manquante.

@@ -113,6 +113,17 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         if (BackgroundJobs.EnabledOnThisHost)
         {
             services.AddHostedService<Reconciliation.WithdrawalReconciliationService>();
+
+            // CONTRÔLE COMPTABLE PÉRIODIQUE. `ReconcileWalletsQuery` vérifiait déjà
+            // l'invariant « solde = somme des écritures », mais uniquement quand un
+            // administrateur ouvrait l'écran. Une dérive apparue un lundi pouvait donc
+            // n'être vue qu'un mois plus tard, quand les écritures utiles au diagnostic
+            // sont noyées. Le service alerte, il ne corrige pas : corriger un solde
+            // effacerait la trace du bug sans le supprimer.
+            //
+            // Cadence à l'heure, et non les deux minutes du service ci-dessus : ce
+            // contrôle agrège TOUT le grand livre, quand l'autre traite un lot borné.
+            services.AddHostedService<Reconciliation.LedgerIntegrityService>();
         }
 
         // Chorégraphie : alimentation du grand livre des gains à la confirmation de commande.
