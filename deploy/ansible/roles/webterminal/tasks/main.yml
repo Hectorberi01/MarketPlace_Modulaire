@@ -2,7 +2,7 @@
 # Terminal web (wetty → SSH hôte, AUTH PAR CLÉ). Gated par enable_web_terminal +
 # tag webterminal. Exécuté APRÈS le rôle marketplace (réseau Traefik + deploy/).
 #
-# ⚠️ Sécurité : deny-by-default via terminal-guard (IP + auth HTTP), + auth SSH
+# SÉCURITÉ : deny-by-default via terminal-guard (IP + auth HTTP), + auth SSH
 # par CLÉ DÉDIÉE (l'hôte est en key-only). Voir deploy/webterminal/.
 
 - name: Garde-fou — refuser l'activation sans verrous configurés

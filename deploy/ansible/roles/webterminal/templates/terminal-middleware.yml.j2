@@ -1,7 +1,7 @@
 # Généré par Ansible — middleware de garde du terminal web.
 # terminal-guard = liste blanche d'IP + auth HTTP + en-têtes (embarquement iframe).
 #
-# ⚠️ DENY-BY-DEFAULT : si terminal_allowed_ips OU terminal_basic_auth_users est
+# IMPORTANT : DENY-BY-DEFAULT : si terminal_allowed_ips OU terminal_basic_auth_users est
 # vide, Traefik refuse toutes les requêtes. Le terminal reste donc INACCESSIBLE
 # tant que les deux ne sont pas renseignés dans le vault.
 http:

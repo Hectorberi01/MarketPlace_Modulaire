@@ -35,8 +35,26 @@ appsettings.Local.json
 # EXCEPTION : les vaults CHIFFRÉS des inventaires staging/prod sont nécessaires au
 # déploiement depuis la CI (Ansible s'exécute sur un runner qui n'a que le dépôt).
 # Sûr car chiffrés AES-256 — inutiles sans le mot de passe (secret GitHub).
-# ⚠️ Ne committer QUE s'ils commencent bien par « $ANSIBLE_VAULT ».
+# NE COMMITTER QUE s'ils commencent bien par « $ANSIBLE_VAULT ».
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# LES DEUX INVENTAIRES NE RANGENT PAS LEUR VAULT AU MÊME ENDROIT.
+#
+# Staging le met sous `group_vars/marketplace/`, prod sous `group_vars/all/`. La
+# seule exception écrite ici visait `prod/group_vars/marketplace/vault.yml`, un
+# chemin qui n'existe pas : le vault de PRODUCTION n'était donc couvert par aucune
+# négation. Il survit uniquement parce qu'il est déjà SUIVI — git ignore les règles
+# pour un fichier indexé. Le jour où il serait retiré de l'index puis rajouté, il
+# disparaîtrait en silence, et la CI déploierait sans secrets sans que rien ne le
+# dise avant l'échec.
+#
+# Les deux emplacements réels sont donc listés, plus celui qui n'existe pas encore
+# côté prod : une négation sur un chemin absent ne coûte rien, et couvre le jour où
+# l'un des deux inventaires s'aligne sur l'autre.
+# ─────────────────────────────────────────────────────────────────────────────
+!deploy/ansible/inventories/staging/group_vars/all/vault.yml
 !deploy/ansible/inventories/staging/group_vars/marketplace/vault.yml
+!deploy/ansible/inventories/prod/group_vars/all/vault.yml
 !deploy/ansible/inventories/prod/group_vars/marketplace/vault.yml
 
 ## OS

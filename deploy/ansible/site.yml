@@ -84,6 +84,50 @@
       # valeur des variables — le webhook et le mot de passe ne sortent pas.
       when: enable_monitoring | default(false)
       tags: [always]
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LE MÊME RAISONNEMENT VAUT POUR LES DEUX AUTRES RÔLES À VERROUS.
+    #
+    # `webterminal` et `dbadmin` portent chacun leur propre garde-fou, et refusent
+    # de s'installer sans leurs verrous — liste blanche d'IP, authentification HTTP,
+    # clés. C'est juste. Mais ces rôles tournent APRÈS `marketplace` : le refus
+    # arrivait donc une fois l'application déjà remplacée, exactement le demi-
+    # déploiement que le contrôle du canal d'alerte a été écrit pour éviter.
+    #
+    # Les deux sont activés en production (`enable_web_terminal`, `enable_db_admin`),
+    # et la CI lance leurs tags. Le contrôle monte donc ici, sans rien changer aux
+    # garde-fous des rôles eux-mêmes : deux filets valent mieux qu'un, et celui-ci
+    # coûte deux secondes.
+    # ═══════════════════════════════════════════════════════════════════════════
+    - name: Exiger les verrous du terminal web AVANT tout déploiement
+      ansible.builtin.assert:
+        that:
+          - terminal_allowed_ips | default([]) | length > 0
+          - terminal_basic_auth_users | default([]) | length > 0
+          - terminal_ssh_private_key | default('') | trim | length > 0
+          - terminal_ssh_public_key | default('') | trim | length > 0
+        fail_msg: >-
+          enable_web_terminal=true pour {{ target_env | default('?') }} mais un verrou
+          manque. Requis (vault / group_vars) : terminal_allowed_ips,
+          terminal_basic_auth_users, terminal_ssh_private_key, terminal_ssh_public_key.
+          Générer la paire : ssh-keygen -t ed25519 -f id_terminal -N '' -C 'wetty-terminal'
+        quiet: true
+      when: enable_web_terminal | default(false)
+      tags: [always]
+
+    - name: Exiger les verrous de l'administration base AVANT tout déploiement
+      ansible.builtin.assert:
+        that:
+          - db_admin_allowed_ips | default([]) | length > 0
+          - db_admin_basic_auth_users | default([]) | length > 0
+          - db_admin_readonly_password | default('') | trim | length > 0
+        fail_msg: >-
+          enable_db_admin=true pour {{ target_env | default('?') }} mais un verrou
+          manque. Requis (vault / group_vars) : db_admin_allowed_ips,
+          db_admin_basic_auth_users, db_admin_readonly_password.
+        quiet: true
+      when: enable_db_admin | default(false)
+      tags: [always]
   roles:
     - role: docker
       tags: [docker, setup]

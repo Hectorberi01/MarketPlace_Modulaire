@@ -1,7 +1,7 @@
 # Généré par Ansible — middleware de garde de l'admin base de données (pgweb).
 # dbadmin-guard = liste blanche d'IP + auth HTTP + en-têtes (embarquement iframe).
 #
-# ⚠️ DENY-BY-DEFAULT : si db_admin_allowed_ips OU db_admin_basic_auth_users est
+# IMPORTANT : DENY-BY-DEFAULT : si db_admin_allowed_ips OU db_admin_basic_auth_users est
 # vide, Traefik refuse toutes les requêtes. L'admin BD reste donc INACCESSIBLE
 # tant que les deux ne sont pas renseignés dans le vault.
 http:

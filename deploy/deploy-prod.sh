@@ -52,7 +52,7 @@ else
 fi
 step() { printf '\n%s==> %s%s\n' "$BOLD$BLU" "$*" "$RST"; }
 ok()   { printf '%s✓ %s%s\n' "$GRN" "$*" "$RST"; }
-warn() { printf '%s⚠ %s%s\n' "$YEL" "$*" "$RST"; }
+warn() { printf '%sIMPORTANT : %s%s\n' "$YEL" "$*" "$RST"; }
 die()  { printf '%s✗ %s%s\n' "$RED" "$*" "$RST" >&2; exit 1; }
 
 # --------------------------- parse options ---------------------------
