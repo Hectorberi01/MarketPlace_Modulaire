@@ -276,6 +276,60 @@ services:
         limits:
           memory: 8G
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # LA BASE DU DISPATCH — ELLE MANQUAIT À CETTE PILE, ET RIEN NE LE DISAIT.
+  #
+  # Le gabarit Ansible construit `DISPATCH_CONNECTION` avec `Host=postgres-dispatch`
+  # dès que la base n'est pas externe. Ce service existait dans le compose de
+  # DÉVELOPPEMENT et nulle part ici : en production, le dispatch cherchait un hôte
+  # que le réseau Docker ne connaissait pas, attendait l'expiration du délai de
+  # connexion, échouait sur `MigrateAsync` au démarrage — et le conteneur s'arrêtait.
+  #
+  # L'API, elle, démarrait normalement : sa chaîne pointe sur `postgres`, qui existe.
+  # D'où un déploiement « appliqué » avec un seul service à terre, et une trace
+  # Npgsql de soixante lignes qui ne nomme jamais l'hôte introuvable.
+  #
+  # BASE SÉPARÉE, ET C'EST VOULU : ce service réécrit des positions à la seconde, la
+  # marketplace tient de l'argent. Deux moteurs sur la même machine isolent déjà la
+  # charge d'écriture et les verrous ; la séparation des WAL et des sauvegardes, elle,
+  # n'arrive vraiment que le jour où `use_external_database` passe à vrai et où les
+  # deux bases vivent sur le VPS dédié.
+  #
+  # PAS DE `postgresql.conf` MONTÉ, contrairement à `postgres` : ce fichier est réglé
+  # pour les 8 Go de la base marketplace. L'appliquer à un conteneur qui en a deux
+  # donnerait des `shared_buffers` hors de proportion avec sa mémoire.
+  #
+  # AUCUN PORT PUBLIÉ. Le compose de développement expose 5435 pour qu'on s'y branche
+  # avec un client ; en production, seul le réseau interne y accède.
+  # ═══════════════════════════════════════════════════════════════════════════
+  postgres-dispatch:
+    # Même profil que `postgres` : les deux disparaissent ensemble le jour où la base
+    # est externe, et la chaîne de connexion bascule alors sur `wg_db_ip`.
+    profiles: ["local-db"]
+    image: postgres:16-alpine
+    restart: always
+    shm_size: "128mb"
+    environment:
+      # Ces trois valeurs DOIVENT correspondre à ce que le gabarit met dans
+      # `DISPATCH_CONNECTION` — mêmes variables, une seule source.
+      POSTGRES_DB: "${DISPATCH_DB:-dispatch}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+    volumes:
+      - pgdata-dispatch:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DISPATCH_DB:-dispatch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *logging
+    networks: [marketplace-net]
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
   # ---------------- Edge gateway (TLS) ----------------
   traefik:
     image: traefik:v3.1
@@ -667,6 +721,11 @@ services:
       Otel__Endpoint: "${OTEL_ENDPOINT:-}"
       RunMigrationsAtStartup: "true"
     depends_on:
+      # `required: false`, comme `api` avec `postgres` : sans lui, Compose refuse de
+      # démarrer `dispatch` dès que la base est externe et donc hors du profil actif.
+      postgres-dispatch:
+        condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
       api:
@@ -700,6 +759,7 @@ networks:
 
 volumes:
   pgdata:
+  pgdata-dispatch:
   redisdata:
   acme:
   # Cache des modèles ONNX de rembg (sinon retéléchargés à chaque redémarrage).
