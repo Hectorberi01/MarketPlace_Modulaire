@@ -31,6 +31,22 @@ public interface IDispatchServiceClient
     /// le service de dispatch : il n'y a pas d'inscription séparée.
     /// </summary>
     Task SendCourierStandingAsync(DispatchCourierStanding payload, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// LA SEULE LECTURE DE CE PORT : où sont les coursiers, maintenant.
+    ///
+    /// Les trois méthodes ci-dessus ANNONCENT, et sont appelées par le drain d'outbox.
+    /// Celle-ci DEMANDE, et est appelée par un écran. La différence a une conséquence
+    /// concrète, portée par l'implémentation : le budget d'attente n'est pas le même.
+    /// Une annonce peut attendre dix secondes, personne ne regarde ; une lecture qui
+    /// alimente une carte rafraîchie toutes les quinze secondes, non.
+    ///
+    /// ELLE LÈVE COMME LES AUTRES en cas d'échec. Ce n'est pas ici qu'on décide de
+    /// dégrader — ce port dit ce que le service a répondu, ou pourquoi il n'a pas pu.
+    /// C'est l'API publique du module qui traduit l'échec en instantané injoignable,
+    /// parce que c'est elle qui connaît son appelant.
+    /// </summary>
+    Task<DispatchFleet> GetCourierPositionsAsync(CancellationToken cancellationToken = default);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,3 +115,30 @@ public sealed record DispatchOrderCancelled(Guid OrderId, string Reason);
 /// </param>
 public sealed record DispatchCourierStanding(
     Guid CourierId, Guid UserId, string DisplayName, string Standing, DateTime OccurredOnUtc);
+
+/// <summary>
+/// La flotte telle que le service la rend : les coursiers ET les deux seuils de fraîcheur
+/// avec lesquels il faut les lire. Les seuils viennent de LÀ-BAS parce que c'est là-bas
+/// qu'ils sont appliqués — les recopier ici garantirait qu'ils divergent.
+/// </summary>
+public sealed record DispatchFleet(
+    int OfferMaxAgeSeconds,
+    int ActionMaxAgeSeconds,
+    IReadOnlyList<DispatchCourierPosition> Couriers);
+
+/// <summary>
+/// Une position telle que le service de dispatch la rend.
+///
+/// Type SÉPARÉ de <c>CourierPosition</c> des contrats, pour la raison donnée en tête de
+/// ce fichier : deux systèmes déployés séparément évoluent à des rythmes différents. La
+/// traduction tient en une ligne, et le jour où le dispatch renomme un champ, la
+/// correction est ici plutôt que dans un contrat public.
+/// </summary>
+public sealed record DispatchCourierPosition(
+    Guid CourierId,
+    string DisplayName,
+    string Vehicle,
+    string Availability,
+    double Latitude,
+    double Longitude,
+    DateTime PositionAtUtc);

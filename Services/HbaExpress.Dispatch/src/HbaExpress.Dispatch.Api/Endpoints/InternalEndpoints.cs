@@ -43,8 +43,9 @@ public static class InternalEndpoints
     /// La signature porte sur les octets reçus : il FAUT donc les lire avant de pouvoir
     /// juger l'appel. La conséquence, jamais bornée jusqu'ici, est qu'un appelant
     /// anonyme faisait allouer une chaîne de la taille qu'il voulait — le seul plafond
-    /// étant celui de Kestrel, 30 Mo, et ces routes ont en plus le limiteur de débit
-    /// désactivé. Aucune limite de taille de corps n'existait nulle part dans le dépôt.
+    /// étant celui de Kestrel, 30 Mo. Ce service ne pose AUCUN limiteur de débit, nulle
+    /// part : rien ne vient donc borner la répétition de l'appel non plus. Aucune limite
+    /// de taille de corps n'existait nulle part dans le dépôt.
     ///
     /// Ces charges font quelques centaines d'octets. Soixante-quatre kilo-octets laissent
     /// une marge de deux ordres de grandeur et ramènent l'allocation à quelque chose
@@ -72,11 +73,33 @@ public static class InternalEndpoints
             return null;
         }
 
-        var buffer = new char[MaxSignedBodyChars + 1];
+        // ─────────────────────────────────────────────────────────────────────
+        // LE TAMPON SUIT LA TAILLE ANNONCÉE, ET NE LA CROIT PAS.
+        //
+        // Allouer les 64 Ki caractères quelle que soit la requête faisait coûter 128 Ko
+        // au serveur pour un corps de zéro octet — la route de lecture, qui n'envoie
+        // rien, est justement la plus économique à répéter pour un appelant.
+        //
+        // On dimensionne donc sur `ContentLength` quand il est là, et on garde le
+        // plafond comme borne : un en-tête menteur n'agrandit rien, et le contrôle de
+        // ce qui a été RÉELLEMENT lu, plus bas, reste le seul qui fasse foi.
+        // ─────────────────────────────────────────────────────────────────────
+        // Le `> 0` n'est pas décoratif : `ContentLength` est un `long?` librement
+        // assignable par un intergiciel ou fabriqué en test, et une valeur négative
+        // franchirait le plafond pour donner `new char[-4]`, soit une exception là où
+        // on croyait borner une allocation.
+        var taille = http.ContentLength is { } annoncee && annoncee is > 0 and < MaxSignedBodyChars
+            ? (int)annoncee + 1
+            : MaxSignedBodyChars + 1;
+
+        var buffer = new char[taille];
         using var reader = new StreamReader(http.Body, leaveOpen: true);
         var read = await reader.ReadBlockAsync(buffer, ct);
         http.Body.Position = 0;
 
+        // Comparé au PLAFOND, jamais à la taille du tampon : un corps plus gros que son
+        // en-tête annonçait remplit simplement le tampon dimensionné dessus, ce qui donne
+        // une signature fausse — et un refus en 401, qui est la bonne réponse.
         return read > MaxSignedBodyChars ? null : new string(buffer, 0, read);
     }
 
@@ -93,6 +116,43 @@ public static class InternalEndpoints
 
         internals.MapPost("/couriers/standing-changed", CourierStandingChangedAsync)
             .WithName("InternalCourierStandingChanged");
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LA PREMIÈRE LECTURE DE CE CANAL, ET LA PREMIÈRE DU SERVICE.
+        //
+        // `/internal` ne portait que des annonces — la marketplace disait, le dispatch
+        // écoutait. Celle-ci va dans le même sens (la marketplace appelle) mais demande
+        // au lieu d'annoncer : la console d'administration a besoin de voir la flotte,
+        // et rien, nulle part, ne rendait une position.
+        //
+        // POURQUOI PAS UNE ROUTE `/api/` AVEC UN JETON D'ADMIN. Le jeton d'administrateur
+        // est cryptographiquement valide ici — la clé de signature est commune aux cinq
+        // hôtes. Mais ce service ne connaît AUCUN rôle : il identifie ses appelants par
+        // appartenance à la table `couriers`, et n'a pas de politique « Admin » à opposer
+        // à un jeton. Lui en donner une reviendrait à y importer le modèle
+        // d'autorisation du monolithe, pour une seule route.
+        //
+        // Le canal machine, lui, est déjà là et déjà fermé : signature du corps brut,
+        // fenêtre de cinq minutes, secret distinct par sens. Le BFF Admin possède ce
+        // secret et un `HttpClient` configuré — il ne manquait que la route.
+        //
+        // GET AVEC CORPS VIDE : la signature porte « horodatage.corps », et un corps vide
+        // se signe comme un autre.
+        //
+        // CE QUE L'HORODATAGE FAIT, ET CE QU'IL NE FAIT PAS. Il ne supprime pas le rejeu,
+        // il le borne à cinq minutes — `PartnerServiceSignature` le dit déjà. Sur une
+        // LECTURE, rejouer est sans effet : on relit ce qu'on aurait pu lire.
+        //
+        // Le point qui mérite attention est ailleurs : la chaîne signée ne porte ni la
+        // méthode ni le chemin. Cette route crée donc le premier couple (horodatage,
+        // signature) valide sur un CORPS VIDE du système. Il ne mène aujourd'hui nulle
+        // part — les trois POST refusent un corps vide en 400 à la désérialisation — mais
+        // cette garantie tient à un détail de désérialisation, pas au contrôle de
+        // signature. Le jour où une route `/internal` accepte un corps vide, il faudra
+        // signer « horodatage.méthode chemin.corps » des deux côtés, ensemble.
+        // ═══════════════════════════════════════════════════════════════════════════
+        internals.MapGet("/couriers/positions", CourierPositionsAsync)
+            .WithName("InternalCourierPositions");
 
         return app;
     }
@@ -140,6 +200,56 @@ public static class InternalEndpoints
 
         var created = await dispatch.CreateFromBriefAsync(brief, ct);
         return created.Match(jobId => Results.Accepted($"/internal/jobs/{jobId.Value}", new { jobId = jobId.Value }));
+    }
+
+    /// <summary>
+    /// Où est la flotte, à l'instant.
+    ///
+    /// Ne renvoie QUE les coursiers actifs, en ligne ou en course, et porteurs d'une
+    /// position. Les hors ligne sont écartés en base : leur dernière position date de
+    /// leur dernière connexion, et la dessiner ferait croire à une présence.
+    ///
+    /// Chaque ligne porte l'ÂGE de sa position, et la réponse porte les DEUX SEUILS qui
+    /// disent comment le lire — celui des offres et celui des actions, qui ne valent pas
+    /// la même chose. Un repère sur une carte a la même allure qu'il date de dix secondes
+    /// ou de deux heures ; sans ces trois valeurs, la console affirmerait une présence que
+    /// ce service ne croit déjà plus. Voir <see cref="FleetView"/>, qui les documente.
+    /// </summary>
+    private static async Task<IResult> CourierPositionsAsync(
+        HttpRequest http, FleetQuery fleet, IConfiguration configuration, CancellationToken ct)
+    {
+        var refus = await VerifySignatureAsync(http, configuration, ct);
+        if (refus is not null)
+        {
+            return refus;
+        }
+
+        return Results.Ok(await fleet.ListOnFieldAsync(ct));
+    }
+
+    /// <summary>
+    /// Vérifie la signature SANS attendre de charge utile.
+    ///
+    /// `ReadSignedAsync` désérialise et refuse un corps vide — ce qui est juste pour les
+    /// trois annonces, et faux pour une lecture. Les deux partagent donc le contrôle de
+    /// signature, et lui seul.
+    /// </summary>
+    private static async Task<IResult?> VerifySignatureAsync(
+        HttpRequest http, IConfiguration configuration, CancellationToken ct)
+    {
+        var rawBody = await ReadCappedBodyAsync(http, ct);
+        if (rawBody is null)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var secret = configuration[InboundSignature.SecretKey];
+        var signature = http.Headers[InboundSignature.Header].ToString();
+        var timestamp = http.Headers[InboundSignature.TimestampHeader].ToString();
+
+        return InboundSignature.Verify(rawBody, timestamp, signature, secret)
+            ? null
+            : Results.Unauthorized();
     }
 
     /// <summary>La commande est annulée : la course tombe avec elle, le coursier est libéré.</summary>

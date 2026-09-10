@@ -24,4 +24,22 @@ public interface ICourierRepository
     /// </summary>
     Task<IReadOnlyList<Courier>> ListCandidatesAsync(
         string communeCode, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Coursiers PRÉSENTS SUR LE TERRAIN : actifs, en ligne ou en course.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA PREMIÈRE LECTURE DE POSITION DE CE SERVICE.
+    ///
+    /// Les positions étaient écrites toutes les quinze secondes et n'étaient lues que
+    /// par le moteur d'appariement. Aucune surface — ni coursier, ni acheteur, ni
+    /// administrateur — ne pouvait savoir où se trouvait la flotte. Une console qui
+    /// pilote la livraison sans jamais la voir répare à l'aveugle.
+    ///
+    /// Les HORS LIGNE sont exclus en base, et ce n'est pas de l'économie : leur
+    /// dernière position date de leur dernière connexion, et l'afficher reviendrait à
+    /// dessiner sur une carte des coursiers qui ne travaillent pas.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<IReadOnlyList<Courier>> ListOnFieldAsync(CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,7 @@
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Delivery.Application.Couriers;
+using Marketplace.Modules.Delivery.Contracts;
 using Marketplace.Modules.Settlement.Application.Wallets;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -14,9 +15,14 @@ namespace Marketplace.Bff.Admin.Endpoints;
 /// Elle décide QUI A LE DROIT D'ÊTRE PAYÉ : enregistrer un coursier, le vérifier, le
 /// suspendre, corriger son compte de versement, et valider ses retraits.
 ///
-/// Elle ne pilote AUCUNE course. Le dispatch, les positions, la disponibilité et les
-/// notes vivent dans le service coursier déployé à part — les afficher ici supposerait
-/// de les recopier, et il y aurait alors deux vérités sur la même personne.
+/// Elle ne pilote AUCUNE course. Le dispatch, la disponibilité et les notes vivent dans
+/// le service coursier déployé à part.
+///
+/// UNE SEULE ROUTE FAIT EXCEPTION, ET SEULEMENT EN APPARENCE : « positions ». Elle ne
+/// recopie rien — elle interroge le service à l'instant de la demande et transmet sa
+/// réponse sans la garder. La règle qu'on tenait à écrire ici était « pas deux vérités
+/// sur la même personne » ; un relais sans stockage ne crée pas de seconde vérité, une
+/// table de positions dans la marketplace en créerait une.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public static class AdminCourierEndpoints
@@ -37,6 +43,12 @@ public static class AdminCourierEndpoints
         // clients : ce ne sont pas les mêmes contrôles ni les mêmes interlocuteurs.
         couriers.MapGet("/withdrawals/pending", PendingWithdrawalsAsync);
         couriers.MapGet("/withdrawals/processing", ProcessingWithdrawalsAsync);
+
+        // La carte de la flotte, sur l'écran Livraison. Route de LECTURE PURE : elle ne
+        // passe pas par MediatR parce qu'il n'y a ni commande, ni requête de domaine —
+        // juste un appel sortant, dont le module Delivery est le seul à connaître
+        // l'adresse et le secret.
+        couriers.MapGet("/positions", FleetAsync);
 
         return app;
     }
@@ -93,6 +105,25 @@ public static class AdminCourierEndpoints
     /// </summary>
     private static async Task<IResult> ProcessingWithdrawalsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListProcessingCourierWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
+
+    /// <summary>
+    /// Où sont les coursiers en ce moment.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// RÉPOND 200 MÊME QUAND LE SERVICE DE DISPATCH EST À TERRE, ET C'EST DÉLIBÉRÉ.
+    ///
+    /// Un 502 ferait de cette route une erreur comme une autre dans le client : la carte
+    /// afficherait un message générique, ou rien. Or l'écran a quelque chose de précis à
+    /// dire — quelle panne, et surtout que la carte vide qu'il montre ne veut PAS dire
+    /// « aucun coursier sur le terrain ». Cette phrase-là voyage dans le corps, pas dans
+    /// un code de statut.
+    ///
+    /// L'instantané porte `reachable`. Un client qui l'ignore affiche une flotte vide et
+    /// se trompe — c'est le seul contrat de cette route, et il est explicite.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> FleetAsync(IDeliveryModuleApi delivery, CancellationToken ct)
+        => Results.Ok(await delivery.GetFleetAsync(ct));
 
     public sealed record RegisterCourierRequest(
         Guid UserId, string DisplayName, string Phone,

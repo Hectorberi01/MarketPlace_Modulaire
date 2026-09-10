@@ -81,11 +81,30 @@ public class DeliveryBoundaryTests
         // domaine — la duplication commence toujours par une seule classe utile.
         var intrus = new[] { "DeliveryJob", "DispatchOffer", "PickupPoint", "CourierPosition", "CourierZone" };
 
-        var noms = Types.InAssembly(Domain).GetTypes().Select(t => t.Name).ToList();
+        // ═════════════════════════════════════════════════════════════════════════
+        // CE TEST NE REGARDE NI CONTRACTS NI INFRASTRUCTURE, ET IL FAUT LE DIRE.
+        //
+        // Un type nommé `CourierPosition` existe bel et bien dans Contracts, et un
+        // `DispatchCourierPosition` dans Infrastructure. Ce ne sont pas des entités :
+        // ce sont les formes que prend une réponse RELAYÉE du service de dispatch, le
+        // temps d'un appel, jamais persistée. `IDeliveryModuleApi.GetFleetAsync` le
+        // détaille.
+        //
+        // Ce qui est interdit, et ce que ce test tient, c'est qu'une position devienne
+        // un objet du MODÈLE : une entité, une propriété d'entité, une table. On
+        // vérifie donc le domaine ET l'application — l'un pour la donnée, l'autre pour
+        // le traitement, parce que recopier commence aussi bien par un handler que par
+        // une classe.
+        // ═════════════════════════════════════════════════════════════════════════
+        var noms = Types.InAssembly(Domain).GetTypes()
+            .Concat(Types.InAssembly(Application).GetTypes())
+            .Select(t => t.Name)
+            .ToList();
 
         noms.Should().NotIntersectWith(
             intrus,
             "le dispatch et la géolocalisation appartiennent au service coursier autonome, " +
-            "pas au monolithe — voir docs/CDC_Service_Livraison_Coursier.md");
+            "pas au monolithe — voir docs/CDC_Service_Livraison_Coursier.md. Un RELAIS sans " +
+            "stockage est permis, et vit dans Contracts ou Infrastructure, jamais ici.");
     }
 }

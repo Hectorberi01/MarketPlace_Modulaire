@@ -8,7 +8,7 @@ namespace HbaExpress.Dispatch.Application;
 /// <summary>
 /// Enregistre les services applicatifs du dispatch.
 ///
-/// PAS DE SCAN D'ASSEMBLAGE, ET C'EST VOLONTAIRE. Ce service compte quatre services
+/// PAS DE SCAN D'ASSEMBLAGE, ET C'EST VOLONTAIRE. Ce service compte cinq services
 /// applicatifs ; les nommer un par un tient en dix lignes, se lit d'un coup d'oeil, et
 /// ne cache rien. Un scan par convention économiserait ces dix lignes au prix de
 /// l'évidence — on ne saurait plus, en lisant, ce que le conteneur contient.
@@ -25,6 +25,11 @@ public static class DispatchApplicationServices
         services.AddScoped<RedispatchService>();
         services.AddScoped<JobProgressService>();
         services.AddScoped<CourierService>();
+
+        // Lecture seule, enregistrée à part de CourierService pour la même raison qu'elle
+        // vit dans un autre fichier : rien de ce qui répond à « où sont les coursiers » ne
+        // doit pouvoir en déplacer un.
+        services.AddScoped<FleetQuery>();
 
         return services;
     }

@@ -47,6 +47,50 @@ internal sealed class CourierRepository : ICourierRepository
 
         return online.Where(c => c.Serves(communeCode)).ToList();
     }
+
+    /// <summary>
+    /// La flotte présente. `AsNoTracking` : lecture pure, rien n'est muté ensuite.
+    ///
+    /// Le filtre porte sur (Standing, Availability), exactement le couple que l'index
+    /// de `couriers` couvre déjà — celui posé pour l'appariement sert ici sans rien
+    /// ajouter.
+    ///
+    /// La POSITION NULLE est écartée en base plutôt qu'à l'affichage : un coursier
+    /// marqué en ligne qui n'a jamais émis de position n'a rien à faire sur une carte,
+    /// et le laisser remonter obligerait chaque appelant à refaire ce test.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// LE TEST PORTE SUR L'HORODATAGE, ET NON SUR `LastPosition`.
+    ///
+    /// `LastPosition` est un type possédé en PARTAGE DE TABLE dont les deux colonnes
+    /// sont nullables. EF Core ne peut donc pas distinguer « pas de position » de
+    /// « position dont tout est nul » : c'est le cas qu'il signale par
+    /// `OptionalDependentWithoutIdentifyingPropertyWarning`, et la traduction du
+    /// `!= null` y tient d'une heuristique plutôt que du modèle.
+    ///
+    /// `LastPositionAtUtc` est un scalaire, sans ambiguïté aucune, et `UpdatePosition`
+    /// écrit toujours les deux ensemble : le filtre est le même, il est simplement
+    /// exprimé sur ce qui se traduit sans discussion.
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    public async Task<IReadOnlyList<Courier>> ListOnFieldAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.Couriers
+            .AsNoTracking()
+            .Where(c => c.Standing == CourierStanding.Active
+                && (c.Availability == CourierAvailability.Online || c.Availability == CourierAvailability.OnDelivery)
+                && c.LastPositionAtUtc != null)
+            // Départage les homonymes : sans lui, deux coursiers du même nom s'ordonnent
+            // au gré du plan d'exécution, et la liste sautille d'un relevé à l'autre.
+            //
+            // `EF.Property<Guid>` PLUTÔT QUE `c.Id`. Les deux se traduisent en la même
+            // colonne, mais `CourierId` n'implémente pas `IComparable` : le jour où cette
+            // requête basculerait en évaluation cliente — fournisseur en mémoire dans un
+            // test, filtre non traduisible ajouté en amont — `.ThenBy(c => c.Id)`
+            // lèverait à l'exécution. Sous cette forme, elle échoue franchement au lieu
+            // de retomber en silence sur une comparaison impossible.
+            .OrderBy(c => c.DisplayName)
+            .ThenBy(c => EF.Property<Guid>(c, "Id"))
+            .ToListAsync(cancellationToken);
 }
 
 internal sealed class DeliveryJobRepository : IDeliveryJobRepository

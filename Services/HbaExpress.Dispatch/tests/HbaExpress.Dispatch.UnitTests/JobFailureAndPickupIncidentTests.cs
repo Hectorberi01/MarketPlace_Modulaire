@@ -298,5 +298,19 @@ public class JobFailureAndPickupIncidentTests
             string communeCode, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Courier>>(
                 _couriers.Where(c => c.Serves(communeCode)).ToList());
+
+        // Le MÊME filtre que le dépôt réel : actif, présent, et porteur d'une position.
+        // Un double qui rendrait tout, ou rien, ferait passer un test sur une flotte que
+        // la production n'aurait jamais servie.
+        public Task<IReadOnlyList<Courier>> ListOnFieldAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Courier>>(
+                _couriers
+                    .Where(c => c.Standing == CourierStanding.Active
+                        && (c.Availability == CourierAvailability.Online
+                            || c.Availability == CourierAvailability.OnDelivery)
+                        && c.LastPositionAtUtc is not null)
+                    .OrderBy(c => c.DisplayName)
+                    .ThenBy(c => c.Id.Value)
+                    .ToList());
     }
 }
