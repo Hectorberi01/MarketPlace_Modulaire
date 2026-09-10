@@ -18,6 +18,8 @@ using Marketplace.Modules.Settlement.Application.Batches;
 using Marketplace.Modules.Settlement.Application.Batches.EventHandlers;
 using Marketplace.Modules.Settlement.Application.Earnings;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Settlement.Domain.Wallets.Events;
+using Marketplace.Modules.Settlement.Application.Wallets.EventHandlers;
 using Marketplace.Modules.Settlement.Contracts;
 using Marketplace.Modules.Settlement.Domain.Batches;
 using Marketplace.Modules.Settlement.Domain.Batches.Events;
@@ -100,6 +102,7 @@ public sealed class SettlementModuleInstaller : IModuleInstaller
         services.AddScoped<WithdrawalSettlement>();
 
         services.AddScoped<IDomainEventHandler<PayoutPaidDomainEvent>, PayoutPaidDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<CustomerRefundSettledDomainEvent>, CustomerRefundSettledDomainEventHandler>();
 
         // Réconciliation des retraits « en cours » avec le statut réel du PSP.
         // SANS ce service, un versement échoué chez FedaPay laisserait le retrait

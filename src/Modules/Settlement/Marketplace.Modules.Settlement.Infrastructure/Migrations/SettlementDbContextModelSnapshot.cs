@@ -394,6 +394,10 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
 
                     b.HasIndex("OwnerId", "CreatedAtUtc");
 
+                    b.HasIndex("OwnerId", "OwnerType", "Account");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("OwnerId", "OwnerType", "Account"), new[] { "Direction", "Amount" });
+
                     b.HasIndex("ReferenceType", "ReferenceId", "OwnerId", "Account")
                         .IsUnique()
                         .HasDatabaseName("ux_wallet_transactions_refund_reversal")
@@ -457,6 +461,8 @@ namespace Marketplace.Modules.Settlement.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OwnerType", "OwnerId");
+
+                    b.HasIndex("Status", "OwnerType");
 
                     b.ToTable("withdrawals", "settlement");
                 });

@@ -62,9 +62,18 @@ public static class AdminOrderEndpoints
         int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
         => (await sender.Send(new ListPaymentsQuery(page, pageSize, search, status, sort, dir), ct)).Match(p => Results.Ok(p));
 
-    /// <summary>Agrégats de paiements (montants + compteurs) sur l'ensemble filtré.</summary>
-    private static async Task<IResult> PaymentStatsAsync(ISender sender, CancellationToken ct, string? search = null)
-        => (await sender.Send(new GetPaymentStatsQuery(search), ct)).Match(s => Results.Ok(s));
+    /// <summary>
+    /// Agrégats de paiements (montants + compteurs).
+    ///
+    /// `from` et `to` (format `yyyy-MM-dd`, `to` EXCLUSIVE) bornent la fenêtre ;
+    /// absentes, c'est TOUT l'historique — le comportement d'avant, conservé pour les
+    /// appelants qui ne demandent rien. Ce sont les mêmes bornes que celles envoyées au
+    /// rapport analytique, pour que deux graphiques d'un même écran ne couvrent pas
+    /// deux périodes différentes sous la même étiquette.
+    /// </summary>
+    private static async Task<IResult> PaymentStatsAsync(
+        ISender sender, CancellationToken ct, string? search = null, DateOnly? from = null, DateOnly? to = null)
+        => (await sender.Send(new GetPaymentStatsQuery(search, from, to), ct)).Match(s => Results.Ok(s));
 
     /// <summary>Détail d'un paiement.</summary>
     private static async Task<IResult> GetPaymentAsync(Guid id, ISender sender, CancellationToken ct)

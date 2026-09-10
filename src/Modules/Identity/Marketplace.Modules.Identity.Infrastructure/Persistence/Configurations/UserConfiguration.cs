@@ -94,6 +94,21 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .IsUnique()
             .HasFilter("\"Status\" <> 'Deleted'");
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // LA COURBE DES INSCRIPTIONS BALAYAIT TOUTE LA TABLE.
+        //
+        // `SignupsByDayAsync` filtre sur `CreatedOnUtc` puis regroupe par jour, et
+        // `ListPagedAsync` trie dessus par défaut. Les deux seuls index de cette table
+        // portaient sur l'e-mail et le téléphone : chaque ouverture du tableau de bord
+        // parcourait `users` en entier pour dessiner trente points.
+        //
+        // L'index sert le FILTRE de plage, pas le regroupement — celui-ci porte sur un
+        // cast en date et resterait inutilisable par un index simple de toute façon.
+        // C'est le parcours complet qu'on supprime, pas l'agrégation.
+        // ═══════════════════════════════════════════════════════════════════════
+        builder.HasIndex(u => u.CreatedOnUtc);
+        builder.HasIndex(u => u.Status);
+
         // Les relations vers les enfants (et leurs index sur la FK ombre) sont
         // définies dans leurs propres configurations, pour que la Fche FK soit
         // FK ombre soit créée avant d'être indexée. Les navigations en lecture seule utilisent

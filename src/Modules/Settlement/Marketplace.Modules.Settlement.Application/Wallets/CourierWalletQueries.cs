@@ -18,6 +18,23 @@ public sealed record ListCourierWalletTransactionsQuery(Guid CourierId, int Take
 /// <summary>File admin des retraits livreur en attente de validation.</summary>
 public sealed record ListPendingCourierWithdrawalsQuery : IQuery<IReadOnlyList<PendingCourierWithdrawalView>>;
 
+/// <summary>
+/// Retraits COURSIERS dont le versement est parti chez le prestataire sans être
+/// confirmé.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// CETTE FILE N'EXISTAIT PAS, ET LES RETRAITS COURSIERS Y TOMBAIENT QUAND MÊME.
+///
+/// `ApproveWithdrawalCommandHandler` est indifférent au type de propriétaire : il
+/// résout le compte de versement depuis `withdrawal.OwnerType` et traite un coursier
+/// exactement comme un vendeur. Un retrait coursier approuvé quittait donc la file
+/// d'attente — la seule que le module exposait pour eux — et n'entrait NULLE PART.
+/// Ni écran, ni compteur, ni alerte : un coursier débité, son argent en vol, et
+/// aucune surface pour s'en apercevoir.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record ListProcessingCourierWithdrawalsQuery : IQuery<IReadOnlyList<ProcessingWithdrawalView>>;
+
 /// <summary>Demandes de retrait d'un coursier.</summary>
 public sealed record ListCourierWithdrawalsQuery(Guid CourierId) : IQuery<IReadOnlyList<CustomerWithdrawalView>>;
 
@@ -129,6 +146,51 @@ internal sealed class ListPendingCourierWithdrawalsQueryHandler
     }
 }
 
+internal sealed class ListProcessingCourierWithdrawalsQueryHandler
+    : IQueryHandler<ListProcessingCourierWithdrawalsQuery, IReadOnlyList<ProcessingWithdrawalView>>
+{
+    private readonly IWithdrawalRepository _withdrawals;
+    private readonly IDeliveryModuleApi _couriers;
+
+    public ListProcessingCourierWithdrawalsQueryHandler(
+        IWithdrawalRepository withdrawals, IDeliveryModuleApi couriers)
+    {
+        _withdrawals = withdrawals;
+        _couriers = couriers;
+    }
+
+    public async Task<Result<IReadOnlyList<ProcessingWithdrawalView>>> Handle(
+        ListProcessingCourierWithdrawalsQuery query, CancellationToken cancellationToken)
+    {
+        var items = await _withdrawals.ListByStatusAsync(
+            WithdrawalStatus.Processing, WalletOwnerType.Courier, cancellationToken);
+
+        var views = new List<ProcessingWithdrawalView>();
+        foreach (var w in items)
+        {
+            var courier = await _couriers.GetCourierAsync(w.OwnerId, cancellationToken);
+
+            // On réutilise `ProcessingWithdrawalView` — dont le champ s'appelle
+            // « SellerName » — comme le fait déjà la file clients. Le nom est devenu
+            // générique le jour où le retrait a cessé d'être réservé aux vendeurs ;
+            // l'écran, lui, sait de quelle file il vient.
+            views.Add(new ProcessingWithdrawalView(
+                w.Id.Value,
+                w.OwnerId,
+                string.IsNullOrWhiteSpace(courier?.DisplayName) ? "Coursier" : courier!.DisplayName,
+                w.Amount,
+                w.Currency,
+                w.ProviderRef,
+                WalletMapper.SansNoteDEtape(w.FailureReason),
+                w.CreatedAtUtc,
+                w.SentToPspAtUtc));
+        }
+
+        // Les plus anciens d'abord : ce sont eux qui traînent, donc ceux à traiter.
+        return Result.Success<IReadOnlyList<ProcessingWithdrawalView>>(
+            views.OrderBy(v => v.SentToPspAtUtc ?? v.CreatedAtUtc).ToList());
+    }
+}
 
 internal sealed class ListCourierWithdrawalsQueryHandler
     : IQueryHandler<ListCourierWithdrawalsQuery, IReadOnlyList<CustomerWithdrawalView>>

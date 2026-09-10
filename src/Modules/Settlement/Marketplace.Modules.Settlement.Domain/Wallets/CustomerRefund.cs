@@ -1,4 +1,5 @@
 using Marketplace.BuildingBlocks.Domain.Primitives;
+using Marketplace.Modules.Settlement.Domain.Wallets.Events;
 
 namespace Marketplace.Modules.Settlement.Domain.Wallets;
 
@@ -79,9 +80,20 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
     /// </summary>
     public static CustomerRefund CreateWallet(
         Guid orderId, Guid buyerId, decimal amount, string currency, string reason)
-        => new(CustomerRefundId.New(), orderId, buyerId, amount,
+    {
+        var leg = new CustomerRefund(CustomerRefundId.New(), orderId, buyerId, amount,
             NormalizeCurrency(currency), reason.Trim(), string.Empty, string.Empty,
             CustomerRefundChannel.Wallet);
+
+        // La jambe cagnotte naît ABOUTIE : créditer un solde interne est immédiat et
+        // ne peut pas échouer chez un prestataire. Elle lève donc son événement tout
+        // de suite, là où la jambe espèces attend `Complete`. Sans cela, la moitié
+        // d'un remboursement mixte serait restée invisible du chiffre d'affaires.
+        leg.Raise(new CustomerRefundSettledDomainEvent(
+            leg.Id.Value, orderId, buyerId, amount, leg.Currency, CustomerRefundChannel.Wallet.ToString()));
+
+        return leg;
+    }
 
     private static string NormalizeCurrency(string currency)
         => string.IsNullOrWhiteSpace(currency) ? "XOF" : currency.Trim().ToUpperInvariant();
@@ -111,6 +123,12 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
         ProviderRef = providerRef ?? ProviderRef;
         FailureReason = null;
         CompletedAtUtc = DateTime.UtcNow;
+
+        // ICI et non à l'initiation : tant que le prestataire n'a pas confirmé, rien
+        // n'est arrivé au client, et un rapport ne doit pas retrancher une somme qui
+        // pourrait revenir. Voir CustomerRefundSettledDomainEvent.
+        Raise(new CustomerRefundSettledDomainEvent(
+            Id.Value, OrderId, BuyerId, Amount, Currency, Channel.ToString()));
     }
 
     /// <summary>Rejet définitif du PSP : le débit plateforme est contre-passé par le handler.</summary>

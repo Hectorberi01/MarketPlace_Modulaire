@@ -127,6 +127,8 @@ namespace Marketplace.Modules.Payments.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAtUtc");
+
                     b.HasIndex("OrderId");
 
                     b.HasIndex("ProviderReference");

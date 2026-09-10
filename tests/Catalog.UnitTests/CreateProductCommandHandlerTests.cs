@@ -189,6 +189,10 @@ public class CreateProductCommandHandlerTests
             int page, int pageSize, string? search, ProductStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default)
             => Task.FromResult(((IReadOnlyList<Product>)Products.ToList(), Products.Count, (IReadOnlyDictionary<string, int>)new Dictionary<string, int>()));
 
+        public Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, int>>(
+                Products.GroupBy(p => p.Status).ToDictionary(g => g.Key.ToString(), g => g.Count()));
+
         public Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingSlugs.Contains(slug));
 

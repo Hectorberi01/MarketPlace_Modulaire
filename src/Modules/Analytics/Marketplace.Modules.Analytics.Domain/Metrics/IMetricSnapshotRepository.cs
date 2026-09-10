@@ -13,4 +13,12 @@ public interface IMetricSnapshotRepository
     Task<bool> IsOrderProcessedAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     Task MarkOrderProcessedAsync(ProcessedOrder marker, CancellationToken cancellationToken = default);
+
+    /// <summary>Ce remboursement a-t-il déjà été imputé ? Voir <see cref="ProcessedRefund"/>.</summary>
+    Task<bool> IsRefundProcessedAsync(string source, Guid sourceId, CancellationToken cancellationToken = default);
+
+    Task MarkRefundProcessedAsync(ProcessedRefund marker, CancellationToken cancellationToken = default);
+
+    /// <summary>Total déjà retranché du périmètre plateforme pour cette commande, tous flux confondus.</summary>
+    Task<decimal> SumRefundedForOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 }

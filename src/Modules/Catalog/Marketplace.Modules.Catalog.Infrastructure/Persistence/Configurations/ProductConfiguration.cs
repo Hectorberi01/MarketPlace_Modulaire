@@ -105,6 +105,21 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex(p => p.BrandId);
         builder.HasIndex(p => p.ProductGroupId);
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // LE STATUT SE REGROUPE ET SE FILTRE À CHAQUE LISTE, ET N'ÉTAIT PAS INDEXÉ.
+        //
+        // `ProductRepository.ListPagedAsync` fait un `GroupBy(Status)` sur toute la
+        // table pour ses facettes, puis filtre dessus. Trois valeurs distinctes pour
+        // des milliers de lignes : sans index, c'est un balayage complet à chaque
+        // affichage de l'écran Produits — et à chaque ouverture du tableau de bord,
+        // qui empruntait la même route pour afficher un seul entier.
+        // ═══════════════════════════════════════════════════════════════════════
+        builder.HasIndex(p => p.Status);
+
+        // Le tri par défaut des listes paginées. Sans lui, PostgreSQL trie la table
+        // entière pour rendre vingt lignes.
+        builder.HasIndex(p => p.CreatedOnUtc);
+
         builder.Ignore(p => p.DomainEvents);
     }
 }

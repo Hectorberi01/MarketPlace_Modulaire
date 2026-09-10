@@ -14,7 +14,8 @@ public sealed record GetReportQuery(string Scope, Guid? OwnerId, string Granular
 internal static class MetricMapper
 {
     public static MetricSnapshotSummary ToSummary(MetricSnapshot s) => new(
-        s.Scope.ToString(), s.OwnerId, s.PeriodKey, s.Granularity.ToString(), s.OrdersCount, s.ItemsSold, s.GmvAmount, s.Currency, s.UpdatedAtUtc);
+        s.Scope.ToString(), s.OwnerId, s.PeriodKey, s.Granularity.ToString(), s.OrdersCount, s.ItemsSold, s.GmvAmount, s.Currency, s.UpdatedAtUtc,
+        s.RefundedAmount, s.RefundsCount);
 }
 
 internal sealed class GetReportQueryHandler : IQueryHandler<GetReportQuery, AnalyticsReport>
@@ -45,8 +46,14 @@ internal sealed class GetReportQueryHandler : IQueryHandler<GetReportQuery, Anal
         var summaries = snapshots.Select(MetricMapper.ToSummary).ToList();
         var totalOrders = summaries.Sum(s => s.OrdersCount);
         var totalGmv = summaries.Sum(s => s.Gmv);
+        // Le BRUT et le RENDU voyagent séparément : le net se calcule, il ne se stocke
+        // pas. Un rapport qui n'aurait porté que le net aurait rendu indistinguables un
+        // mois sans remboursement et un mois qui en a beaucoup pour le même solde.
+        var totalRefunded = summaries.Sum(s => s.Refunded);
+        var totalRefundsCount = summaries.Sum(s => s.RefundsCount);
 
         return new AnalyticsReport(
-            scope.ToString(), query.OwnerId, granularity.ToString(), query.FromKey, query.ToKey, totalOrders, totalGmv, summaries);
+            scope.ToString(), query.OwnerId, granularity.ToString(), query.FromKey, query.ToKey, totalOrders, totalGmv, summaries,
+            totalRefunded, totalRefundsCount);
     }
 }

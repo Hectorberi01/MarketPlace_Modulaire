@@ -35,5 +35,15 @@ public interface IProductRepository
     Task<(IReadOnlyList<Product> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
         int page, int pageSize, string? search, ProductStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Décompte des produits par statut, sans en charger un seul.
+    ///
+    /// Le tableau de bord demandait « une page d'un produit » à la route paginée pour
+    /// n'en lire que le total : deux balayages du catalogue, un tri complet, et le
+    /// chargement des variantes et médias d'une ligne dont il ne faisait rien. Un
+    /// GROUP BY sur une colonne désormais indexée remplace tout cela.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(CancellationToken cancellationToken = default);
+
     Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default);
 }

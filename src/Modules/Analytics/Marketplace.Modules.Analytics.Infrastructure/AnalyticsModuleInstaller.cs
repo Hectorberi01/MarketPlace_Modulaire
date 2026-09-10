@@ -9,6 +9,9 @@ using Marketplace.Modules.Analytics.Application.Metrics;
 using Marketplace.Modules.Analytics.Domain.Metrics;
 using Marketplace.Modules.Analytics.Infrastructure.Persistence;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
+using Marketplace.Modules.Settlement.Contracts.IntegrationEvents;
+using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
+using Marketplace.Modules.Payments.Contracts.IntegrationEvents;
 
 namespace Marketplace.Modules.Analytics.Infrastructure;
 
@@ -34,6 +37,24 @@ public sealed class AnalyticsModuleInstaller : IModuleInstaller
 
         // Chorégraphie : accumulation des métriques à la confirmation de commande.
         services.AddScoped<IIntegrationEventHandler<OrderConfirmedIntegrationEvent>, AccrueMetricsOnOrderConfirmedHandler>();
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // ET LA CORRECTION, QUI N'EXISTAIT PAS.
+        //
+        // Ce module n'avait qu'un écrivain, sur un seul événement : le chiffre
+        // d'affaires ne pouvait que monter. Un article retourné et remboursé y restait
+        // pour toujours. Les trois voies par lesquelles de l'argent revient à un client
+        // sont désormais écoutées ; la troisième a dû être créée côté Settlement, qui
+        // n'annonçait rien.
+        //
+        // L'ANNULATION N'EST PAS DE LA PARTIE, ET C'EST NORMAL : `Order.Cancel` est
+        // refusée dès `Confirmed`, or l'accumulation n'a lieu qu'à `Confirm`. Une
+        // commande annulée n'a donc jamais été comptée — il n'y a rien à déduire.
+        // ═══════════════════════════════════════════════════════════════════════════
+        services.AddScoped<ImputationRemboursement>();
+        services.AddScoped<IIntegrationEventHandler<ReturnRefundedIntegrationEvent>, DeduireMetriquesSurRetourRembourseHandler>();
+        services.AddScoped<IIntegrationEventHandler<PaymentRefundedIntegrationEvent>, DeduireMetriquesSurPaiementRembourseHandler>();
+        services.AddScoped<IIntegrationEventHandler<CustomerRefundSettledIntegrationEvent>, DeduireMetriquesSurGesteCommercialHandler>();
 
         services.AddOutboxProcessor<AnalyticsDbContext>();
     }

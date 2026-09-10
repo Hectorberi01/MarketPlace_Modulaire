@@ -195,6 +195,17 @@ internal sealed class WithdrawalConfiguration : IEntityTypeConfiguration<Withdra
 
         builder.HasIndex(w => new { w.OwnerType, w.OwnerId });
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // LES FILES SE LISENT PAR STATUT, PAS PAR PROPRIÉTAIRE.
+        //
+        // `ListByStatusAsync` — les six files d'attente et « en cours » de la console,
+        // vendeurs, clients et coursiers — filtre sur (Status, OwnerType). Le seul
+        // index existant commence par `OwnerType` sans porter `Status` : il ne sert pas
+        // cette requête, qui balayait donc la table à chaque ouverture du tableau de
+        // bord et de l'écran Retraits.
+        // ═══════════════════════════════════════════════════════════════════════
+        builder.HasIndex(w => new { w.Status, w.OwnerType });
+
         // ═════════════════════════════════════════════════════════════════════════
         // VERROU OPTIMISTE. LE PORTEFEUILLE EN AVAIT UN ; LE RETRAIT, NON.
         //
@@ -258,9 +269,7 @@ internal sealed class WalletTransactionConfiguration : IEntityTypeConfiguration<
         // remboursement. Les lignes de commande, elles, sont légitimement multiples
         // pour une même référence.
         //
-        // REQUIERT UNE MIGRATION :
-        //    dotnet ef migrations add AddRefundReversalIdempotencyIndex \
-        //      -p src/Modules/Settlement/Marketplace.Modules.Settlement.Infrastructure
+        // (Migration appliquée : 20260714095610_AddRefundReversalIdempotencyIndex.)
         // ─────────────────────────────────────────────────────────────────────────
         // Le nom de colonne du filtre est en PascalCase et entre guillemets doubles :
         // ce projet n'applique AUCUNE convention snake_case (vérifié dans le
@@ -270,6 +279,29 @@ internal sealed class WalletTransactionConfiguration : IEntityTypeConfiguration<
             .IsUnique()
             .HasFilter("\"ReferenceType\" = 'refund'")
             .HasDatabaseName("ux_wallet_transactions_refund_reversal");
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // L'INDEX QUI COUVRE LA RÉCONCILIATION.
+        //
+        // `SumAllAccountsAsync` regroupe le grand livre ENTIER par
+        // (OwnerId, OwnerType, Account) et somme les montants par sens. Aucun des deux
+        // index existants ne couvre ce regroupement : celui sur (OwnerId, CreatedAtUtc)
+        // commence bien mais bifurque, l'autre part de la référence.
+        //
+        // C'est la requête la plus chère du tableau de bord, et la seule dont le coût
+        // croît sans borne — cette table grossit à chaque mouvement d'argent, et le
+        // contrôle comptable la relit intégralement à chaque affichage.
+        //
+        // L'ordre des colonnes suit celui du GroupBy. Mais l'ordre ne suffit PAS : la
+        // requête somme `Amount` selon `Direction`, et un index qui ne les porte pas
+        // oblige à retourner au tas pour chaque ligne — sur un parcours SANS prédicat,
+        // le planificateur préfère alors le balayage séquentiel, et l'index ne sert à
+        // rien qu'à ralentir chaque écriture. `IncludeProperties` les embarque dans les
+        // feuilles : l'index devient COUVRANT, et l'agrégat se fait sans toucher la
+        // table.
+        // ═══════════════════════════════════════════════════════════════════════
+        builder.HasIndex(t => new { t.OwnerId, t.OwnerType, t.Account })
+            .IncludeProperties(t => new { t.Direction, t.Amount });
 
         builder.Ignore(t => t.DomainEvents);
     }

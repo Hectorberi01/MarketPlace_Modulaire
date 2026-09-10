@@ -73,6 +73,11 @@ internal sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasIndex(p => p.Status);
         builder.HasIndex(p => p.ProviderReference);
 
+        // Le camembert « Paiements par statut » porte désormais une fenêtre, et le tri
+        // par défaut des listes paginées est déjà chronologique : les deux filtrent sur
+        // cette colonne, qui n'était pas indexée.
+        builder.HasIndex(p => p.CreatedAtUtc);
+
         builder.Ignore(p => p.DomainEvents);
     }
 }

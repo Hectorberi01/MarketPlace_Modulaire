@@ -54,6 +54,39 @@ public sealed record CustomerRefundCreditedIntegrationEvent : IntegrationEvent
 }
 
 /// <summary>
+/// Un remboursement client DIRECT — décidé par l'administrateur, hors flux de retour —
+/// a abouti : l'argent est chez le client, par Mobile Money ou par sa cagnotte.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// POURQUOI CET ÉVÉNEMENT A DÛ ÊTRE CRÉÉ.
+///
+/// Trois voies rendent de l'argent à un client sur cette place : le retour produit,
+/// le remboursement du paiement chez le prestataire, et ce geste-ci. Les deux
+/// premières s'annonçaient déjà sur le bus. Celle-ci ne s'annonçait nulle part —
+/// et c'est pourtant la seule qui ne s'exerce QUE sur une commande confirmée ou
+/// livrée, donc systématiquement déjà comptée dans le chiffre d'affaires.
+///
+/// Tant qu'elle est restée muette, un administrateur pouvait rembourser un client
+/// sans que rien, dans aucun rapport, ne cesse de compter cette vente.
+///
+/// Émis à l'ABOUTISSEMENT, pas à la décision : la jambe espèces attend la
+/// confirmation du prestataire, la jambe cagnotte part immédiatement puisque le
+/// crédit d'un solde interne ne peut pas échouer.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record CustomerRefundSettledIntegrationEvent : IntegrationEvent
+{
+    public required Guid CustomerRefundId { get; init; }
+    public required Guid OrderId { get; init; }
+    public required Guid BuyerId { get; init; }
+    public required decimal Amount { get; init; }
+    public required string Currency { get; init; }
+
+    /// <summary>Canal de sortie : « Cash » (Mobile Money) ou « Wallet » (cagnotte).</summary>
+    public required string Channel { get; init; }
+}
+
+/// <summary>
 /// Une course a été livrée et le coursier a été crédité de sa rémunération.
 ///
 /// Émis APRÈS l'écriture au portefeuille, pas avant : c'est la confirmation que

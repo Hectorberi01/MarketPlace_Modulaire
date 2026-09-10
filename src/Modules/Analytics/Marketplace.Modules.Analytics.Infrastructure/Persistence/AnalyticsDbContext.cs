@@ -22,6 +22,7 @@ public sealed class AnalyticsDbContext : ModuleDbContext, IAnalyticsUnitOfWork
 
     public DbSet<MetricSnapshot> Snapshots => Set<MetricSnapshot>();
     public DbSet<ProcessedOrder> ProcessedOrders => Set<ProcessedOrder>();
+    public DbSet<ProcessedRefund> ProcessedRefunds => Set<ProcessedRefund>();
 
     protected override string Schema => SchemaName;
 

@@ -341,6 +341,8 @@ namespace Marketplace.Modules.Identity.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedOnUtc");
+
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasFilter("\"Status\" <> 'Deleted'");
@@ -348,6 +350,8 @@ namespace Marketplace.Modules.Identity.Infrastructure.Migrations
                     b.HasIndex("PhoneNumber")
                         .IsUnique()
                         .HasFilter("\"Status\" <> 'Deleted'");
+
+                    b.HasIndex("Status");
 
                     b.ToTable("users", "identity");
                 });

@@ -20,6 +20,7 @@ public static class AdminProductEndpoints
         var products = app.MapAdminGroup("/admin/products", "Admin · Produits");
 
         products.MapGet("/", ListAsync);
+        products.MapGet("/count", CountAsync);
         products.MapGet("/{id:guid}", GetAsync);
         products.MapGet("/{id:guid}/offers", GetOffersAsync);
         products.MapPost("/{id:guid}/approve", ApproveAsync);
@@ -35,6 +36,16 @@ public static class AdminProductEndpoints
         ISender sender, CancellationToken ct,
         int page = 1, int pageSize = 20, string? search = null, string? status = null, string? sort = null, string? dir = null)
         => (await sender.Send(new ListAllProductsQuery(page, pageSize, search, status, sort, dir), ct)).Match(p => Results.Ok(p));
+
+    /// <summary>
+    /// Décompte du catalogue, ventilé par statut.
+    ///
+    /// Existe pour que le tableau de bord cesse de demander « une page d'un produit »
+    /// à la route paginée : deux balayages de la table et un tri complet, pour lire un
+    /// entier et jeter la ligne rendue.
+    /// </summary>
+    private static async Task<IResult> CountAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new CountProductsQuery(), ct)).Match(c => Results.Ok(c));
 
     /// <summary>Détail d'un produit (fiche + médias + variantes).</summary>
     private static async Task<IResult> GetAsync(Guid id, ICatalogModuleApi catalog, CancellationToken ct)

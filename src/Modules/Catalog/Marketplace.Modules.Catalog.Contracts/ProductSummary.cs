@@ -35,3 +35,9 @@ public sealed record ProductMediaSummary(
     bool IsPrimary,
     int Position,
     string AltText);
+
+/// <summary>
+/// Décompte du catalogue. <c>Total</c> couvre TOUS les statuts ; <c>ByStatus</c> les
+/// ventile, pour qu'une carte « Produits » puisse dire si elle compte des brouillons.
+/// </summary>
+public sealed record ProductCountSummary(int Total, IReadOnlyDictionary<string, int> ByStatus);

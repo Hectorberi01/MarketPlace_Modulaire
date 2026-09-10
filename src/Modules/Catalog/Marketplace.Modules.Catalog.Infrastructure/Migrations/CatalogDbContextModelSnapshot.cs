@@ -224,12 +224,16 @@ namespace Marketplace.Modules.Catalog.Infrastructure.Migrations
 
                     b.HasIndex("CategoryId");
 
+                    b.HasIndex("CreatedOnUtc");
+
                     b.HasIndex("ProductGroupId");
 
                     b.HasIndex("SellerId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("Status");
 
                     b.ToTable("products", "catalog");
                 });

@@ -12,8 +12,24 @@ public sealed record GetPaymentQuery(Guid PaymentId) : IQuery<PaymentSummary>;
 /// <summary>Récupère le paiement d'une commande.</summary>
 public sealed record GetPaymentByOrderQuery(Guid OrderId) : IQuery<PaymentSummary>;
 
-/// <summary>Agrégats de paiements (montants + compteurs) pour les indicateurs de la console.</summary>
-public sealed record GetPaymentStatsQuery(string? Search = null) : IQuery<PaymentStatsSummary>;
+/// <summary>
+/// Agrégats de paiements (montants + compteurs) pour les indicateurs de la console.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// DES BORNES, ET NON UN NOMBRE DE JOURS.
+///
+/// Un « nombre de jours » ne sait pas exprimer « les douze mois CLOS » — celle des
+/// quatre fenêtres du tableau de bord qui exclut le mois en cours. Compter 365 jours
+/// glissants aurait mis dans le camembert jusqu'à un mois entier de données que la
+/// courbe voisine, elle, laissait dehors : deux chiffres sous une même étiquette.
+///
+/// L'appelant envoie donc les mêmes bornes qu'au rapport analytique. Nulles = tout
+/// l'historique, ce qui reste le comportement des appelants qui ne demandent rien.
+/// <paramref name="ToUtc"/> est EXCLUSIVE.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record GetPaymentStatsQuery(
+    string? Search = null, DateOnly? FromUtc = null, DateOnly? ToUtc = null) : IQuery<PaymentStatsSummary>;
 
 internal sealed class GetPaymentStatsQueryHandler : IQueryHandler<GetPaymentStatsQuery, PaymentStatsSummary>
 {
@@ -24,7 +40,18 @@ internal sealed class GetPaymentStatsQueryHandler : IQueryHandler<GetPaymentStat
     public async Task<Result<PaymentStatsSummary>> Handle(GetPaymentStatsQuery query, CancellationToken cancellationToken)
     {
         Guid? id = Guid.TryParse(query.Search, out var g) ? g : null;
-        var s = await _repository.GetStatsAsync(id, cancellationToken);
+
+        // `DateOnly` → `DateTime` en UTC EXPLICITE : les colonnes sont en
+        // `timestamp with time zone`, et Npgsql refuse un DateTime de Kind Unspecified.
+        // Sans cela la requête levait au lieu de filtrer.
+        DateTime? debut = query.FromUtc is { } d
+            ? DateTime.SpecifyKind(d.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+            : null;
+        DateTime? fin = query.ToUtc is { } f
+            ? DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+            : null;
+
+        var s = await _repository.GetStatsAsync(id, debut, fin, cancellationToken);
         return Result.Success(new PaymentStatsSummary(
             s.Total, s.CapturedCount, s.CapturedAmount, s.PendingCount, s.FailedCount, s.RefundedCount, s.RefundedAmount));
     }

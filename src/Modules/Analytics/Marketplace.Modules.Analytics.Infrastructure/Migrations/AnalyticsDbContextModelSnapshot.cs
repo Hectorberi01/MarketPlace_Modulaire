@@ -103,6 +103,16 @@ namespace Marketplace.Modules.Analytics.Infrastructure.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<decimal>("RefundedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("RefundsCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("Scope")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -130,6 +140,31 @@ namespace Marketplace.Modules.Analytics.Infrastructure.Migrations
                     b.HasKey("OrderId");
 
                     b.ToTable("processed_orders", "analytics");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Analytics.Domain.Metrics.ProcessedRefund", b =>
+                {
+                    b.Property<string>("Source")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Source", "SourceId");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("processed_refunds", "analytics");
                 });
 #pragma warning restore 612, 618
         }

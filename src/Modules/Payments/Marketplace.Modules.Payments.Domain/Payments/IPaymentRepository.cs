@@ -23,9 +23,15 @@ public interface IPaymentRepository
         int page, int pageSize, Guid? id, PaymentStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Agrégats (compteurs + montants encaissés/remboursés) sur l'ensemble filtré par
-    /// recherche (identifiant paiement ou commande), pour les indicateurs de la console.
+    /// Agrégats (compteurs + montants encaissés/remboursés) filtrés par recherche
+    /// (identifiant paiement ou commande) et éventuellement bornés dans le temps
+    /// (borne haute EXCLUSIVE).
+    ///
+    /// La fenêtre est arrivée tard : ces compteurs portaient sur TOUT l'historique et
+    /// s'affichaient à côté de cartes « 30 jours », sans que rien ne le dise. Un
+    /// camembert cumulatif depuis le premier jour ne bouge plus visiblement au bout de
+    /// quelques mois — il décore, il n'informe plus.
     /// </summary>
     Task<(int Total, int CapturedCount, decimal CapturedAmount, int PendingCount, int FailedCount, int RefundedCount, decimal RefundedAmount)> GetStatsAsync(
-        Guid? id, CancellationToken cancellationToken = default);
+        Guid? id, DateTime? fromUtc = null, DateTime? toUtc = null, CancellationToken cancellationToken = default);
 }

@@ -83,7 +83,9 @@ public sealed class PaymentRefundedDomainEventHandler : IDomainEventHandler<Paym
             new PaymentRefundedIntegrationEvent
             {
                 PaymentId = domainEvent.PaymentId,
-                OrderId = domainEvent.OrderId
+                OrderId = domainEvent.OrderId,
+                Amount = domainEvent.Amount,
+                Currency = domainEvent.Currency
             },
             cancellationToken);
     }

@@ -36,6 +36,7 @@ public static class AdminCourierEndpoints
         // File des retraits livreur, séparée de celle des vendeurs et de celle des
         // clients : ce ne sont pas les mêmes contrôles ni les mêmes interlocuteurs.
         couriers.MapGet("/withdrawals/pending", PendingWithdrawalsAsync);
+        couriers.MapGet("/withdrawals/processing", ProcessingWithdrawalsAsync);
 
         return app;
     }
@@ -81,6 +82,17 @@ public static class AdminCourierEndpoints
     /// <summary>Retraits livreur en attente de validation admin.</summary>
     private static async Task<IResult> PendingWithdrawalsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListPendingCourierWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
+
+    /// <summary>
+    /// Versements coursiers partis chez le prestataire et non confirmés.
+    ///
+    /// Le pendant de cette file existait pour les vendeurs et pour les clients, pas
+    /// pour les coursiers — alors que l'approbation d'un retrait ne fait aucune
+    /// différence entre les trois. Un retrait coursier approuvé disparaissait donc de
+    /// toutes les surfaces d'administration.
+    /// </summary>
+    private static async Task<IResult> ProcessingWithdrawalsAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListProcessingCourierWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
 
     public sealed record RegisterCourierRequest(
         Guid UserId, string DisplayName, string Phone,

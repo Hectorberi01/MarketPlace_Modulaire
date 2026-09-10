@@ -44,6 +44,17 @@ internal sealed class ProductRepository : IProductRepository
             .Take(take)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await _dbContext.Products
+            .AsNoTracking()
+            .GroupBy(p => p.Status)
+            .Select(g => new { Statut = g.Key, Nombre = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(r => r.Statut.ToString(), r => r.Nombre);
+    }
+
     public async Task<(IReadOnlyList<Product> Items, int Total, IReadOnlyDictionary<string, int> StatusCounts)> ListPagedAsync(
         int page, int pageSize, string? search, ProductStatus? status, string? sort, bool desc, CancellationToken cancellationToken = default)
     {

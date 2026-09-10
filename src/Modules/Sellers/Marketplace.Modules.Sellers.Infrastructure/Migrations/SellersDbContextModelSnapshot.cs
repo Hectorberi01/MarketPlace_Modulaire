@@ -171,8 +171,14 @@ namespace Marketplace.Modules.Sellers.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedOnUtc");
+
+                    b.HasIndex("KybStatus");
+
                     b.HasIndex("ShopName")
                         .IsUnique();
+
+                    b.HasIndex("Status");
 
                     b.HasIndex("UserId")
                         .IsUnique();

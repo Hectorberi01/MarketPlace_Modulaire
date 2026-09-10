@@ -60,6 +60,21 @@ internal sealed class SellerConfiguration : IEntityTypeConfiguration<Seller>
         builder.HasIndex(s => s.UserId).IsUnique();
         builder.HasIndex(s => s.ShopName).IsUnique();
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // TROIS BALAYAGES PAR AFFICHAGE, SUR UNE TABLE SANS INDEX UTILE.
+        //
+        // `SellerRepository.ListPagedAsync` regroupe par `Status`, regroupe par
+        // `KybStatus`, compte, puis trie par `CreatedOnUtc` — et les deux seuls index
+        // existants portent sur `UserId` et `ShopName`. L'écran Vendeurs et le tableau
+        // de bord payaient donc trois parcours complets chacun, à chaque ouverture.
+        //
+        // Les deux statuts sont persistés en CHAÎNE (HasConversion<string>) : l'index
+        // porte bien sur la colonne texte, celle que le regroupement lit.
+        // ═══════════════════════════════════════════════════════════════════════
+        builder.HasIndex(s => s.Status);
+        builder.HasIndex(s => s.KybStatus);
+        builder.HasIndex(s => s.CreatedOnUtc);
+
         builder.Ignore(s => s.DomainEvents);
     }
 }

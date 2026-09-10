@@ -74,7 +74,7 @@ internal sealed class PaymentRepository : IPaymentRepository
     }
 
     public async Task<(int Total, int CapturedCount, decimal CapturedAmount, int PendingCount, int FailedCount, int RefundedCount, decimal RefundedAmount)> GetStatsAsync(
-        Guid? id, CancellationToken cancellationToken = default)
+        Guid? id, DateTime? fromUtc = null, DateTime? toUtc = null, CancellationToken cancellationToken = default)
     {
         var baseQuery = _dbContext.Payments.AsNoTracking().AsQueryable();
 
@@ -82,6 +82,19 @@ internal sealed class PaymentRepository : IPaymentRepository
         {
             var paymentId = new PaymentId(g);
             baseQuery = baseQuery.Where(p => p.Id == paymentId || p.OrderId == g);
+        }
+
+        // Borne HAUTE exclusive : l'appelant passe le lendemain à minuit, et un paiement
+        // enregistré à 23 h 59 du dernier jour compte. Une borne inclusive au jour près
+        // aurait perdu la dernière journée de chaque fenêtre.
+        if (fromUtc is { } debut)
+        {
+            baseQuery = baseQuery.Where(p => p.CreatedAtUtc >= debut);
+        }
+
+        if (toUtc is { } fin)
+        {
+            baseQuery = baseQuery.Where(p => p.CreatedAtUtc < fin);
         }
 
         // Un seul GROUP BY : compteur + somme des montants par statut (Amount est une

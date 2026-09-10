@@ -29,4 +29,15 @@ internal sealed class MetricSnapshotRepository : IMetricSnapshotRepository
 
     public async Task MarkOrderProcessedAsync(ProcessedOrder marker, CancellationToken cancellationToken = default)
         => await _dbContext.ProcessedOrders.AddAsync(marker, cancellationToken);
+
+    public async Task<bool> IsRefundProcessedAsync(string source, Guid sourceId, CancellationToken cancellationToken = default)
+        => await _dbContext.ProcessedRefunds.AnyAsync(p => p.Source == source && p.SourceId == sourceId, cancellationToken);
+
+    public async Task MarkRefundProcessedAsync(ProcessedRefund marker, CancellationToken cancellationToken = default)
+        => await _dbContext.ProcessedRefunds.AddAsync(marker, cancellationToken);
+
+    public async Task<decimal> SumRefundedForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => await _dbContext.ProcessedRefunds
+            .Where(p => p.OrderId == orderId)
+            .SumAsync(p => p.Amount, cancellationToken);
 }
