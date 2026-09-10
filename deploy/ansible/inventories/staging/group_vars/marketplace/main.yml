@@ -114,13 +114,15 @@ email_app_base_url: "https://console.marketplace-staging.hba-marketplace.fr"
 # Secrets DANS LE VAULT : alertmanager_slack_webhook_url, smtp_password.
 # Laisser une valeur vide désactive le canal correspondant.
 alert_slack_channel: "#alerts"
-smtp_host: "smtp.hostinger.com"                                     # ex. "smtp.gmail.com" — vide = pas d'e-mail
+# Passerelle SMTP de Resend, comme en production. L'identifiant est la chaîne
+# « resend » (pas une adresse), et le mot de passe est une CLÉ D'API Resend — voir
+# l'encadré du même bloc côté prod. Port 587 = STARTTLS.
+smtp_host: "smtp.resend.com"                                        # vide = pas d'e-mail
 smtp_port: 587
+# L'expéditeur doit appartenir à un domaine VÉRIFIÉ dans Resend, sans quoi l'envoi
+# est refusé et l'échec ne se voit que dans les journaux d'Alertmanager.
 smtp_from: "hector.adjakpa@hbatechettrade.com"
-# IDENTIFIANT SMTP = L'ADRESSE DE LA BOÎTE, jamais le nom du serveur. Avec
-# « smtp.hostinger.com » comme identifiant, Hostinger refusait l'authentification et
-# chaque alerte e-mail échouait en silence dans les logs d'Alertmanager.
-smtp_username: "hector.adjakpa@hbatechettrade.com"
+smtp_username: "resend"
 alert_email_to: "hector.adjakpa@gmail.com"        # destinataire des alertes critiques
 # Battement de cœur externe (healthchecks.io, Better Stack…) : alerte quand les
 # pings cessent. Vide = sonde inactive.

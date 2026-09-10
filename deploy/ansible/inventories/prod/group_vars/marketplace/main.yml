@@ -81,18 +81,33 @@ grafana_embed_url: "https://grafana.hba-express.org/d/app-overview/apps-net-open
 #
 # Le rôle `monitoring` échoue désormais si aucun canal n'est joignable.
 #
-# Prod envoie ses e-mails transactionnels par Resend (API), qui ne fait pas de SMTP
-# sortant pour un tiers : Alertmanager passe donc par la boîte Hostinger du domaine.
+# ═══════════════════════════════════════════════════════════════════════════════
+# ALERTMANAGER PASSE PAR RESEND, COMME LE RESTE DES E-MAILS.
+#
+# Ce fichier affirmait que Resend « ne fait pas de SMTP sortant pour un tiers » et
+# renvoyait Alertmanager vers la boîte Hostinger du domaine. C'était faux : Resend
+# expose une passerelle SMTP sur `smtp.resend.com`, et c'est ce qui a coûté plusieurs
+# déploiements bloqués sur un mot de passe de boîte que personne n'avait sous la main.
+#
+# Trois conséquences concrètes :
+#
+#   - L'IDENTIFIANT EST LA CHAÎNE « resend », littéralement — pas une adresse.
+#   - LE MOT DE PASSE EST UNE CLÉ D'API Resend, pas un mot de passe de messagerie.
+#     Elle n'est donc pas soumise à l'authentification à deux facteurs de la boîte,
+#     et se révoque sans toucher au courrier.
+#   - L'EXPÉDITEUR DOIT APPARTENIR À UN DOMAINE VÉRIFIÉ dans Resend. `smtp_from`
+#     ci-dessous utilise le domaine d'où partent déjà les e-mails transactionnels ;
+#     si ce n'est plus celui qui est vérifié, l'envoi est refusé par Resend et
+#     l'échec n'apparaît que dans les journaux d'Alertmanager.
+#
+# Port 587 = STARTTLS, ce qu'attend `smtp_require_tls: true` dans le modèle.
 # `smtp_password` reste dans le VAULT — il n'a rien à faire ici.
 # ═══════════════════════════════════════════════════════════════════════════════
 alert_slack_channel: "#alerts"
-smtp_host: "smtp.hostinger.com"
+smtp_host: "smtp.resend.com"
 smtp_port: 587
 smtp_from: "hector.adjakpa@hbatechettrade.com"
-# IDENTIFIANT SMTP = L'ADRESSE DE LA BOÎTE, jamais le nom du serveur. Hostinger
-# refuse l'authentification autrement, et l'échec n'apparaît que dans les logs
-# d'Alertmanager — c'est-à-dire nulle part où quelqu'un regarde.
-smtp_username: "hector.adjakpa@hbatechettrade.com"
+smtp_username: "resend"
 alert_email_to: "hector.adjakpa@gmail.com"
 
 # Battement de cœur : URL d'un service externe qui alerte quand les pings CESSENT
