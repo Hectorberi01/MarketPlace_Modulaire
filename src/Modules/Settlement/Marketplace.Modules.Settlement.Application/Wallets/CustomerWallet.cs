@@ -38,6 +38,20 @@ public sealed record ListCustomerWithdrawalsQuery(Guid CustomerId) : IQuery<IRea
 public sealed record ListPendingCustomerWithdrawalsQuery : IQuery<IReadOnlyList<PendingCustomerWithdrawalView>>;
 
 /// <summary>
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// LES RETRAITS CLIENTS PARTIS AU PSP ET NON CONFIRMÉS — ILS N'ÉTAIENT NULLE PART.
+///
+/// `ListProcessingWithdrawalsQuery` filtre sur <c>WalletOwnerType.Seller</c>, alors que
+/// l'approbation, elle, traite indifféremment les deux types de propriétaire. Un retrait
+/// de cagnotte approuvé quittait donc la file « demandés » sans entrer dans aucune autre
+/// liste : le client était débité, le versement non confirmé, et AUCUN écran ne le
+/// montrait. C'est précisément l'anomalie que la vue « versements en cours » existe pour
+/// rendre visible du côté vendeur.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record ListProcessingCustomerWithdrawalsQuery : IQuery<IReadOnlyList<ProcessingWithdrawalView>>;
+
+/// <summary>
 /// Le client demande à récupérer tout ou partie de sa cagnotte sur son Mobile Money.
 /// Retient les fonds et crée une demande en attente de validation admin — aucun
 /// versement n'est déclenché ici.
@@ -158,6 +172,54 @@ internal sealed class ListPendingCustomerWithdrawalsQueryHandler
         }
 
         return Result.Success<IReadOnlyList<PendingCustomerWithdrawalView>>(views);
+    }
+}
+
+internal sealed class ListProcessingCustomerWithdrawalsQueryHandler
+    : IQueryHandler<ListProcessingCustomerWithdrawalsQuery, IReadOnlyList<ProcessingWithdrawalView>>
+{
+    private readonly IWithdrawalRepository _withdrawals;
+    private readonly IIdentityModuleApi _identity;
+
+    public ListProcessingCustomerWithdrawalsQueryHandler(IWithdrawalRepository withdrawals, IIdentityModuleApi identity)
+    {
+        _withdrawals = withdrawals;
+        _identity = identity;
+    }
+
+    public async Task<Result<IReadOnlyList<ProcessingWithdrawalView>>> Handle(
+        ListProcessingCustomerWithdrawalsQuery query, CancellationToken cancellationToken)
+    {
+        var items = await _withdrawals.ListByStatusAsync(
+            WithdrawalStatus.Processing, WalletOwnerType.Customer, cancellationToken);
+
+        var views = new List<ProcessingWithdrawalView>();
+        foreach (var w in items)
+        {
+            var user = await _identity.GetUserAsync(w.OwnerId, cancellationToken);
+            var name = user is null ? "Client" : $"{user.FirstName} {user.LastName}".Trim();
+
+            // On réutilise `ProcessingWithdrawalView` — dont le champ s'appelle
+            // « SellerName » — plutôt que d'en créer une jumelle pour un seul mot. Le
+            // nom est devenu générique le jour où le retrait a cessé d'être réservé aux
+            // vendeurs ; l'écran, lui, sait de quelle file il vient.
+            views.Add(new ProcessingWithdrawalView(
+                w.Id.Value,
+                w.OwnerId,
+                string.IsNullOrWhiteSpace(name) ? "Client" : name,
+                w.Amount,
+                w.Currency,
+                w.ProviderRef,
+                // Même filet que la file vendeurs : une note d'étape restée en base
+                // n'est pas une anomalie. Voir WalletMapper.SansNoteDEtape.
+                WalletMapper.SansNoteDEtape(w.FailureReason),
+                w.CreatedAtUtc,
+                w.SentToPspAtUtc));
+        }
+
+        // Les plus anciens d'abord : ce sont eux qui traînent, donc ceux à traiter.
+        return Result.Success<IReadOnlyList<ProcessingWithdrawalView>>(
+            views.OrderBy(v => v.SentToPspAtUtc ?? v.CreatedAtUtc).ToList());
     }
 }
 

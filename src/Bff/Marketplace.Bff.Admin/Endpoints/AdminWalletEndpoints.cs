@@ -1,6 +1,7 @@
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Settlement.Application.Wallets;
+using Marketplace.Modules.Payments.Contracts;
 using Marketplace.Modules.Settlement.Contracts;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -22,6 +23,8 @@ public static class AdminWalletEndpoints
         wallet.MapPost("/withdrawals/{id:guid}/reject", RejectWithdrawalAsync);
         wallet.MapGet("/reconciliation", ReconciliationAsync);
         wallet.MapGet("/withdrawals/customers/pending", PendingCustomerWithdrawalsAsync);
+        wallet.MapGet("/withdrawals/customers/processing", ProcessingCustomerWithdrawalsAsync);
+        wallet.MapGet("/withdrawals/payout-mode", PayoutModeAsync);
 
         return app;
     }
@@ -45,9 +48,47 @@ public static class AdminWalletEndpoints
     private static async Task<IResult> ProcessingWithdrawalsAsync(ISender sender, CancellationToken ct)
         => (await sender.Send(new ListProcessingWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
 
-    /// <summary>Approuve une demande de retrait et déclenche le payout FedaPay.</summary>
-    private static async Task<IResult> ApproveWithdrawalAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ApproveWithdrawalCommand(id), ct)).Match(view => Results.Ok(view));
+    /// <summary>
+    /// Approuve une demande de retrait et déclenche le versement.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// EN MODE SIMULÉ, ON EXIGE UN ACQUIESCEMENT EXPLICITE.
+    ///
+    /// Quand les versements sont simulés, approuver débite le vendeur et clôt la
+    /// demande avec une référence fictive : personne ne lui envoie rien. La console
+    /// prévient déjà et fait cocher une case — mais une case à cocher ne protège que
+    /// celui qui regarde l'écran. Un onglet réseau, un bundle en cache ou un script
+    /// muni d'un jeton Admin passent à côté.
+    ///
+    /// La garde est donc ici, au seul endroit que rien ne contourne. Elle ne bloque
+    /// pas la simulation — elle est légitime en recette, et c'est tout son intérêt :
+    /// elle exige qu'on la demande. `?acknowledgeSimulation=true`.
+    ///
+    /// 409 CONFLICT et non 400 : la requête est bien formée, c'est l'ÉTAT du système
+    /// qui s'y oppose. Un client qui ne connaît pas ce mode reçoit un message qui le
+    /// lui apprend, au lieu d'un succès qui lui ment.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> ApproveWithdrawalAsync(
+        Guid id,
+        IPayoutModuleApi payouts,
+        ISender sender,
+        CancellationToken ct,
+        bool acknowledgeSimulation = false)
+    {
+        if (payouts.PayoutsAreSimulated && !acknowledgeSimulation)
+        {
+            return Results.Problem(
+                title: "Versements simulés",
+                detail: "Les versements sont SIMULÉS sur cette instance : approuver débiterait le vendeur " +
+                        "et clôturerait la demande avec une référence fictive, sans qu'aucun argent ne parte. " +
+                        "Renvoyez la requête avec « ?acknowledgeSimulation=true » pour le faire en connaissance " +
+                        "de cause, et payez le vendeur par un autre moyen.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        return (await sender.Send(new ApproveWithdrawalCommand(id), ct)).Match(view => Results.Ok(view));
+    }
 
     /// <summary>Rejette une demande de retrait avec un motif.</summary>
     private static async Task<IResult> RejectWithdrawalAsync(Guid id, RejectRequest request, ISender sender, CancellationToken ct)
@@ -70,6 +111,17 @@ public static class AdminWalletEndpoints
         => (await sender.Send(new ListPendingCustomerWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
 
     /// <summary>
+    /// Retraits de cagnotte CLIENT demandés au PSP et non confirmés.
+    ///
+    /// Jumelle de <see cref="ProcessingWithdrawalsAsync"/>, qui ne voit que les vendeurs.
+    /// Sans elle, un retrait client approuvé quittait la file des demandes sans entrer
+    /// dans aucune autre : le client débité, le versement non confirmé, et rien à
+    /// l'écran pour le dire.
+    /// </summary>
+    private static async Task<IResult> ProcessingCustomerWithdrawalsAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListProcessingCustomerWithdrawalsQuery(), ct)).Match(list => Results.Ok(list));
+
+    /// <summary>
     /// Contrôle comptable : chaque solde de portefeuille est-il exactement égal à la
     /// somme des écritures qui le justifient ?
     ///
@@ -83,6 +135,23 @@ public static class AdminWalletEndpoints
             .Match(report => report.IsBalanced
                 ? Results.Ok(report)
                 : Results.Json(report, statusCode: StatusCodes.Status409Conflict));
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE VERSEMENT PART-IL VRAIMENT ? À LIRE AVANT DE PROPOSER D'APPROUVER.
+    ///
+    /// Quand FedaPay n'est pas en mesure de verser, l'installeur enregistre un stub
+    /// qui répond « accepté » puis « envoyé ». Approuver un retrait débite alors le
+    /// vendeur, clôt la demande avec une référence `sim_payout_…` qui n'existe chez
+    /// aucun prestataire, et affiche un succès. Le vendeur, lui, attend son argent.
+    ///
+    /// La console doit pouvoir le dire AVANT le clic. Elle ne recalcule pas la règle —
+    /// qui combine le drapeau `EnablePayouts`, l'environnement de la clé et l'URL de
+    /// base : elle demande à l'implémentation retenue ce qu'elle est.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static IResult PayoutModeAsync(IPayoutModuleApi payouts)
+        => Results.Ok(new { simulated = payouts.PayoutsAreSimulated });
 
     /// <summary>Corps de la requête de rejet d'une demande de retrait.</summary>
     public record RejectRequest(string Reason);

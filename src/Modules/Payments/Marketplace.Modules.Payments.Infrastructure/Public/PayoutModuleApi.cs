@@ -13,6 +13,9 @@ internal sealed class PayoutModuleApi : IPayoutModuleApi
 
     public PayoutModuleApi(IPayoutGateway gateway) => _gateway = gateway;
 
+    /// <summary>Délégué au port : c'est l'implémentation retenue qui sait ce qu'elle fait.</summary>
+    public bool PayoutsAreSimulated => _gateway.IsSimulated;
+
     public async Task<PayoutOutcome> SendMobileMoneyPayoutAsync(PayoutInstructionContract instruction, CancellationToken cancellationToken = default)
     {
         var result = await _gateway.SendAsync(

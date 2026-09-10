@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.BuildingBlocks.Domain.Results;
 
@@ -44,7 +45,7 @@ public sealed class ShippingRate : ValueObject
 
     public static Result<ShippingRate> Create(string? serviceCode, string? label, string? eta, decimal amount, string? currency)
     {
-        var code = string.IsNullOrWhiteSpace(serviceCode) ? null : serviceCode.Trim().ToLowerInvariant();
+        var code = NormalizeServiceCode(serviceCode);
         if (code is null)
         {
             return Error.Validation("shipping.rate.service_required", "Le code du service est obligatoire.");
@@ -64,11 +65,38 @@ public sealed class ShippingRate : ValueObject
         }
 
         return new ShippingRate(
-            Cap(code, MaxServiceCode),
+            code,
             Cap(string.IsNullOrWhiteSpace(label) ? code : label.Trim(), MaxLabel),
             Cap(eta?.Trim() ?? string.Empty, MaxEta),
             amount,
             cur);
+    }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// UNE SEULE RÈGLE POUR ÉCRIRE ET POUR SUPPRIMER.
+    ///
+    /// La création se contentait d'un `Trim().ToLowerInvariant()` pendant que
+    /// <c>ShippingZone.RemoveRate</c> cherchait le tarif par un SLUG — accents repliés,
+    /// espaces changés en tirets. Un code saisi « Express Soir » était donc stocké
+    /// « express soir » et recherché « express-soir » : le tarif s'affichait à l'écran
+    /// et refusait définitivement d'être supprimé, avec un « Tarif introuvable » que
+    /// rien ne permettait de comprendre.
+    ///
+    /// Les deux chemins passent désormais ici. La règle vit à un seul endroit, sur le
+    /// type qui porte le code — pas dans chacun de ses appelants.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <returns>Le code normalisé, ou <c>null</c> s'il ne reste rien d'exploitable.</returns>
+    public static string? NormalizeServiceCode(string? serviceCode)
+    {
+        if (string.IsNullOrWhiteSpace(serviceCode))
+        {
+            return null;
+        }
+
+        var folded = BeninGeography.FoldForKey(serviceCode.Trim()).Replace(' ', '-');
+        return folded.Length == 0 ? null : Cap(folded, MaxServiceCode);
     }
 
     private static string Cap(string value, int max) => value.Length <= max ? value : value[..max];

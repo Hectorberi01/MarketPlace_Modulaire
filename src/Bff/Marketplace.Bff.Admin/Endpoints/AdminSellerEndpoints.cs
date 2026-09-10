@@ -88,9 +88,29 @@ public static class AdminSellerEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>Liste des vendeurs (back-office).</summary>
-    private static async Task<IResult> ListAsync(ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListSellersQuery(), ct)).Match(s => Results.Ok(s));
+    /// <summary>
+    /// Page de vendeurs (pagination, recherche par boutique, filtres statut et KYB).
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CETTE ROUTE RENVOYAIT LA TABLE ENTIÈRE.
+    ///
+    /// `ListSellersQuery` ne prend aucun paramètre : chaque affichage de l'écran
+    /// Vendeurs — et chaque affichage du TABLEAU DE BORD, qui s'en servait pour
+    /// compter — rapatriait toutes les boutiques, leurs documents KYB compris.
+    /// Invisible à trente vendeurs, pénible à trois cents, bloquant à trois mille.
+    ///
+    /// Les décomptes par statut voyagent dans `facets` : sans eux, un écran voulant
+    /// afficher « 12 dossiers à examiner » n'aurait d'autre choix que de tout
+    /// recharger pour compter — c'est-à-dire d'annuler la pagination qu'on vient
+    /// d'ajouter. Les clés sont préfixées « status: » et « kyb: ».
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> ListAsync(
+        ISender sender, CancellationToken ct,
+        int page = 1, int pageSize = 20, string? search = null,
+        string? status = null, string? kyb = null, string? sort = null, string? dir = null)
+        => (await sender.Send(new ListSellersPagedQuery(page, pageSize, search, status, kyb, sort, dir), ct))
+            .Match(s => Results.Ok(s));
 
     /// <summary>
     /// Ouvre une boutique. DEUX cas, et il fallait les distinguer :

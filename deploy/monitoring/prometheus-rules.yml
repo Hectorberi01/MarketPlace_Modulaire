@@ -2,7 +2,7 @@
 # Règles d'alerte Prometheus — HbaExpress
 # Chargé par prometheus.yml (rule_files). Les alertes apparaissent dans l'onglet
 # « Alerts » de Prometheus et via la métrique ALERTS (exploitable dans Grafana).
-# Pour des NOTIFICATIONS (email/Slack/webhook), brancher un Alertmanager (voir doc).
+# Les NOTIFICATIONS passent par Alertmanager (alerting: dans prometheus.yml).
 #
 # Certaines alertes s'appuient sur les métriques custom (.NET) : elles ne
 # s'activeront qu'une fois l'API redéployée avec la couche de métriques.
@@ -368,3 +368,46 @@ groups:
         annotations:
           summary: "Pic de bannissements Fail2ban"
           description: "Plus de 5 IP bannies en 15 min — activité hostile soutenue."
+
+  # ---------------------------------------------------------------------------
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SONDE DE VIE DE LA CHAÎNE D'ALERTE.
+  #
+  # Toutes les règles ci-dessus partagent le même angle mort : elles supposent que
+  # Prometheus tourne, que ses règles sont chargées, qu'Alertmanager est joignable
+  # et que son canal fonctionne. Si l'un de ces maillons casse, la production peut
+  # brûler sans qu'aucun message ne parte — et l'absence de message ressemble
+  # exactement au bon fonctionnement.
+  #
+  # `Watchdog` est vraie en permanence, par construction. Elle est routée vers un
+  # service de battement de cœur externe, qui alerte quand les battements CESSENT.
+  # C'est le seul mécanisme qui transforme le silence en signal.
+  #
+  # `severity: none` la tient hors des routes critical/warning : elle ne réveille
+  # personne, elle prouve seulement que le réveil est en état de marche.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - name: meta-alerting
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        for: 0m
+        labels: { severity: none }
+        annotations:
+          summary: "Sonde de vie de la chaine d'alerte"
+          description: >-
+            Cette alerte est TOUJOURS active et c'est voulu. Son silence signifie que
+            la chaine Prometheus -> Alertmanager -> notification est rompue.
+
+      - alert: AlertmanagerDown
+        # Prometheus scrute Alertmanager (job « alertmanager » dans prometheus.yml).
+        # Cette alerte-ci ne peut evidemment pas etre notifiee par Alertmanager :
+        # elle reste visible dans Prometheus et dans Grafana, et c'est le Watchdog
+        # ci-dessus qui joue le role d'avertisseur externe.
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Alertmanager injoignable"
+          description: >-
+            Prometheus ne parvient plus a scruter Alertmanager : plus aucune alerte
+            n'est notifiee tant que ce n'est pas retabli.

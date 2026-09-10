@@ -175,7 +175,10 @@ public sealed class ShippingZone : AggregateRoot<ShippingZoneId>
 
     public Result RemoveRate(string? serviceCode)
     {
-        var code = Slugify(serviceCode);
+        // MÊME normalisation qu'à l'écriture (voir ShippingRate.NormalizeServiceCode).
+        // `Slugify` était la règle des codes de ZONE : l'appliquer aux codes de SERVICE
+        // rendait indélébile tout tarif dont le code portait un espace ou un accent.
+        var code = ShippingRate.NormalizeServiceCode(serviceCode);
         var removed = code is not null && _rates.RemoveAll(r => r.ServiceCode == code) > 0;
 
         return removed

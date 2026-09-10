@@ -59,6 +59,16 @@ public sealed record PayoutWebhookNotification(bool IsPayoutEvent, bool Verified
 /// </summary>
 public interface IPayoutModuleApi
 {
+    /// <summary>
+    /// Les versements de cette instance sont-ils SIMULÉS ?
+    ///
+    /// Vrai quand aucun argent ne part : le cycle se déroule entièrement, le retrait
+    /// est marqué « envoyé » avec une référence fictive, et le vendeur est débité. Un
+    /// écran d'administration qui propose de valider un retrait DOIT le dire avant,
+    /// pas après.
+    /// </summary>
+    bool PayoutsAreSimulated { get; }
+
     Task<PayoutOutcome> SendMobileMoneyPayoutAsync(PayoutInstructionContract instruction, CancellationToken cancellationToken = default);
 
     /// <summary>Statut réel d'un dépôt déjà demandé (réconciliation des retraits « en cours »).</summary>

@@ -170,7 +170,13 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
         // leur âge. C'est un échange délibéré : un versement immobilisé et visible vaut
         // mieux qu'un versement envoyé deux fois.
         // ═════════════════════════════════════════════════════════════════════════
-        withdrawal.MarkProcessing(null, "Approbation en cours : versement demandé au prestataire.");
+        // SANS NOTE. Ce passage ne signale rien d'anormal : il enregistre qu'on est
+        // sur le point d'appeler le prestataire, et c'est `SentToPspAtUtc` — posé par
+        // `MarkProcessing` — qui porte cette information. Le texte qui se trouvait ici
+        // atterrissait dans `FailureReason`, que le BFF admin publie sous le nom
+        // « anomaly » : le tableau de bord passait donc en alerte critique pendant la
+        // durée de l'appel HTTP, sur le chemin nominal.
+        withdrawal.MarkProcessing(null);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var outcome = await _payouts.SendMobileMoneyPayoutAsync(
@@ -197,7 +203,13 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
             // SECOND versement. Le retrait passe « en cours » ; la réconciliation
             // interrogera FedaPay et tranchera (Completed ou Failed + remboursement).
             case PayoutOutcomeStatus.Unknown:
-                withdrawal.MarkProcessing(outcome.ProviderReference, outcome.Error);
+                // `outcome.Error` PEUT ÊTRE NUL — le contrat l'admet, et un timeout pur
+                // n'apporte aucun message. Sans ce repli, l'issue la plus incertaine
+                // qui soit ressortait SANS anomalie, donc plus discrètement qu'un rejet
+                // franc. On nomme l'incident nous-mêmes.
+                withdrawal.MarkProcessing(
+                    outcome.ProviderReference,
+                    outcome.Error ?? "Issue indéterminée : le prestataire n'a pas confirmé la demande.");
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 return WalletMapper.ToView(withdrawal);
 

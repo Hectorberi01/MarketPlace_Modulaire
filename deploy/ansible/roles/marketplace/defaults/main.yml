@@ -39,3 +39,40 @@ registry_pull_required:
 registry_pull_optional:
   - console
   - seller-console
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VÉRIFICATION APRÈS DÉPLOIEMENT.
+#
+# Jusqu'ici le playbook se terminait sur un `docker compose ps` affiché à l'écran :
+# une API qui plante au démarrage — variable manquante, migration en échec, base
+# injoignable — laissait le déploiement en SUCCÈS. Le vert du pipeline ne voulait
+# rien dire.
+#
+# Deux vérifications complémentaires, et elles ne se remplacent pas :
+#
+#   - readiness INTERNE (`/health/ready`) : le service et ses dépendances. Le
+#     healthcheck du conteneur, lui, n'interroge que `/health` (liveness), qui
+#     répond même quand la base est morte.
+#   - routage TRAEFIK : depuis l'hôte, en forçant la résolution vers 127.0.0.1 pour
+#     ne dépendre ni du DNS public ni du hairpin NAT. Un backend en parfaite santé
+#     derrière un routeur mal étiqueté était totalement invisible.
+# ═══════════════════════════════════════════════════════════════════════════════
+enable_post_deploy_check: true
+# Services interrogés en readiness. `console`/`seller-console` n'y figurent pas :
+# elles n'exposent pas /health/ready et ne sont pas construites par ce dépôt.
+post_deploy_health_services:
+  - api
+  - bff-client
+  - bff-seller
+  - bff-admin
+  - bff-driver
+  - dispatch
+post_deploy_health_path: /health/ready
+post_deploy_health_retries: 10
+post_deploy_health_delay: 15
+# URL publiques testées à travers Traefik. VIDE par défaut, et volontairement : ces
+# URL se construisent sur `root_domain`, que seuls prod et staging définissent. Une
+# liste par défaut y aurait fait échouer tout run en dev sur « root_domain is
+# undefined » — la vérification aurait cassé les environnements qu'elle ne concerne
+# même pas. Chaque inventaire qui a des domaines publics déclare la sienne.
+post_deploy_public_urls: []

@@ -117,8 +117,14 @@ alert_slack_channel: "#alerts"
 smtp_host: "smtp.hostinger.com"                                     # ex. "smtp.gmail.com" — vide = pas d'e-mail
 smtp_port: 587
 smtp_from: "hector.adjakpa@hbatechettrade.com"
-smtp_username: "smtp.hostinger.com"                                 # identifiant SMTP (si authentifié)
+# IDENTIFIANT SMTP = L'ADRESSE DE LA BOÎTE, jamais le nom du serveur. Avec
+# « smtp.hostinger.com » comme identifiant, Hostinger refusait l'authentification et
+# chaque alerte e-mail échouait en silence dans les logs d'Alertmanager.
+smtp_username: "hector.adjakpa@hbatechettrade.com"
 alert_email_to: "hector.adjakpa@gmail.com"        # destinataire des alertes critiques
+# Battement de cœur externe (healthchecks.io, Better Stack…) : alerte quand les
+# pings cessent. Vide = sonde inactive.
+alert_heartbeat_url: ""
 
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: documents-pdf
@@ -131,3 +137,15 @@ admin_email: "hector.adjakpa@hbatechettrade.com"
 
 terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
 
+# ── Vérification après déploiement : URL testées à travers Traefik ───────────
+# `api` et `dispatch` n'ont un routeur que sur certains préfixes : leur racine
+# renverrait un 404 de Traefik, indistinguable d'un backend sain. On vise donc pour
+# ces deux-là un chemin RÉELLEMENT routé. Un 404 applicatif est un succès : il prouve
+# que la requête est arrivée jusqu'à l'application.
+post_deploy_public_urls:
+  - "https://m.{{ root_domain }}/"
+  - "https://seller.{{ root_domain }}/"
+  - "https://admin.{{ root_domain }}/"
+  - "https://driver.{{ root_domain }}/"
+  - "https://api.{{ root_domain }}/api/payments/return"
+  - "https://dispatch.{{ root_domain }}/api/courier"

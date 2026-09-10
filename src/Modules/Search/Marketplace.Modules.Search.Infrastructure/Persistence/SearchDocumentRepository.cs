@@ -47,14 +47,33 @@ internal sealed class SearchDocumentRepository : ISearchDocumentRepository
 
         var total = await query.CountAsync(cancellationToken);
 
-        query = criteria.SortBy?.ToLowerInvariant() switch
+        IOrderedQueryable<SearchDocument> ordered = criteria.SortBy?.ToLowerInvariant() switch
         {
             "price" => query.OrderBy(d => d.MinPrice),
             "rating" => query.OrderByDescending(d => d.AverageRating).ThenByDescending(d => d.ReviewCount),
             _ => query.OrderByDescending(d => d.UpdatedAtUtc)
         };
 
-        var items = await query
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA VITRINE PERDAIT DES PRODUITS ENTRE DEUX PAGES.
+        //
+        // PostgreSQL ne garantit aucun ordre entre lignes qu'un ORDER BY laisse ex
+        // æquo, et deux pages sont deux exécutions. Les trois tris d'ici en produisent
+        // massivement :
+        //
+        //   - « note » : tout produit sans avis vaut (0, 0). C'est le plus gros paquet
+        //     du catalogue, et c'est celui des NOUVEAUTÉS — un produit fraîchement mis
+        //     en ligne pouvait n'apparaître sur AUCUNE page tant qu'il n'avait pas
+        //     d'avis, sans que rien ne le signale à son vendeur.
+        //   - « prix » : les prix ronds se répètent, et tous les produits sans offre
+        //     partagent un MinPrice nul.
+        //   - par défaut : les dates se tassent après une reconstruction de l'index,
+        //     qui réécrit tout le catalogue en rafale.
+        //
+        // `ProductId` est la clé primaire de ce document : l'ordre devient total.
+        // ═════════════════════════════════════════════════════════════════════════
+        var items = await ordered
+            .ThenBy(d => d.ProductId)
             .Skip((criteria.Page - 1) * criteria.PageSize)
             .Take(criteria.PageSize)
             .ToListAsync(cancellationToken);

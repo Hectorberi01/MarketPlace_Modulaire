@@ -70,6 +70,37 @@ loki_url: "http://loki:3100"                       # interne → panneau Logs de
 grafana_url: "https://grafana.hba-express.org"     # navigateur (iframe)
 grafana_embed_url: "https://grafana.hba-express.org/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CANAL D'ALERTE — SANS CE BLOC, LA SUPERVISION DE PRODUCTION EST MUETTE.
+#
+# `enable_monitoring: true` déploie Prometheus, ses règles et Alertmanager. Aucune
+# de ces trois briques ne notifie quoi que ce soit tant qu'Alertmanager n'a pas de
+# destinataire : il rendait jusqu'ici des receivers vides, acceptait chaque alerte
+# et la jetait. Le tableau de bord montrait des alertes rouges que personne ne
+# recevait — le pire des deux mondes, puisqu'il ressemble à une supervision.
+#
+# Le rôle `monitoring` échoue désormais si aucun canal n'est joignable.
+#
+# Prod envoie ses e-mails transactionnels par Resend (API), qui ne fait pas de SMTP
+# sortant pour un tiers : Alertmanager passe donc par la boîte Hostinger du domaine.
+# `smtp_password` reste dans le VAULT — il n'a rien à faire ici.
+# ═══════════════════════════════════════════════════════════════════════════════
+alert_slack_channel: "#alerts"
+smtp_host: "smtp.hostinger.com"
+smtp_port: 587
+smtp_from: "hector.adjakpa@hbatechettrade.com"
+# IDENTIFIANT SMTP = L'ADRESSE DE LA BOÎTE, jamais le nom du serveur. Hostinger
+# refuse l'authentification autrement, et l'échec n'apparaît que dans les logs
+# d'Alertmanager — c'est-à-dire nulle part où quelqu'un regarde.
+smtp_username: "hector.adjakpa@hbatechettrade.com"
+alert_email_to: "hector.adjakpa@gmail.com"
+
+# Battement de cœur : URL d'un service externe qui alerte quand les pings CESSENT
+# (healthchecks.io, Better Stack Heartbeats, cron-monitor). C'est le SEUL mécanisme
+# qui détecte une pile d'alerte morte — sans lui, « aucune alerte » et « plus rien
+# ne fonctionne » se ressemblent trait pour trait. Vide = sonde inactive.
+alert_heartbeat_url: ""
+
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: hbaexpress-documents-pdf
 r2_public_base_url: ""
@@ -137,3 +168,16 @@ db_admin_subdomain: "db"
 fail2ban_findtime: "1h"
 fail2ban_bantime: "24h"
 fail2ban_sshd_maxretry: 3
+
+# ── Vérification après déploiement : URL testées à travers Traefik ───────────
+# `api` et `dispatch` n'ont un routeur que sur certains préfixes : leur racine
+# renverrait un 404 de Traefik, indistinguable d'un backend sain. On vise donc pour
+# ces deux-là un chemin RÉELLEMENT routé. Un 404 applicatif est un succès : il prouve
+# que la requête est arrivée jusqu'à l'application.
+post_deploy_public_urls:
+  - "https://m.{{ root_domain }}/"
+  - "https://seller.{{ root_domain }}/"
+  - "https://admin.{{ root_domain }}/"
+  - "https://driver.{{ root_domain }}/"
+  - "https://api.{{ root_domain }}/api/payments/return"
+  - "https://dispatch.{{ root_domain }}/api/courier"

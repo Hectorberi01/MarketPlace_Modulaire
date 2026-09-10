@@ -48,7 +48,9 @@ internal static class WalletMapper
 
     public static CustomerRefundView ToView(CustomerRefund r)
         => new(r.Id.Value, r.OrderId, r.BuyerId, r.Amount, r.Currency, r.Reason, r.Msisdn, r.Provider,
-               r.Status.ToString(), r.ProviderRef, PresentableFailure(r.FailureReason), r.CreatedAtUtc, r.CompletedAtUtc,
+               r.Status.ToString(), r.ProviderRef,
+               PresentableFailure(r.FailureReason, r.Status is CustomerRefundStatus.Failed),
+               r.CreatedAtUtc, r.CompletedAtUtc,
                r.Channel.ToString());
 
     public static WalletTransactionView ToView(WalletTransaction t)
@@ -61,14 +63,36 @@ internal static class WalletMapper
     /// </summary>
     public static CustomerWithdrawalView ToCustomerView(Withdrawal w)
         => new(w.Id.Value, w.OwnerId, w.Amount, w.Currency, w.Status.ToString(),
-               PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);
+               PresentableFailure(w.FailureReason, FondsRendus(w)), w.CreatedAtUtc, w.CompletedAtUtc);
 
     public static WithdrawalView ToView(Withdrawal w)
         => new(w.Id.Value, w.OwnerId, w.Amount, w.Currency, w.Status.ToString(), w.ProviderRef,
-               PresentableFailure(w.FailureReason), w.CreatedAtUtc, w.CompletedAtUtc);
+               PresentableFailure(w.FailureReason, FondsRendus(w)), w.CreatedAtUtc, w.CompletedAtUtc);
+
+    /// <summary>Le retrait a-t-il rendu ses fonds au solde ? Seuls le refus et le rejet le font.</summary>
+    private static bool FondsRendus(Withdrawal w)
+        => w.Status is WithdrawalStatus.Failed or WithdrawalStatus.Rejected;
 
     /// <summary>
-    /// Filet de sécurité à la LECTURE : un motif d'échec technique ne sort jamais.
+    /// Filet de sécurité à la LECTURE : une note d'ÉTAPE n'est pas un motif d'échec.
+    ///
+    /// `ApproveWithdrawalCommand` a longtemps écrit « Approbation en cours… » dans
+    /// <c>FailureReason</c> avant d'appeler le prestataire ; elle ne le fait plus. Mais
+    /// les retraits dont le processus a été interrompu pendant cet appel gardent ce
+    /// texte en base — et ce sont précisément ceux qui demandent un arbitrage manuel.
+    /// Leur faire dire « approbation en cours » à qui les découvre trois jours plus
+    /// tard serait le contraire de ce qu'il doit lire, et côté vendeur cela affiche un
+    /// motif d'échec pour un retrait qui n'a pas échoué. Réécrire ces quelques lignes
+    /// par migration ne se justifie pas : on neutralise à l'affichage.
+    /// </summary>
+    internal static string? SansNoteDEtape(string? reason)
+        => string.IsNullOrWhiteSpace(reason) || reason.StartsWith("Approbation en cours", StringComparison.Ordinal)
+            ? null
+            : reason;
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// FILET DE SÉCURITÉ À LA LECTURE : UN MOTIF TECHNIQUE NE SORT JAMAIS.
     ///
     /// La passerelle FedaPay a longtemps recopié la réponse HTTP brute du PSP dans
     /// <c>FailureReason</c> ; elle ne le fait plus, mais les retraits déjà en base
@@ -76,10 +100,22 @@ internal static class WalletMapper
     /// « FedaPay — création refusée (403) : {"message":"Opération non autorisée"…} ».
     /// Réécrire l'historique serait une migration destructive pour un bénéfice nul :
     /// on neutralise donc à l'affichage. Et si une future passerelle refaisait la
-    /// même erreur, le vendeur en serait protégé d'office.
+    /// même erreur, le destinataire en serait protégé d'office.
+    ///
+    /// <paramref name="fondsRendus"/> EXISTE PARCE QUE LE TEXTE DE REMPLACEMENT
+    /// AFFIRMAIT UN REMBOURSEMENT.
+    ///
+    /// « Vos fonds ont été recrédités sur votre solde » n'est vrai que d'un versement
+    /// REFUSÉ. Sur une issue indéterminée, les fonds restent débités — c'est le
+    /// principe même de cet état : on ne recrédite pas tant qu'on ne sait pas, sous
+    /// peine d'autoriser un second versement. Le filet servait pourtant la même phrase
+    /// dans les deux cas, et annonçait donc à un vendeur toujours débité que son argent
+    /// lui avait été rendu. Sur un écran d'argent, c'est la pire chose à écrire.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    private static string? PresentableFailure(string? reason)
+    private static string? PresentableFailure(string? reason, bool fondsRendus)
     {
+        reason = SansNoteDEtape(reason);
         if (string.IsNullOrWhiteSpace(reason)) return reason;
 
         var looksTechnical =
@@ -88,9 +124,11 @@ internal static class WalletMapper
             reason.Contains("FedaPay", StringComparison.OrdinalIgnoreCase) ||
             reason.Contains("Exception", StringComparison.OrdinalIgnoreCase);
 
-        return looksTechnical
+        if (!looksTechnical) return reason;
+
+        return fondsRendus
             ? "Versement refusé par l'opérateur. Vos fonds ont été recrédités sur votre solde."
-            : reason;
+            : "Incident technique chez l'opérateur : le versement est en cours de vérification.";
     }
 }
 
@@ -215,7 +253,7 @@ internal sealed class ListProcessingWithdrawalsQueryHandler : IQueryHandler<List
                 w.Amount,
                 w.Currency,
                 w.ProviderRef,
-                w.FailureReason, // trace de l'incident éventuel (timeout, démarrage indéterminé…)
+                WalletMapper.SansNoteDEtape(w.FailureReason),
                 w.CreatedAtUtc,
                 w.SentToPspAtUtc));
         }
@@ -224,6 +262,7 @@ internal sealed class ListProcessingWithdrawalsQueryHandler : IQueryHandler<List
         return Result.Success<IReadOnlyList<ProcessingWithdrawalView>>(
             views.OrderBy(v => v.SentToPspAtUtc ?? v.CreatedAtUtc).ToList());
     }
+
 }
 
 internal sealed class GetPlatformWalletQueryHandler : IQueryHandler<GetPlatformWalletQuery, PlatformWalletView>

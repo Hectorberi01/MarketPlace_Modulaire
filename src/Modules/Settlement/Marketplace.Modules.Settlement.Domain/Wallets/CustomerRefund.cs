@@ -90,11 +90,17 @@ public sealed class CustomerRefund : AggregateRoot<CustomerRefundId>
     /// Versement DEMANDÉ au PSP (start accepté) ou issue indéterminée : on garde le
     /// débit plateforme, la réconciliation tranchera.
     /// </summary>
-    public void MarkProcessing(string? providerRef, string? note = null)
+    /// <remarks>
+    /// <paramref name="incident"/> décrit un INCIDENT, jamais une étape : il alimente
+    /// <see cref="FailureReason"/>, lu comme une anomalie par les consoles. Voir la
+    /// note détaillée sur <c>Withdrawal.MarkProcessing</c>, où l'usage en journal
+    /// d'étape avait fini par déclencher une alerte critique sur le chemin nominal.
+    /// </remarks>
+    public void MarkProcessing(string? providerRef, string? incident = null)
     {
         Status = CustomerRefundStatus.Processing;
         ProviderRef = providerRef ?? ProviderRef;
-        FailureReason = note;
+        FailureReason = incident;
         SentToPspAtUtc ??= DateTime.UtcNow;
     }
 

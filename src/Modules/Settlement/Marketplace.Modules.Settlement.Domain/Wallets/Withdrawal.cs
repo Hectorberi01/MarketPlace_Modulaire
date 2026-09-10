@@ -119,12 +119,31 @@ public sealed class Withdrawal : AggregateRoot<WithdrawalId>
     /// Les fonds restent débités : on ne rembourse pas tant qu'on ne sait pas.
     /// <paramref name="providerRef"/> peut être nul (cas d'un timeout avant d'obtenir
     /// l'identifiant) — le retrait devra alors être tranché manuellement.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// <paramref name="incident"/> DÉCRIT UN INCIDENT, JAMAIS UNE ÉTAPE.
+    ///
+    /// Ce paramètre alimente <see cref="FailureReason"/>, que le BFF admin expose sous
+    /// le nom « anomaly » et que la console lit comme le signal d'un problème. Il a
+    /// longtemps servi de journal : l'appelant y écrivait « approbation en cours »
+    /// avant même de joindre le prestataire, et le tableau de bord affichait alors
+    /// « le vendeur est débité sans avoir reçu son argent » pendant le déroulement
+    /// NORMAL d'une validation. Un faux positif répété sur la seule alerte rouge d'un
+    /// écran apprend à l'ignorer — c'est son vrai coût.
+    ///
+    /// La règle, donc : ne renseigner ce paramètre que lorsque quelque chose s'est
+    /// mal passé. L'avancement, lui, se lit sur <see cref="Status"/>,
+    /// <see cref="SentToPspAtUtc"/> et la présence d'une référence prestataire.
+    ///
+    /// L'omettre EFFACE l'incident précédent, ce qui est voulu : un second passage qui
+    /// aboutit doit lever le drapeau posé par le premier.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public void MarkProcessing(string? providerRef, string? note = null)
+    public void MarkProcessing(string? providerRef, string? incident = null)
     {
         Status = WithdrawalStatus.Processing;
         ProviderRef = providerRef ?? ProviderRef;
-        FailureReason = note; // trace de l'anomalie éventuelle (timeout…)
+        FailureReason = incident;
         SentToPspAtUtc ??= DateTime.UtcNow;
     }
 

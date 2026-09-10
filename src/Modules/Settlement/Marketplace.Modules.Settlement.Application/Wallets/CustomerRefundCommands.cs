@@ -242,7 +242,11 @@ internal sealed class InitiateCustomerRefundCommandHandler : ICommandHandler<Ini
                 // Issue INDÉTERMINÉE (timeout/5xx) : le versement est peut-être parti. On NE
                 // contre-passe PAS — la réconciliation tranchera.
                 case PayoutOutcomeStatus.Unknown:
-                    refund.MarkProcessing(outcome.ProviderReference, outcome.Error);
+                    // Repli identique à celui des retraits : une issue indéterminée
+                    // sans message du prestataire reste un incident, et doit se voir.
+                    refund.MarkProcessing(
+                        outcome.ProviderReference,
+                        outcome.Error ?? "Issue indéterminée : le prestataire n'a pas confirmé la demande.");
                     break;
 
                 // Accepté = créé + démarré chez FedaPay (« started », pas encore « sent ») :

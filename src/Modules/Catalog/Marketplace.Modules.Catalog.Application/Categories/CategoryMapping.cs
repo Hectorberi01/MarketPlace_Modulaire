@@ -54,6 +54,22 @@ public static class CategoryMapping
             category.Status.ToString(),
             category.ImageUrl,
             attributes,
-            schema.IsSuccess && schema.Value.AllowUnknownAttributes);
+            // ═══════════════════════════════════════════════════════════════════
+            // UN SCHÉMA ILLISIBLE REND « TOUT AUTORISÉ », JAMAIS « RIEN AUTORISÉ ».
+            //
+            // `schema.IsSuccess && …` disait l'inverse : sur un schéma qu'on ne sait
+            // pas lire, il rendait `false`, c'est-à-dire la contrainte la PLUS
+            // stricte qui existe — « ce produit ne peut porter aucun attribut ».
+            // Deux lignes plus haut, le même échec rend une liste vide et le
+            // commentaire annonce « on sert la catégorie sans contrainte affichée » :
+            // les deux champs se contredisaient.
+            //
+            // La console d'administration transformait cette contradiction en perte
+            // de données : elle préchargeait « refuser les attributs hors liste »
+            // coché, et le premier enregistrement — même un simple renommage —
+            // écrivait un schéma valide interdisant tout attribut. Le schéma
+            // illisible, lui, était au moins signalé à la création d'un produit.
+            // ═══════════════════════════════════════════════════════════════════
+            !schema.IsSuccess || schema.Value.AllowUnknownAttributes);
     }
 }

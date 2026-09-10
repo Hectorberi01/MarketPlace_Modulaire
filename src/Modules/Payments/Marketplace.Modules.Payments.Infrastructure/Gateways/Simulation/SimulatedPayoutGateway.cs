@@ -13,6 +13,9 @@ namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Simulation;
 /// </summary>
 public sealed class SimulatedPayoutGateway : IPayoutGateway
 {
+    /// <summary>Vrai, et c'est tout l'intérêt : aucun argent ne part d'ici.</summary>
+    public bool IsSimulated => true;
+
     public Task<PayoutResult> SendAsync(PayoutInstruction instruction, CancellationToken cancellationToken = default)
         => Task.FromResult(PayoutResult.Accepted($"sim_payout_{Guid.NewGuid():N}"));
 

@@ -53,6 +53,37 @@
   vars:
     # Racine du dépôt sur la machine de contrôle (deploy/ansible -> repo).
     project_local_path: "{{ playbook_dir | dirname | dirname }}"
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # CE QUI PEUT ÊTRE REFUSÉ D'AVANCE DOIT L'ÊTRE AVANT D'AVOIR RIEN DÉPLOYÉ.
+  #
+  # La vérification du canal d'alerte vit dans le rôle `monitoring`, qui tourne APRÈS
+  # `marketplace`. Un vault sans destinataire faisait donc échouer le playbook une
+  # fois l'application déjà remplacée, et privait au passage `portainer`,
+  # `webterminal` et `dbadmin` de leur exécution. Le même contrôle, ici, coûte deux
+  # secondes et ne laisse pas la production à moitié déployée.
+  # ═══════════════════════════════════════════════════════════════════════════════
+  pre_tasks:
+    - name: Exiger un canal d'alerte AVANT tout déploiement
+      ansible.builtin.assert:
+        that:
+          - (alertmanager_slack_webhook_url | default('') | trim | length > 0
+             and 'CHANGE' not in (alertmanager_slack_webhook_url | default('')))
+            or (smtp_host | default('') | trim | length > 0
+                and alert_email_to | default('') | trim | length > 0
+                and smtp_password | default('') | trim | length > 0
+                and 'CHANGE_ME' not in (smtp_password | default('')))
+        fail_msg: >-
+          Aucun canal d'alerte joignable pour {{ target_env | default('?') }}.
+          Alertmanager rendrait des receivers vides et abandonnerait chaque notification
+          en silence. Renseigner dans le vault SOIT alertmanager_slack_webhook_url,
+          SOIT smtp_password (avec smtp_host et alert_email_to dans group_vars).
+          Les valeurs d'exemple contenant « CHANGE » ne comptent pas.
+        quiet: true
+      # PAS de `no_log` ici : il masquerait le `fail_msg`, c'est-à-dire la seule chose
+      # utile de cette tâche. `assert` n'affiche que le TEXTE de l'expression, jamais la
+      # valeur des variables — le webhook et le mot de passe ne sortent pas.
+      when: enable_monitoring | default(false)
+      tags: [always]
   roles:
     - role: docker
       tags: [docker, setup]

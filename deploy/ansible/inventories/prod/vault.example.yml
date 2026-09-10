@@ -119,9 +119,13 @@ admin_session_secret: "CHANGE_ME_BASE64_32"
 registry_token: "ghp_CHANGE_ME"
 
 # ── SUPERVISION ──────────────────────────────────────────────────────────────
-# Sans ces deux-là, Alertmanager rend une configuration à receivers VIDES : il
-# accepte, et abandonne chaque notification en silence. Une alerte qui ne réveille
-# personne n'existe pas.
+# Une alerte qui ne réveille personne n'existe pas. Le rôle `monitoring` ÉCHOUE
+# désormais tant qu'aucun canal n'est joignable — et les valeurs d'exemple ci-dessous
+# ne comptent pas : toute valeur contenant « CHANGE » est traitée comme absente,
+# précisément parce qu'elle est non vide et passait donc pour une vraie coordonnée.
+#
+# Il faut SOIT un webhook Slack réel, SOIT le trio smtp_host / alert_email_to /
+# smtp_password (les deux premiers sont dans group_vars, non secrets).
 grafana_password: "CHANGE_ME_STRONG"
 alertmanager_slack_webhook_url: "https://hooks.slack.com/services/CHANGE/ME"
 smtp_password: "CHANGE_ME"

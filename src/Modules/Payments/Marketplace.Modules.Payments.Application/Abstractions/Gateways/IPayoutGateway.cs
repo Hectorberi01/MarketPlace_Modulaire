@@ -86,6 +86,27 @@ public sealed record PayoutWebhookEvent(bool IsPayoutEvent, bool Verified, strin
 public interface IPayoutGateway
 {
     /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CE VERSEMENT DÉPLACE-T-IL DE L'ARGENT RÉEL ?
+    ///
+    /// Quand FedaPay n'est pas en mesure de verser — dépôts non activés sur le compte
+    /// marchand, clé de bac à sable, drapeau `EnablePayouts` à faux — l'installeur
+    /// enregistre un stub qui répond « accepté » puis « envoyé ». C'est un choix
+    /// délibéré : il permet de dérouler tout le cycle de retrait sans PSP.
+    ///
+    /// Mais rien, en aval, ne permettait de savoir qu'on était dans ce mode. Un
+    /// administrateur validait un retrait, voyait un succès, et le vendeur était
+    /// débité d'un argent que personne n'avait envoyé. La règle qui décide du mode
+    /// vit dans l'installeur et combine trois réglages : la recopier ailleurs, c'est
+    /// garantir qu'un jour les deux copies divergeront. L'implémentation elle-même
+    /// est donc la seule source de vérité, et elle le dit.
+    ///
+    /// À exposer partout où quelqu'un s'apprête à déclencher un versement.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    bool IsSimulated { get; }
+
+    /// <summary>
     /// Demande un reversement au bénéficiaire (Mobile Money). Un retour
     /// <see cref="PayoutOutcomeKind.Accepted"/> ne signifie PAS que l'argent est arrivé :
     /// il faut confirmer via <see cref="GetStatusAsync"/>.

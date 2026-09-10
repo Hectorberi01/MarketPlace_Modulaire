@@ -34,6 +34,10 @@ public sealed class FedaPayPayoutGateway : IPayoutGateway
         _logger = logger;
     }
 
+    /// <summary>Faux : l'installeur ne retient cette implémentation que lorsque les
+    /// versements réels sont possibles (voir FedaPayOptions.CanPayout).</summary>
+    public bool IsSimulated => false;
+
     /// <summary>
     /// Traduit un refus du PSP en message destiné au VENDEUR, et journalise le détail
     /// technique.
@@ -83,9 +87,22 @@ public sealed class FedaPayPayoutGateway : IPayoutGateway
             // la réconciliation tranchera.
             _logger.LogError(ex, "FedaPay payout — issue indéterminée (réf. {Reference}).", instruction.Reference);
 
+            // ═════════════════════════════════════════════════════════════════════
+            // `Error` DÉCRIT L'INCIDENT, IL NE RASSURE PAS.
+            //
+            // Ce champ finit dans `Withdrawal.FailureReason`, que le BFF admin publie
+            // sous le nom « anomaly ». Il y avait ici « Versement en cours de
+            // vérification auprès de l'opérateur. Le statut sera mis à jour
+            // automatiquement. » : une phrase d'avancement, écrite pour le vendeur,
+            // que la console d'administration affichait en rouge d'anomalie sur une
+            // ligne qui allait bien — et qui, côté vendeur, s'affichait comme MOTIF
+            // D'ÉCHEC d'un retrait qui n'avait pas échoué.
+            //
+            // Ce que voit le vendeur est décidé ailleurs, par `PresentableFailure` :
+            // ici on nomme ce qui s'est passé, pour celui qui devra trancher.
+            // ═════════════════════════════════════════════════════════════════════
             return PayoutResult.Unknown(
-                "Versement en cours de vérification auprès de l'opérateur. "
-                + "Le statut sera mis à jour automatiquement.");
+                "Appel au prestataire interrompu (réseau ou délai dépassé) : issue indéterminée.");
         }
     }
 
@@ -148,11 +165,12 @@ public sealed class FedaPayPayoutGateway : IPayoutGateway
             // 5xx = panne côté PSP → on ne peut RIEN affirmer → indéterminé.
             var reason = Explain(createResponse.StatusCode, createBody, "création");
 
+            // `reason` dans les DEUX cas : une panne du prestataire est un incident,
+            // et c'est l'information dont a besoin qui devra retrouver le versement.
+            // La version lisible par le vendeur est produite à l'affichage.
             return IsDefinitiveRejection(createResponse.StatusCode)
                 ? PayoutResult.Failed(reason)
-                : PayoutResult.Unknown(
-                    "Versement en cours de vérification auprès de l'opérateur. "
-                    + "Le statut sera mis à jour automatiquement.");
+                : PayoutResult.Unknown(reason);
         }
 
         var payoutId = ExtractPayoutId(createBody);
@@ -183,7 +201,7 @@ public sealed class FedaPayPayoutGateway : IPayoutGateway
             // « Unknown » AVEC sa référence : la réconciliation ira lire son vrai statut
             // (il peut rester « pending », auquel cas aucun argent n'est parti).
             return PayoutResult.Unknown(
-                "Versement transmis à l'opérateur, confirmation en attente.",
+                "Dépôt créé chez le prestataire mais non démarré : statut à confirmer.",
                 payoutId.ToString());
         }
 

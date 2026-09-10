@@ -95,7 +95,13 @@ internal sealed class OrderRepository : IOrderRepository
             _ => desc ? q.OrderByDescending(o => o.CreatedAtUtc) : q.OrderBy(o => o.CreatedAtUtc),
         };
 
+        // Départage indispensable : PostgreSQL ne garantit aucun ordre entre lignes
+        // qu'un ORDER BY laisse ex æquo, et « page 1 » et « page 2 » sont deux
+        // exécutions distinctes. Sans lui, un tri par statut — trois ou quatre valeurs
+        // pour toute la table — fait réapparaître des lignes d'une page à l'autre et
+        // en rend d'autres inatteignables. Voir SellerRepository pour le détail.
         var items = await ordered
+            .ThenBy(o => o.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

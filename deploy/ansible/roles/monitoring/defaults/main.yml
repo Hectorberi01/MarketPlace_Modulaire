@@ -1,0 +1,16 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# LA VERSION QUI VALIDE DOIT ÊTRE CELLE QUI EXÉCUTE.
+#
+# `amtool check-config` relit la configuration rendue avec l'analyseur d'Alertmanager.
+# Validée par une version et servie par une autre, la vérification ne prouve rien —
+# d'où cette variable, à garder alignée sur l'image de docker-compose.monitoring.yml.
+# ═══════════════════════════════════════════════════════════════════════════════
+alertmanager_image: "prom/alertmanager:v0.27.0"
+
+# UID du compte `nobody` sous lequel tourne l'image officielle d'Alertmanager. La
+# configuration contient le mot de passe SMTP et le webhook Slack : elle reste en
+# 0600, mais appartient à CE compte. Écrite en root:root, elle était illisible par le
+# conteneur — Alertmanager refusait de démarrer, et l'absence d'alerte ressemblait
+# trait pour trait à l'absence de problème.
+alertmanager_run_uid: 65534
