@@ -155,15 +155,22 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     /// <summary>
     /// ÉTAPE 1 — Le vendeur (ou l'admin) valide le remboursement et son montant.
     ///
-    /// ⚠️ AUCUN ARGENT NE BOUGE ICI, et c'est délibéré.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ÉVÉNEMENT LEVÉ ICI FAIT BOUGER L'ARGENT. CE BLOC AFFIRMAIT L'INVERSE.
     ///
-    /// Cette méthode s'appelait <c>Refund()</c> et passait directement à
-    /// « Remboursé ». Elle mentait : rien n'appelait la banque. Le client n'était
-    /// jamais payé, mais la base affirmait le contraire.
+    /// Il disait « AUCUN ARGENT NE BOUGE ICI, et c'est délibéré », et décrivait un
+    /// versement exécuté plus tard, à la main, par un administrateur. C'était exact
+    /// avant que Settlement ne s'abonne à <c>ReturnRefundApprovedDomainEvent</c>.
     ///
-    /// Elle ne fait plus qu'une chose — enregistrer une DÉCISION. Le versement,
-    /// lui, est confirmé par <see cref="ConfirmRefundExecuted"/>, et seulement une
-    /// fois l'argent réellement parti.
+    /// Aujourd'hui cet appel enregistre une décision ET déclenche son exécution :
+    /// la cagnotte de l'acheteur est créditée, le statut passe à « Refunded » par
+    /// <see cref="ConfirmRefundExecuted"/>, et la part nette du vendeur lui est
+    /// reprise. Le tout sans intervention humaine.
+    ///
+    /// L'ancienne formulation avait été recopiée telle quelle dans la console
+    /// vendeur, qui promettait au vendeur qu'il n'engageait rien au moment précis où
+    /// il engageait son solde. Un commentaire périmé ne reste pas dans son fichier.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     public Result ApproveRefund(decimal amount)
     {
@@ -209,10 +216,14 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     }
 
     /// <summary>
-    /// ÉTAPE 2 — L'argent est PARTI. Un administrateur l'a versé depuis le tableau
-    /// de bord FedaPay et en apporte la référence.
+    /// ÉTAPE 2 — L'argent est PARTI, et la référence de l'opération le prouve.
     ///
-    /// ⚠️ C'EST LA SEULE PORTE VERS « REMBOURSÉ », et elle exige une preuve.
+    /// C'EST LA SEULE PORTE VERS « REMBOURSÉ », et elle exige cette preuve.
+    ///
+    /// L'appelant nominal n'est plus un administrateur mais
+    /// <c>ConfirmRefundOnCustomerWalletCreditedHandler</c>, qui appelle ici une fois la
+    /// cagnotte de l'acheteur réellement créditée. Le chemin manuel reste ouvert pour
+    /// un versement fait hors plateforme ; il n'est plus le cas normal.
     ///
     /// La référence n'est pas décorative : c'est elle qui permet, le jour où le
     /// client affirme n'avoir rien reçu, de retrouver l'opération chez FedaPay et

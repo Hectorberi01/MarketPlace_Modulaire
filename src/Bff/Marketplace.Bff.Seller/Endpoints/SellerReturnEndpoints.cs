@@ -64,15 +64,26 @@ public static class SellerReturnEndpoints
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkReturnReceivedCommand(id), ct));
 
     private static async Task<IResult> RefundAsync(ClaimsPrincipal user, Guid id, RefundRequest request, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
-        // VALIDE le remboursement — l'argent ne part PAS ici.
+        // ═════════════════════════════════════════════════════════════════════════
+        // L'ARGENT PART ICI. CE COMMENTAIRE DISAIT LE CONTRAIRE, ET L'ÉCRAN LE RECOPIAIT.
         //
-        // Le vendeur décide et fixe le montant ; le versement, lui, est exécuté par un
-        // administrateur dans le tableau de bord FedaPay (aucune API de remboursement
-        // n'existe). Le retour passe donc en « attente de versement », et non en
-        // « remboursé ».
+        // Il affirmait : « l'argent ne part PAS ici [...] le versement est exécuté par un
+        // administrateur dans le tableau de bord FedaPay ». C'était vrai avant que
+        // Settlement ne s'abonne à l'événement. Ce n'est plus le cas, et la console
+        // vendeur promettait encore, mot pour mot, qu'aucun versement n'était déclenché.
         //
-        // C'est précisément la confusion d'hier : ce bouton marquait « remboursé » sans
-        // qu'un seul franc ne quitte le compte.
+        // La chaîne réelle, depuis `ReturnRequest.ApproveRefund` :
+        //   ReturnRefundApprovedDomainEvent
+        //     → CreditCustomerWalletOnReturnRefundApprovedHandler  crédite la CAGNOTTE
+        //                                                          de l'acheteur
+        //     → ConfirmRefundOnCustomerWalletCreditedHandler       statut « Refunded »
+        //     → ReverseEarningsOnReturnRefundedHandler:123         DÉBITE LE VENDEUR
+        //                                                          de sa part nette
+        //
+        // Aucun administrateur ne s'intercale, et « attente de versement » ne dure que
+        // le temps de trois sauts d'outbox. La cagnotte n'est pas un virement bancaire —
+        // c'est un avoir chez nous — mais c'est bien de l'argent qui change de mains.
+        // ═════════════════════════════════════════════════════════════════════════
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new ApproveReturnRefundCommand(id, request.Amount), ct));
 
     /// <summary>
@@ -87,9 +98,18 @@ public static class SellerReturnEndpoints
     /// plus traiter ses retours laisserait ses clients sans recours et ses RMA figés
     /// en attente — la sanction retomberait sur eux.
     ///
-    /// À noter pour le remboursement : le vendeur VALIDE ici, l'argent part par la
-    /// main d'un administrateur (voir RefundAsync). Autoriser la validation ne fait
-    /// donc sortir aucun franc d'une boutique sous mesure conservatoire.
+    /// À NOTER POUR LE REMBOURSEMENT, ET CE PARAGRAPHE DISAIT L'INVERSE : la validation
+    /// FAIT partir l'argent. `ApproveRefund` lève `ReturnRefundApprovedDomainEvent`, que
+    /// Settlement consomme pour créditer la cagnotte de l'acheteur puis contre-passer la
+    /// part nette du vendeur ; aucun administrateur ne s'intercale (voir RefundAsync,
+    /// dans ce même fichier, qui décrit la chaîne complète).
+    ///
+    /// La conclusion qu'on en tirait — « autoriser la validation ne fait sortir aucun
+    /// franc d'une boutique sous mesure conservatoire » — était donc une garantie de
+    /// sécurité fondée sur un circuit disparu. L'ouverture reste la bonne décision, mais
+    /// pour l'autre raison, celle du paragraphe ci-dessus : le retour est un devoir
+    /// envers un acheteur qui a payé, et le levier contre une boutique suspendue est le
+    /// blocage du RETRAIT (SellerRights.CanWithdraw), pas celui du remboursement.
     /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>
     private static async Task<IResult> GuardAsync(

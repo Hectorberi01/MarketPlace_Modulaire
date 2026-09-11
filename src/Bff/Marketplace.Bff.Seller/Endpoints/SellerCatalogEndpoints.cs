@@ -22,6 +22,7 @@ using Marketplace.Modules.Catalog.Application.Products.Queries.ListProductsBySel
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 using Marketplace.Modules.Catalog.Application.Brands.Queries.ListBrands;
 // Suppression produit : on vérifie d'abord qu'aucune offre n'y est rattachée.
+using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Offers.Application.Offers.Queries;
 
 namespace Marketplace.Bff.Seller.Endpoints;
@@ -365,10 +366,107 @@ public static class SellerCatalogEndpoints
             .Match(variantId => Results.Ok(new { variantId }));
     }
 
-    /// <summary>Met à jour une variante du produit. Scopé vendeur.</summary>
-    private static async Task<IResult> UpdateVariantAsync(ClaimsPrincipal user, Guid id, Guid variantId, VariantRequest request, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
-        => await GuardAsync(user, catalog, sellers, id, ct,
-            () => sender.Send(new UpdateProductVariantCommand(id, variantId, request.Sku, request.Attributes, request.Barcode, request.WeightGrams), ct));
+    /// <summary>
+    /// Met à jour une variante du produit. Scopé vendeur.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// RENOMMER UN SKU DÉJÀ MIS EN VENTE EST REFUSÉ. C'ÉTAIT UNE VENTE À DÉCOUVERT.
+    ///
+    /// `Product.UpdateVariant` valide le format du SKU et son unicité DANS LE PRODUIT,
+    /// puis écrit — et ne lève aucun événement. Ni `Offer.VariantSku` ni
+    /// `InventoryItem.Sku` ne bougent : les trois modules portaient la même référence,
+    /// deux gardaient l'ancienne.
+    ///
+    /// LA SUITE, VÉRIFIÉE, EST PIRE QUE DEUX LIGNES DÉSACCORDÉES. `CreateOfferDialog`
+    /// calcule les SKU encore libres en comparant les variantes aux offres : la
+    /// variante renommée apparaît comme libre, le vendeur crée une SECONDE mise en
+    /// vente dessus — sans aucun article de stock derrière. Et
+    /// `InventoryModuleApi.IsInStockAsync` répond « disponible » pour un SKU qui n'est
+    /// suivi nulle part. La fiche porte alors deux offres dont l'une est fantôme, et
+    /// cette offre-là accepte les commandes.
+    ///
+    /// POURQUOI INTERDIRE PLUTÔT QUE PROPAGER. Renommer proprement demanderait de
+    /// réécrire le SKU dans Offers et dans Inventory, de revérifier deux unicités, et
+    /// de décider du sort des lignes de commande en cours qui portent l'ancienne
+    /// chaîne — un chantier de trois modules, pas un correctif d'écran. Le refus,
+    /// lui, est exact aujourd'hui.
+    ///
+    /// LE RENOMMAGE RESTE OUVERT TANT QU'IL N'ENGAGE RIEN, et c'est le cas qui compte :
+    /// corriger une coquille sur une variante pas encore mise en vente. Ce qui est
+    /// fermé, c'est le renommage d'une référence qui porte déjà une offre.
+    ///
+    /// LE CONTRÔLE EST ICI, DANS LE BFF, comme celui de la suppression de produit :
+    /// c'est la seule couche qui voit à la fois le catalogue et les offres.
+    ///
+    /// CE QUI N'EST PAS VÉRIFIÉ, ET IL FAUT LE SAVOIR : une ligne de STOCK sans offre.
+    /// Elle ne peut plus être créée — `CreateItemAsync` exige désormais que le vendeur
+    /// propose le SKU — mais des lignes antérieures existent, et une offre supprimée
+    /// laisse la sienne derrière. Le module Inventory n'expose aucune lecture par SKU
+    /// scopée vendeur ; l'ajouter pour cette garde serait la bonne suite.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> UpdateVariantAsync(
+        ClaimsPrincipal user, Guid id, Guid variantId, VariantRequest request, ISender sender,
+        ICatalogModuleApi catalog, ISellerModuleApi sellers, IOfferModuleApi offers, CancellationToken ct)
+    {
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        var product = await catalog.GetProductAsync(id, ct);
+        if (product is null || product.SellerId != seller!.Id)
+        {
+            return SellerBff.NotFoundOrForbidden("product");
+        }
+
+        var variant = product.Variants.FirstOrDefault(v => v.Id == variantId);
+        if (variant is null)
+        {
+            return SellerBff.NotFoundOrForbidden("variant");
+        }
+
+        // Même normalisation que `Sku.Create`, pour ne pas confondre un vrai renommage
+        // avec un changement de casse ou un espace de bord.
+        var demande = (request.Sku ?? string.Empty).Trim().ToUpperInvariant();
+        var actuel = (variant.Sku ?? string.Empty).Trim().ToUpperInvariant();
+
+        // LE FORMAT D'ABORD. Un champ vidé donne `demande == ""`, donc « différent de
+        // l'actuel » : le vendeur recevait alors « ce SKU porte déjà une de vos mises en
+        // vente », qui n'a rien à voir avec son problème. On laisse le domaine dire ce
+        // qu'il dit déjà bien — « le SKU ne peut pas être vide ».
+        if (demande.Length > 0 && demande != actuel)
+        {
+            var engagees = await offers.GetOffersBySkuAsync(actuel, ct);
+            if (engagees.Any(o => o.SellerId == seller!.Id))
+            {
+                // 409 : la requête est bien formée, c'est l'état courant qui l'interdit.
+                // Le message dit la seule manœuvre qui marche, plutôt que de laisser le
+                // vendeur chercher pourquoi la plateforme lui refuse une correction.
+                return Results.Problem(
+                    title: "catalog.variant.sku_locked_by_offer",
+                    detail: $"Le SKU « {actuel} » porte déjà une de vos mises en vente : le renommer "
+                        + "laisserait l'offre et le stock sur l'ancienne référence. Retirez l'offre, "
+                        + "renommez, puis recréez-la — ou ajoutez une nouvelle variante.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        }
+
+        // ON ENVOIE `demande`, PAS `request.Sku`, ET C'EST DEUX CORRECTIONS EN UNE.
+        //
+        // La première est une erreur de compilation que j'avais introduite : le
+        // `?? string.Empty` plus haut apprend au compilateur que `request.Sku` PEUT
+        // être nul — un corps JSON qui omet le champ le rend nul malgré la déclaration
+        // non annulable — et l'analyse de flux propageait ce doute jusqu'ici (CS8604).
+        //
+        // La seconde est une asymétrie : on comparait la valeur normalisée et on
+        // envoyait la brute. Sans conséquence — `Sku.Create` normalise de son côté —
+        // mais deux valeurs pour une seule notion finissent toujours par diverger.
+        var result = await sender.Send(
+            new UpdateProductVariantCommand(id, variantId, demande, request.Attributes, request.Barcode, request.WeightGrams), ct);
+        return result.Match(() => Results.NoContent());
+    }
 
     /// <summary>Retire une variante du produit. Scopé vendeur.</summary>
     private static async Task<IResult> RemoveVariantAsync(ClaimsPrincipal user, Guid id, Guid variantId, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)

@@ -70,11 +70,32 @@ public static class SellerNotificationEndpoints
             ? Results.Unauthorized()
             : (await sender.Send(new UnregisterDeviceTokenCommand(userId, request.Token), ct)).Match(() => Results.NoContent());
 
-    /// <summary>Notifications de l'utilisateur du vendeur (les plus récentes d'abord).</summary>
-    private static async Task<IResult> ListAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)
+    /// <summary>
+    /// Notifications de l'utilisateur du vendeur (les plus récentes d'abord).
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// PAGINÉE (<c>?take=&amp;skip=</c>). CETTE ROUTE N'ACCEPTAIT AUCUN PARAMÈTRE.
+    ///
+    /// `ListMyNotificationsQuery` laissait `Take` à 50 et il n'y avait pas de décalage :
+    /// il n'existait AUCUN moyen d'atteindre la 51ᵉ notification. Un vendeur revenant
+    /// après deux semaines avec 130 non lues voyait un badge à 130 — il vient d'un
+    /// COUNT, il est juste — au-dessus d'une liste de 50. Pire, le filtre « Non lues »
+    /// de la console travaille sur le lot déjà coupé : douze lignes s'affichaient sous
+    /// un badge annonçant 130, et le seul recours proposé était « Tout marquer comme
+    /// lu », qui les effaçait sans les avoir montrées.
+    ///
+    /// LA RÉPONSE RESTE UN TABLEAU NU, délibérément. L'app mobile consomme déjà cette
+    /// route ; l'envelopper dans un objet paginé l'aurait cassée pour un gain nul —
+    /// une page pleine suffit à savoir qu'il faut en demander une autre. Sans
+    /// paramètre, le comportement est exactement celui d'avant.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> ListAsync(
+        ClaimsPrincipal user, ISender sender, CancellationToken ct, int? take = null, int? skip = null)
         => SellerBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
-            : (await sender.Send(new ListMyNotificationsQuery(userId), ct)).Match(n => Results.Ok(n));
+            : (await sender.Send(new ListMyNotificationsQuery(userId, take ?? 50, skip ?? 0), ct))
+                .Match(n => Results.Ok(n));
 
     /// <summary>Nombre de notifications non lues.</summary>
     private static async Task<IResult> UnreadCountAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)

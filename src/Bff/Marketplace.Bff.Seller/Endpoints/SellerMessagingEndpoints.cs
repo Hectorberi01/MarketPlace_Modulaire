@@ -69,7 +69,28 @@ public static class SellerMessagingEndpoints
             {
                 id = c.Id,
                 customer = string.IsNullOrWhiteSpace(customer) ? "Client" : customer,
+                // ─────────────────────────────────────────────────────────────────
+                // `ContextType` EST UNE CHAÎNE LIBRE DU CLIENT QUI OUVRE LE FIL.
+                //
+                // Elle vient du corps de requête (MessagingEndpoints), n'est validée
+                // nulle part et n'est bornée que par la colonne. La console l'affichait
+                // telle quelle sous « À propos de : », c'est-à-dire au format d'un
+                // libellé de la plateforme — un acheteur pouvait donc écrire ce qu'il
+                // voulait à un endroit qui a l'air d'être de nous. On la transmet
+                // toujours, mais l'écran la présente désormais comme ce qu'elle est.
+                // ─────────────────────────────────────────────────────────────────
                 subject = c.ContextType,
+                // ─────────────────────────────────────────────────────────────────
+                // LE STATUT MANQUAIT, ET SANS LUI LE FIL ARCHIVÉ GARDAIT SA ZONE DE
+                // SAISIE.
+                //
+                // `Conversation.SendMessage` refuse en 409 dès que le statut n'est pas
+                // `Open`, et l'archivage est accessible à N'IMPORTE QUEL participant —
+                // donc à l'acheteur. Le vendeur rédigeait sa réponse dans un champ
+                // ouvert, cliquait, et recevait une erreur technique sur un fil qu'il
+                // n'avait pas fermé. `Conversation` n'expose aucune réouverture.
+                // ─────────────────────────────────────────────────────────────────
+                status = c.Status,
                 lastMessage = last?.Body ?? string.Empty,
                 lastAt = c.LastMessageAtUtc,
                 unread = c.Messages.Count(m => m.SenderId != userId && m.ReadAtUtc is null),

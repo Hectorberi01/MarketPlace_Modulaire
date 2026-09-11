@@ -18,7 +18,12 @@ public interface INotificationRepository
     /// </summary>
     Task<bool> ExistsByDeduplicationKeyAsync(string deduplicationKey, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Page de notifications d'un destinataire, les plus récentes d'abord.
+    /// [skip] est le nombre d'entrées à sauter — sans lui, rien au-delà de la première
+    /// page n'était atteignable. Voir l'implémentation pour la stabilité du tri.
+    /// </summary>
+    Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, int skip, CancellationToken cancellationToken = default);
 
     Task<int> CountUnreadAsync(Guid recipientUserId, CancellationToken cancellationToken = default);
 

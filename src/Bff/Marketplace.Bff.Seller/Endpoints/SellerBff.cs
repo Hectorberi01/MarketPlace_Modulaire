@@ -228,7 +228,37 @@ internal static class SellerBff
         return review.IsSuccess && review.Value.SellerId == sellerId;
     }
 
-    /// <summary>Vrai si le vendeur a au moins une expédition rattachée à la commande (preuve d'implication).</summary>
+    /// <summary>
+    /// Vrai si le vendeur a au moins une expédition rattachée à la commande (preuve
+    /// d'implication).
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CE CONTRÔLE EST PAR COMMANDE, PAS PAR VENDEUR — ET C'EST UN TROU CONNU.
+    ///
+    /// Sur une commande MULTI-VENDEURS, le vendeur A passe donc le contrôle pour un
+    /// litige qui porte sur la ligne du vendeur B : il en lit tout le fil, et il peut
+    /// y ÉCRIRE. Un vendeur tiers peut déposer une pièce dans le dossier d'arbitrage
+    /// d'un concurrent.
+    ///
+    /// CE N'EST PAS UN OUBLI, ET C'EST POURQUOI IL N'EST PAS CORRIGÉ ICI. Le module
+    /// Litiges ne connaît pas la notion de vendeur : un `Dispute` porte un `OrderId`,
+    /// un `RaisedBy`, un type, un statut et une résolution — aucun rattachement à une
+    /// LIGNE de commande ni à une boutique. Il n'existe donc, à ce niveau, AUCUNE
+    /// notion plus fine que « impliqué dans la commande » à laquelle se raccrocher. La
+    /// console assume d'ailleurs la conséquence en refusant d'écrire « Votre
+    /// boutique » sur un message.
+    ///
+    /// FERMER CE TROU SUPPOSE DE RATTACHER LE LITIGE À UNE LIGNE DE COMMANDE — donc
+    /// une migration, la reprise des litiges existants, et une décision sur les
+    /// litiges qui portent sur la commande entière (livraison, paiement) plutôt que
+    /// sur un article. C'est un chantier de module, pas un correctif de garde, et le
+    /// faire à moitié ici donnerait l'illusion d'un cloisonnement qui n'existe pas.
+    ///
+    /// Ce qui LIMITE la portée aujourd'hui : il faut être vendeur sur la commande —
+    /// donc l'acheteur a acheté aux deux — et le litige n'expose ni coordonnées ni
+    /// moyens de paiement. La lecture d'un fil d'arbitrage reste une fuite réelle.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     public static async Task<bool> IsInvolvedInOrderAsync(ISender sender, Guid sellerId, Guid orderId, CancellationToken ct)
     {
         var shipments = await sender.Send(new ListShipmentsByOrderQuery(orderId), ct);

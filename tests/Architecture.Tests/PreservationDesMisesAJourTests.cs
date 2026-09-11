@@ -152,9 +152,13 @@ public class PreservationDesMisesAJourTests
             ["UpdateProductVariantCommand"] = (Verdict.NonAudite,
                 "Attributes et Barcode. Espace vendeur, non audité."),
 
-            ["UpdateLocationAddressCommand"] = (Verdict.NonAudite,
-                "Six champs annulables, dont les coordonnées — celles-là mêmes qui "
-                + "manquent déjà à la carte de la flotte. Espace vendeur, non audité."),
+            ["UpdateLocationAddressCommand"] = (Verdict.Remplace,
+                "Six champs annulables, dont les coordonnées. La commande REMPLACE "
+                + "l'adresse entière — c'est le comportement attendu d'un PUT — et le "
+                + "seul client vendeur qui l'appelle désormais (PUT /seller/locations/{id}, "
+                + "console vendeur) recharge bien les six champs, latitude et longitude "
+                + "comprises, avant d'éditer. Le verdict était « non audité » parce que "
+                + "la route vendeur n'existait pas encore ; elle existe."),
 
             ["UpdateSellerMetadataCommand"] = (Verdict.NonAudite,
                 "Metadata entier, annulable. Non audité."),

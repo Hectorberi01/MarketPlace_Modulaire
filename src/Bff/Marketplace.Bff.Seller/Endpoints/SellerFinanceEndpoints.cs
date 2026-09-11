@@ -83,6 +83,34 @@ public static class SellerFinanceEndpoints
             var providerFeeXof = (int)Math.Round(earnings.Sum(e => e.ProviderFeeAmount));
             var refundsXof = (int)Math.Round(refunds.Sum(r => r.RefundAmount));
 
+            // ═════════════════════════════════════════════════════════════════════
+            // LE NET DES VENTES EST DÉSORMAIS PROJETÉ. IL ÉTAIT CALCULÉ, PUIS JETÉ.
+            //
+            // `SellerEarning.NetAmount` est le montant RÉELLEMENT crédité au vendeur
+            // (`SellerEarning.cs:52`) : brut moins commission moins frais. La requête
+            // le renvoie déjà par ligne (`SettlementQueries.cs:82`) ; ce BFF ne
+            // projetait que les trois composantes, et l'écran recomposait la
+            // soustraction lui-même.
+            //
+            // Or la recomposition était FAUSSE dès qu'une vente était remboursée :
+            // rembourser ne retire pas la ligne de gain — `ListSellerEarningsAsync`
+            // ne filtre sur aucun statut, et la contre-passation n'écrit jamais
+            // `EarningStatus.Reversed`. La vente gardait donc son brut ET sa
+            // commission au relevé, pendant que le remboursement était soustrait à
+            // 100 %. Vente 10 000 / commission 1 000 / frais 500 remboursée
+            // intégralement : impact réel sur le portefeuille = 0, chiffre affiché
+            // = −1 500 F CFA. Le vendeur lisait une perte qu'il ne pouvait rapprocher
+            // d'aucun mouvement.
+            //
+            // CE QUI N'EST PAS PROJETÉ, ET POURQUOI : la part nette REPRISE sur un
+            // remboursement. `ReverseEarningsOnReturnRefundedHandler` la calcule par
+            // prorata (`GrossSplit.Prorate`) au moment de la contre-passation, mais
+            // `SellerRefundLine` ne porte que le montant brut rendu à l'acheteur — le
+            // module Retours ignore le barème. L'inventer ici serait remplacer un
+            // chiffre faux par un autre ; le portefeuille, lui, porte le débit exact.
+            // ═════════════════════════════════════════════════════════════════════
+            var netSalesXof = (int)Math.Round(earnings.Sum(e => e.NetAmount));
+
             // Pour chaque gain : une écriture « vente » (+brut), une écriture
             // « commission plateforme » (−commission) ET, si applicable, une écriture
             // « frais provider » (−frais). Chaque remboursement devient une écriture
@@ -111,6 +139,8 @@ public static class SellerFinanceEndpoints
                 from = start,
                 to = end,
                 grossSalesXof,
+                // Ce qui a été crédité au vendeur pour ses ventes de la période.
+                netSalesXof,
                 commissionXof,
                 // Somme des frais provider du vendeur sur la période.
                 providerFeeXof,

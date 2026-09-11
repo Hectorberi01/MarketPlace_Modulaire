@@ -76,7 +76,8 @@ public static class SellerFulfillmentEndpoints
     /// <summary>
     /// Projette des expéditions vers la forme attendue par le dashboard : référence
     /// commande lisible, nom du client (résolu via Identity), nombre d'articles, et
-    /// statut renommé (« Preparing » côté domaine → « Prepared » côté dashboard).
+    /// statut renommé (« Preparing » côté domaine → « ReadyForPickup » ici, voir
+    /// <see cref="DashboardStatus"/>).
     /// </summary>
     private static async Task<List<object>> EnrichAsync(IEnumerable<ShipmentSummary> shipments, IIdentityModuleApi identity, CancellationToken ct)
     {
@@ -108,6 +109,19 @@ public static class SellerFulfillmentEndpoints
                 // avec un transporteur vide et un suivi vide — indiscernable d'un colis
                 // que personne n'a encore pris. Voir ShipmentDeliveryMode.
                 deliveryMode = s.DeliveryMode,
+                // ─────────────────────────────────────────────────────────────────
+                // LE MOTIF D'UN COURSIER QUI A RENONCÉ, SANS QUOI LA NOTIFICATION
+                // ENVOYÉE AU VENDEUR NE SE VÉRIFIE NULLE PART.
+                //
+                // `MarkCourierDeliveryFailed` n'AVANCE PAS l'état : l'expédition reste
+                // « en préparation », rigoureusement identique à celle que le vendeur
+                // vient de préparer. Le champ est donc la SEULE chose qui distingue
+                // « personne ne l'a encore prise » de « quelqu'un a essayé et a
+                // renoncé » — et c'est la seconde qui exige un geste de sa part.
+                //
+                // Nul sur l'immense majorité des expéditions, et c'est normal.
+                // ─────────────────────────────────────────────────────────────────
+                courierFailureReason = s.CourierFailureReason,
                 itemCount = s.Items.Sum(i => i.Quantity),
                 createdAt = s.CreatedAtUtc,
             });

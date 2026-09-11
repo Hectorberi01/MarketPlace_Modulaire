@@ -147,8 +147,11 @@ public class NotificationDispatcherIdempotencyTests
         public Task<bool> ExistsByDeduplicationKeyAsync(string deduplicationKey, CancellationToken cancellationToken = default)
             => Task.FromResult(!BlindToExistingKeys && _committed.Any(n => n.DeduplicationKey == deduplicationKey));
 
-        public Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<Notification>>(_committed.Where(n => n.RecipientUserId == recipientUserId).ToList());
+        // `skip` suit l'interface, qui pagine désormais : sans lui, ce faux n'implémente
+        // plus le membre et la solution entière ne compile pas (CS0535).
+        public Task<IReadOnlyList<Notification>> ListByRecipientAsync(Guid recipientUserId, int take, int skip, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Notification>>(
+                _committed.Where(n => n.RecipientUserId == recipientUserId).Skip(skip).Take(take).ToList());
 
         public Task<int> CountUnreadAsync(Guid recipientUserId, CancellationToken cancellationToken = default)
             => Task.FromResult(_committed.Count(n => n.RecipientUserId == recipientUserId && n.Status != NotificationStatus.Read));

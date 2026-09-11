@@ -20,11 +20,19 @@ public sealed record AddReturnTrackingCommand(Guid ReturnRequestId, string Carri
 public sealed record MarkReturnReceivedCommand(Guid ReturnRequestId) : ICommand;
 
 /// <summary>
-/// VALIDE le remboursement et son montant (vendeur ou admin). L'argent ne bouge pas.
+/// VALIDE le remboursement et son montant (vendeur ou admin), ET DÉCLENCHE SON
+/// EXÉCUTION.
 ///
 /// Renommée depuis « RefundReturnCommand » — et ce n'est pas cosmétique. L'ancien nom
-/// promettait un remboursement ; le code ne faisait que changer un statut. Le nom
+/// promettait un remboursement ; le code ne faisait alors que changer un statut. Le nom
 /// mentait autant que le code.
+///
+/// LA PHRASE « L'ARGENT NE BOUGE PAS » QUI SUIVAIT CE TITRE EST DEVENUE FAUSSE, et elle
+/// a survécu au changement qui l'invalidait. `ReturnRequest.ApproveRefund` lève
+/// `ReturnRefundApprovedDomainEvent` ; Settlement s'y abonne, crédite la cagnotte de
+/// l'acheteur, et contre-passe la part nette du vendeur. Le statut « RefundPending » ne
+/// désigne donc pas une décision en attente d'exécution humaine, mais le temps que
+/// l'événement traverse l'outbox.
 /// </summary>
 public sealed record ApproveReturnRefundCommand(Guid ReturnRequestId, decimal Amount) : ICommand;
 
