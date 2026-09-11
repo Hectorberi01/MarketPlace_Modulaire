@@ -36,6 +36,27 @@ namespace Architecture.Tests;
 /// Le jour où quelqu'un ajoute une commande de mise à jour, ce test casse. Il ne lui
 /// dit pas quoi faire — il lui demande d'y avoir pensé, et de l'écrire pour le suivant.
 /// C'est exactement ce qui a manqué trois fois.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// ET IL A FAILLI NE RIEN REGARDER DU TOUT. VOICI POURQUOI.
+///
+/// La première version balayait `AppDomain.CurrentDomain.GetAssemblies()` après avoir
+/// « amorcé » le chargement avec une suite de `_ = typeof(X);`. Le CLR charge un
+/// assemblage à la demande, l'intention était donc correcte — mais `_ = expression;`
+/// est une AFFECTATION À UN REJET, et Roslyn supprime purement et simplement une
+/// expression rejetée qui n'a pas d'effet de bord. En Release, le corps de la méthode
+/// d'amorçage ne compilait vers RIEN.
+///
+/// Le résultat est le pire des trois possibles : en CI, seuls deux assemblages étaient
+/// chargés au moment où ces tests ont tourné, le balayage n'a vu que cinq commandes sur
+/// dix-neuf, et le premier test est passé AU VERT en ne regardant presque rien. Sans le
+/// second, qui lui a échoué en trouvant quatorze entrées de registre « disparues », rien
+/// n'aurait signalé que le garde-fou ne gardait rien.
+///
+/// La leçon tient en une ligne, et elle vaut au-delà d'ici : ne jamais fonder un
+/// balayage sur ce qui SE TROUVE chargé. On énumère donc les assemblages applicatifs
+/// depuis le disque, à côté de cet assemblage de test, et l'on vérifie que chacun s'est
+/// bien chargé — voir <c>ChargerLesAssemblagesApplicatifs</c>.
 /// ═════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public class PreservationDesMisesAJourTests
@@ -150,25 +171,105 @@ public class PreservationDesMisesAJourTests
         };
 
     /// <summary>
-    /// Les assemblages applicatifs à balayer. Ceux que ce projet de test référence
-    /// déjà pour les frontières de modules — donc tous ceux qui portent des commandes.
+    /// Fichiers trouvés que le CLR a refusé de charger, avec la raison.
+    ///
+    /// DÉCLARÉE AVANT `Assemblages`, et ce n'est pas cosmétique : les initialiseurs
+    /// statiques s'exécutent dans l'ordre d'écriture. Déclarée après, elle vaudrait
+    /// encore `null` pendant le chargement, et le `catch` qui note une panne planterait
+    /// lui-même — le seul chemin qui sert à signaler un problème serait le seul cassé.
     /// </summary>
-    private static IEnumerable<Assembly> AssemblagesApplicatifs()
-        => AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => a.GetName().Name is { } n
-                && n.StartsWith("Marketplace.Modules.", StringComparison.Ordinal)
-                && n.EndsWith(".Application", StringComparison.Ordinal));
+    private static readonly List<string> EchecsDeChargement = new();
+
+    /// <summary>
+    /// Les assemblages applicatifs, chargés DEPUIS LE DISQUE et non depuis ce qui se
+    /// trouve déjà en mémoire.
+    ///
+    /// Le projet de test référence les vingt-six modules : leurs DLL sont donc toutes
+    /// déposées à côté de celle-ci. Les énumérer par leur nom de fichier donne une liste
+    /// complète sans registre d'ancres à tenir à jour — et un module ajouté demain est
+    /// balayé sans que personne ait à y penser, ce qui est exactement la propriété qu'on
+    /// veut d'un garde-fou.
+    /// </summary>
+    private static readonly IReadOnlyList<Assembly> Assemblages = ChargerLesAssemblagesApplicatifs();
+
+    private static IReadOnlyList<Assembly> ChargerLesAssemblagesApplicatifs()
+    {
+        var dossier = Path.GetDirectoryName(typeof(PreservationDesMisesAJourTests).Assembly.Location);
+        if (string.IsNullOrEmpty(dossier))
+        {
+            return Array.Empty<Assembly>();
+        }
+
+        var charges = new List<Assembly>();
+        foreach (var fichier in Directory.GetFiles(dossier, "Marketplace.Modules.*.Application.dll"))
+        {
+            try
+            {
+                charges.Add(Assembly.LoadFrom(fichier));
+            }
+            catch (Exception ex)
+            {
+                // On NOTE l'échec au lieu de l'avaler : un assemblage qu'on n'a pas pu
+                // lire est un module entier qui échappe au balayage, et c'est précisément
+                // le silence qui a rendu la première version inutile.
+                EchecsDeChargement.Add($"{Path.GetFileName(fichier)} : {ex.Message}");
+            }
+        }
+
+        return charges;
+    }
+
+    /// <summary>
+    /// Tous les types d'un assemblage, y compris lorsque certains refusent de se charger.
+    ///
+    /// `GetTypes()` lève dès qu'UN type est illisible et ne rend alors rien du tout.
+    /// `ReflectionTypeLoadException.Types` contient ceux qui ont abouti : on préfère
+    /// balayer ce qu'on peut plutôt que de perdre un module sur un type annexe.
+    /// </summary>
+    private static IEnumerable<Type> TypesDe(Assembly assemblage)
+    {
+        try
+        {
+            return assemblage.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t is not null).Select(t => t!);
+        }
+    }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE TEST QUI SURVEILLE LES DEUX AUTRES.
+    ///
+    /// Les deux faits ci-dessous ne valent que si le balayage voit réellement tous les
+    /// modules. Sans ce garde, un balayage devenu partiel les rendrait VERTS — c'est
+    /// exactement ce qui s'est produit, et c'est le seul mode de défaillance d'un test
+    /// d'architecture qu'on ne remarque jamais.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public void Le_balayage_voit_bien_tous_les_modules()
+    {
+        EchecsDeChargement.Should().BeEmpty(
+            "un assemblage applicatif illisible est un module entier qui échappe au balayage, "
+            + "et les deux tests suivants passeraient au vert sans l'avoir regardé");
+
+        // La borne basse est délibérément lâche : elle n'a pas à suivre le nombre exact
+        // de modules — ce serait une ligne à corriger à chaque ajout, donc une ligne
+        // qu'on finit par corriger sans réfléchir. Elle n'existe que pour distinguer
+        // « le dépôt » de « deux ou trois assemblages qui traînaient en mémoire », qui
+        // est le cas réellement rencontré.
+        Assemblages.Should().HaveCountGreaterThan(15,
+            "le monolithe compte vingt-six modules et ce projet de test les référence tous ; "
+            + "en voir une poignée signifie que la découverte des assemblages est cassée");
+    }
 
     [Fact]
     public void Toute_commande_de_mise_a_jour_declare_ce_qu_elle_fait_d_un_champ_absent()
     {
-        // Charger les assemblages : sans cette amorce, `GetAssemblies` ne rend que ceux
-        // qu'un autre test a déjà touchés, et le balayage serait silencieusement partiel
-        // — un test qui passe en ne regardant rien.
-        AmorcerLesAssemblages();
-
-        var commandes = AssemblagesApplicatifs()
-            .SelectMany(a => a.GetTypes())
+        var commandes = Assemblages
+            .SelectMany(TypesDe)
             .Where(t => t.IsClass && !t.IsAbstract && t.Name.StartsWith("Update", StringComparison.Ordinal)
                 && t.Name.EndsWith("Command", StringComparison.Ordinal))
             .Select(t => t.Name)
@@ -178,7 +279,7 @@ public class PreservationDesMisesAJourTests
 
         commandes.Should().NotBeEmpty(
             "le balayage doit trouver des commandes — s'il n'en trouve aucune, c'est "
-            + "l'amorçage des assemblages qui a cessé de fonctionner, pas le dépôt qui s'est vidé");
+            + "la découverte des assemblages qui a cessé de fonctionner, pas le dépôt qui s'est vidé");
 
         var absentes = commandes.Where(n => !Registre.ContainsKey(n)).ToList();
 
@@ -193,10 +294,8 @@ public class PreservationDesMisesAJourTests
     [Fact]
     public void Le_registre_ne_decrit_aucune_commande_disparue()
     {
-        AmorcerLesAssemblages();
-
-        var existantes = AssemblagesApplicatifs()
-            .SelectMany(a => a.GetTypes())
+        var existantes = Assemblages
+            .SelectMany(TypesDe)
             .Select(t => t.Name)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -207,26 +306,5 @@ public class PreservationDesMisesAJourTests
         orphelines.Should().BeEmpty(
             "ces commandes n'existent plus : retirez leur entrée du registre plutôt que de "
             + "laisser croire qu'une décision les couvre encore");
-    }
-
-    /// <summary>
-    /// Touche un type de chaque module pour que son assemblage soit chargé.
-    ///
-    /// Le CLR charge à la demande : sans cela, `AppDomain.GetAssemblies()` ne rend que
-    /// ce qui a déjà servi, et le balayage passerait à côté de modules entiers — en
-    /// rendant vert. Un test partiel qui se croit complet est pire que pas de test.
-    /// </summary>
-    private static void AmorcerLesAssemblages()
-    {
-        _ = typeof(Marketplace.Modules.Catalog.Application.Categories.Commands.UpdateCategory.UpdateCategoryCommand);
-        _ = typeof(Marketplace.Modules.Identity.Application.Roles.Commands.UpdateRole.UpdateRoleCommand);
-        _ = typeof(Marketplace.Modules.Marketing.Application.Campaigns.UpdateCampaignCommand);
-        _ = typeof(Marketplace.Modules.Tax.Application.Taxes.UpdateTaxRuleCommand);
-        _ = typeof(Marketplace.Modules.Billing.Application.Commissions.UpdateCommissionRuleCommand);
-        _ = typeof(Marketplace.Modules.Shipping.Application.Zones.UpdateShippingZoneCommand);
-        _ = typeof(Marketplace.Modules.Inventory.Application.Locations.Commands.UpdateLocationAddressCommand);
-        _ = typeof(Marketplace.Modules.Sellers.Application.Sellers.Commands.RegisterSeller.RegisterSellerCommand);
-        _ = typeof(Marketplace.Modules.Cart.Application.Carts.Commands.UpdateCartItemQuantityCommand);
-        _ = typeof(Marketplace.Modules.Notifications.Application.Notifications.Commands.SendNotificationCommand);
     }
 }
