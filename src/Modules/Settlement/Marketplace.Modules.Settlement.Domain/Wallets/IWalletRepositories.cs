@@ -61,11 +61,63 @@ public interface IWithdrawalRepository
     Task<Withdrawal?> GetByProviderRefAsync(string providerRef, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Grand livre des mouvements de wallet (vendeur et plateforme).</summary>
+/// <summary>Grand livre des mouvements de wallet — les quatre acteurs.</summary>
 public interface IWalletTransactionRepository
 {
     Task AddAsync(WalletTransaction transaction, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(Guid ownerId, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Les dernières écritures d'un acteur.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE TYPE D'ACTEUR FAIT PARTIE DE LA CLÉ. IL MANQUAIT.
+    ///
+    /// Ce filtre ne portait que sur `OwnerId`, alors qu'un portefeuille s'identifie par
+    /// le COUPLE (type, identifiant) — c'est d'ailleurs sur ce couple qu'est posé
+    /// l'index unique de la table `wallets`, et c'est ce couple que porte chaque
+    /// écriture. Rien, dans le modèle, n'interdit qu'un vendeur et un coursier partagent
+    /// un même Guid : ce sont deux tables d'origine différentes, sans contrainte
+    /// croisée, et un coursier est justement rattaché à un compte utilisateur dont
+    /// l'identifiant vit encore ailleurs.
+    ///
+    /// Le jour où cette collision arrive, un relevé mélange l'argent de deux personnes,
+    /// et il le fait en silence — un relevé mélangé ressemble à un relevé. Le coût de la
+    /// garde est nul : la colonne est déjà là, déjà indexée.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(
+        WalletOwnerType ownerType, Guid ownerId, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Les écritures d'un acteur sur une PÉRIODE, du plus récent au plus ancien.
+    ///
+    /// Bornes incluses à gauche, exclues à droite — la convention de tout le module, et
+    /// la seule qui rende deux périodes contiguës sans recouvrement ni trou.
+    ///
+    /// La liste est plafonnée : c'est un relevé d'écran, pas un export comptable. Le
+    /// TOTAL ne se déduit donc jamais d'elle — voir <see cref="SumInPeriodAsync"/>.
+    /// </summary>
+    Task<IReadOnlyList<WalletTransaction>> ListInPeriodAsync(
+        WalletOwnerType ownerType, Guid ownerId, DateTime fromUtc, DateTime toUtc,
+        int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cumul et décompte d'un MOTIF sur une période, agrégés EN BASE.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// POURQUOI PAS UNE SOMME SUR LA LISTE RENVOYÉE CI-DESSUS.
+    ///
+    /// Parce que cette liste est tronquée. Un coursier qui a fait trois cents courses
+    /// dans le mois verrait ses deux cents dernières lignes, et un total calculé dessus
+    /// annoncerait deux cents courses — un chiffre faux, plausible, et que rien à
+    /// l'écran ne contredirait. Le total et les lignes répondent donc à deux questions
+    /// différentes et se lisent par deux chemins différents.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<LedgerPeriodTotal> SumInPeriodAsync(
+        WalletOwnerType ownerType, Guid ownerId, string referenceType,
+        WalletDirection direction, DateTime fromUtc, DateTime toUtc,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Une écriture existe-t-elle déjà pour cette référence ? — LE VERROU D'IDEMPOTENCE.
@@ -116,3 +168,12 @@ public interface IWalletTransactionRepository
 /// </summary>
 public sealed record LedgerAccountSum(
     Guid OwnerId, WalletOwnerType OwnerType, WalletAccount Account, decimal Sum);
+
+/// <summary>
+/// Ce qu'un motif a produit sur une période : combien, et en combien de fois.
+///
+/// Le DÉCOMPTE voyage avec le montant parce qu'il répond à une question que le montant
+/// seul ne tranche pas — « quinze mille francs » ne dit pas si c'est une grosse course
+/// ou vingt petites, et c'est cette seconde lecture qui fait juger une rémunération.
+/// </summary>
+public sealed record LedgerPeriodTotal(decimal Amount, int Count);

@@ -22,11 +22,34 @@ public static class IdentityDataSeeder
             ("Moderator", "Modérateur : validation contenus et avis.", new[] { "catalog.moderate", "reviews.moderate" })
         };
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LES RÔLES SYSTÈME SONT DÉFINIS PAR LE CODE : L'AMORÇAGE LES RÉALIGNE.
+        //
+        // Cette boucle se contentait de SAUTER un rôle déjà présent. Tant que la console
+        // pouvait modifier les permissions, une base existante restait rattrapable à la
+        // main ; depuis que le domaine refuse cette modification — pour empêcher qu'on
+        // décoche les droits d'« Admin » sans pouvoir se les rendre — plus AUCUN chemin
+        // ne permettait d'ajouter une permission déclarée ici. Le garde aurait muré la
+        // dernière issue.
+        //
+        // Le réalignement ne vaut que pour les rôles SYSTÈME, dont la source de vérité
+        // est le dépôt. Un rôle créé à la main n'est jamais touché : `defaults` ne le
+        // nomme pas, et `SyncSystemPermissions` le refuserait de toute façon.
+        //
+        // CONSÉQUENCE À CONNAÎTRE : retirer une permission de `defaults` la retire aussi
+        // en base au prochain démarrage. C'est bien ce qu'on veut d'une déclaration —
+        // mais c'est un déploiement qui décide, plus un administrateur.
+        // ═════════════════════════════════════════════════════════════════════════
         foreach (var (name, description, permissions) in defaults)
         {
-            var exists = await dbContext.Roles.AnyAsync(r => r.Name == name, cancellationToken);
-            if (exists)
+            var existing = await dbContext.Roles.FirstOrDefaultAsync(r => r.Name == name, cancellationToken);
+            if (existing is not null)
             {
+                // Le résultat est ignoré à dessein : un rôle porté par `defaults` est
+                // système par construction, et le format des permissions est écrit
+                // juste au-dessus. Un échec ici signalerait une faute de frappe dans ce
+                // fichier, que le démarrage n'a pas à transformer en panne.
+                existing.SyncSystemPermissions(permissions);
                 continue;
             }
 

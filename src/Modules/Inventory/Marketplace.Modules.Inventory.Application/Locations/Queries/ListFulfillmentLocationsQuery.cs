@@ -10,22 +10,25 @@ namespace Marketplace.Modules.Inventory.Application.Locations.Queries;
 public sealed record ListFulfillmentLocationsQuery(Guid OwnerId) : IQuery<IReadOnlyList<FulfillmentLocationSummary>>;
 
 /// <summary>Tous les lieux d'expédition de la plateforme (back-office admin).</summary>
-public sealed record ListAllFulfillmentLocationsQuery : IQuery<IReadOnlyList<FulfillmentLocationSummary>>;
+public sealed record ListAllFulfillmentLocationsQuery : IQuery<FulfillmentLocationList>;
 
 internal sealed class ListAllFulfillmentLocationsQueryHandler
-    : IQueryHandler<ListAllFulfillmentLocationsQuery, IReadOnlyList<FulfillmentLocationSummary>>
+    : IQueryHandler<ListAllFulfillmentLocationsQuery, FulfillmentLocationList>
 {
     private readonly IFulfillmentLocationRepository _repository;
 
     public ListAllFulfillmentLocationsQueryHandler(IFulfillmentLocationRepository repository)
         => _repository = repository;
 
-    public async Task<Result<IReadOnlyList<FulfillmentLocationSummary>>> Handle(
+    /// <summary>Nombre d'emplacements rendus au plus. Le total, lui, est exact.</summary>
+    private const int Plafond = 500;
+
+    public async Task<Result<FulfillmentLocationList>> Handle(
         ListAllFulfillmentLocationsQuery query, CancellationToken cancellationToken)
     {
-        var locations = await _repository.ListAllAsync(500, cancellationToken);
+        var (locations, total) = await _repository.ListAllAsync(Plafond, cancellationToken);
         IReadOnlyList<FulfillmentLocationSummary> summaries = locations
-            // ⚠️ Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
+            // ATTENTION — Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
             // Le value object les validait, le BFF les acceptait, et cette projection les
             // jetait : une saisie GPS ne survivait pas à sa propre relecture.
             .Select(l => new FulfillmentLocationSummary(
@@ -34,7 +37,7 @@ internal sealed class ListAllFulfillmentLocationsQueryHandler
                 l.Address.Landmark, l.Address.Line, l.Address.CountryCode,
                 l.Address.Latitude, l.Address.Longitude))
             .ToList();
-        return Result.Success(summaries);
+        return Result.Success(new FulfillmentLocationList(summaries, total));
     }
 }
 

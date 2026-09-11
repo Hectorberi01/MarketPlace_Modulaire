@@ -82,7 +82,34 @@ public sealed class Invoice : AggregateRoot<InvoiceId>
             return Error.Validation("billing.invoice.period_invalid", "La période de facturation est invalide.");
         }
 
-        return new Invoice(InvoiceId.New(), sellerId, periodStartUtc, periodEndUtc, currency.Trim().ToUpperInvariant());
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA DEVISE N'ÉTAIT VÉRIFIÉE NULLE PART. `CreateInvoiceCommand` N'A AUCUN
+        // VALIDATEUR — PAS UN SEUL.
+        //
+        // La console offre un champ texte libre. Une facture pouvait donc naître en
+        // « EURO », en « F », ou en chaîne vide, et ce code-là est ensuite recopié sur
+        // chaque montant du document comptable. Une facture est une PIÈCE : on ne la
+        // corrige pas après émission — `Issue()` la fige, et il n'existe aucun retour.
+        //
+        // Le garde vit ici, dans l'agrégat, et non dans un validateur de commande :
+        // c'est exactement l'absence d'un validateur de commande qui a laissé passer
+        // celui-ci, et celui de `CommissionRule.Update`. Un invariant de la pièce
+        // appartient à la pièce.
+        //
+        // Trois lettres, sans vérifier que le code EXISTE : la liste ISO vit ailleurs
+        // et bouge, et refuser un code inconnu bloquerait une place qui s'ouvre à un
+        // pays de plus. Trois lettres écartent le vide et la saisie manifestement
+        // fausse, qui sont les deux cas réellement rencontrés.
+        // ═════════════════════════════════════════════════════════════════════════
+        var code = currency?.Trim().ToUpperInvariant() ?? string.Empty;
+        if (code.Length != 3 || !code.All(char.IsAsciiLetterUpper))
+        {
+            return Error.Validation(
+                "billing.invoice.currency_invalid",
+                "La devise de la facture doit être un code à trois lettres (XOF, EUR, USD…).");
+        }
+
+        return new Invoice(InvoiceId.New(), sellerId, periodStartUtc, periodEndUtc, code);
     }
 
     public Result AddLine(string description, decimal amount)

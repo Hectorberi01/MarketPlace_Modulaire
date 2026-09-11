@@ -89,6 +89,23 @@ public sealed class WalletMutations
     public const string CourierDeliveryReferenceType = "courier_delivery";
 
     /// <summary>
+    /// Retenue, restitution ou rejet d'un RETRAIT, référencé par son identifiant.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// UNE RÉFÉRENCE POUR TROIS MOTIFS, ET C'EST VOULU. « withdrawal_request »,
+    /// « withdrawal_refund » et « withdrawal_reject » sont trois MOTIFS lisibles portés
+    /// par la même RÉFÉRENCE : ils désignent le même objet, à trois moments de sa vie.
+    /// C'est ce qui permet de retrouver l'histoire complète d'un retrait en une lecture.
+    ///
+    /// La valeur vivait jusqu'ici en littéral à six endroits, sans constante — dont le
+    /// chemin coursier, le chemin client et le chemin vendeur. Six occasions de la
+    /// faire diverger d'un caractère, et une divergence d'un caractère ici ne casse
+    /// rien : elle rend juste un relevé incomplet, en silence.
+    /// ─────────────────────────────────────────────────────────────────────────
+    /// </summary>
+    public const string WithdrawalReferenceType = "withdrawal";
+
+    /// <summary>
     /// Reversement d'un LOT payé au vendeur, hors du circuit de retrait.
     ///
     /// Référence distincte de « order » et de « withdrawal » : un même vendeur peut

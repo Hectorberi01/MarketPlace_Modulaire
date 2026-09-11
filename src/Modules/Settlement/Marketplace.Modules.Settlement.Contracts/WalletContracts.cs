@@ -235,6 +235,75 @@ public sealed record CourierWalletView(
     decimal PendingWithdrawal,
     string Currency);
 
+/// <summary>
+/// LE RELEVÉ D'UN COURSIER SUR UNE PÉRIODE — vue d'administration.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// TROIS FAMILLES DE CHIFFRES, ET IL NE FAUT PAS LES CONFONDRE.
+///
+///   LA PÉRIODE ....... `EarnedInPeriod`, `DeliveriesInPeriod`, `WithdrawnInPeriod`,
+///                      `WithdrawalsInPeriod`. Bornés par les dates demandées, et exacts
+///                      même quand la liste de lignes est tronquée.
+///
+///                      LE GAIN ET LE VERSEMENT NE SE LISENT PAS AU MÊME ENDROIT, et il
+///                      faut le savoir. Le gain vient du grand livre : une course livrée
+///                      y pose un crédit, rien d'autre ne l'écrit. Le versement, LUI,
+///                      vient des retraits CLÔTURÉS — parce que l'écriture de retrait
+///                      est posée à la DEMANDE, avant toute sortie d'argent, et rendue
+///                      si la demande est refusée. La sommer aurait annoncé « versé » un
+///                      argent jamais parti, et l'aurait compté une seconde fois dans
+///                      `PendingWithdrawal`, qui porte exactement les mêmes demandes.
+///   L'INSTANT ........ `AvailableBalance`, `PendingBalance`, `PendingWithdrawal`.
+///                      Ceux-là ne connaissent AUCUNE période : ils valent maintenant.
+///                      Un solde n'est pas la somme d'une période, et les afficher côte
+///                      à côte sans le dire ferait chercher une soustraction qui ne
+///                      tombe jamais juste.
+///   LE DÉTAIL ........ `Lines`, plafonnées. `LinesTruncated` dit quand il en manque.
+///
+/// `AvailableBalance − PendingWithdrawal` est ce que le coursier peut encore demander ;
+/// `PendingBalance` vaut zéro aujourd'hui, faute de séquestre sur les courses.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
+/// <param name="CourierStatus">« Pending », « Active » ou « Suspended » — celui du module Delivery.</param>
+/// <param name="CanBePaid">
+/// Recopié du module Delivery, jamais redéduit du statut : c'est lui qui décide, et un
+/// coursier suspendu conserve malgré tout le droit de retirer ce qu'il a gagné.
+/// </param>
+/// <param name="PayoutAccountNumber">
+/// Le compte Mobile Money, TEL QU'IL EST ENREGISTRÉ. Il sert à vérifier avant
+/// d'approuver un versement, pas à en changer — la correction se fait côté Delivery.
+/// </param>
+/// <param name="WithdrawnInPeriod">
+/// Ce que le coursier a réellement TOUCHÉ : la somme des retraits clôturés dont la date
+/// de clôture tombe dans la période. Ni les demandes en attente, ni les refusées, ni les
+/// échouées — celles-là n'ont rien fait sortir.
+/// </param>
+/// <param name="WithdrawalsInPeriod">Nombre de ces versements clôturés.</param>
+/// <param name="DeliveriesInPeriod">
+/// Nombre d'écritures de rémunération, donc de courses PAYÉES. Une course livrée sans
+/// rémunération — forfait offert — ne laisse aucune écriture et n'est pas comptée.
+/// </param>
+public sealed record CourierStatementView(
+    Guid CourierId,
+    string DisplayName,
+    string Phone,
+    string CourierStatus,
+    bool CanBePaid,
+    string? PayoutProvider,
+    string? PayoutAccountNumber,
+    DateTime PeriodStartUtc,
+    DateTime PeriodEndUtc,
+    decimal EarnedInPeriod,
+    int DeliveriesInPeriod,
+    decimal WithdrawnInPeriod,
+    int WithdrawalsInPeriod,
+    decimal PendingBalance,
+    decimal AvailableBalance,
+    decimal PendingWithdrawal,
+    string Currency,
+    IReadOnlyList<WalletTransactionView> Lines,
+    bool LinesTruncated);
+
 /// <summary>Demande de retrait d'un coursier en attente de validation (vue admin).</summary>
 public sealed record PendingCourierWithdrawalView(
     Guid Id,

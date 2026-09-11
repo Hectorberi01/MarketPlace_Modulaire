@@ -33,7 +33,31 @@ public sealed class CreateTaxRuleCommandValidator : AbstractValidator<CreateTaxR
     public CreateTaxRuleCommandValidator()
     {
         RuleFor(c => c.Jurisdiction).NotEmpty().MaximumLength(20);
-        RuleFor(c => c.Type).Must(v => v is "Vat" or "SalesTax" or "Exempt").WithMessage("Type de taxe invalide.");
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // MÊME RÈGLE QU'À LA MODIFICATION, ET ELLE NE L'ÉTAIT PAS.
+        //
+        // Ce contrôle comparait trois chaînes en respectant la casse, là où le
+        // gestionnaire d'édition, lui, passe par `Enum.TryParse(ignoreCase: true)`.
+        // « VAT » était donc ACCEPTÉ en modification et REFUSÉ en création : la même
+        // saisie était valide ou non selon le bouton, et le message — « Type de taxe
+        // invalide. » — ne disait ni les valeurs admises, ni que la casse comptait.
+        //
+        // Côté console, le champ était libre et proposait pour exemple « TVA, VAT… »,
+        // c'est-à-dire deux valeurs toutes deux refusées : aucune règle de taxe ne
+        // pouvait être créée depuis l'administration. L'écran offre désormais une
+        // liste fermée ; ce contrôle reste le rempart, aligné sur son jumeau.
+        // ═════════════════════════════════════════════════════════════════════════
+        // `Enum.IsDefined` EN PLUS DE `TryParse`, et ce n'est pas de la ceinture :
+        // `TryParse` réussit sur une valeur NUMÉRIQUE, membre ou non. « 9 » passait donc,
+        // et se persistait tel quel — la colonne est convertie en chaîne — pour se relire
+        // ensuite sans erreur. `ComputeTax` ne teste que l'égalité à `Exempt` : une règle
+        // « 9 » se serait comportée comme une TVA, définitivement, sans que rien ne le
+        // signale. Le message promettait trois valeurs ; il en impose désormais trois.
+        RuleFor(c => c.Type)
+            .Must(v => Enum.TryParse<TaxType>(v, ignoreCase: true, out var t) && Enum.IsDefined(t))
+            .WithMessage("Type de taxe invalide : attendu « Vat », « SalesTax » ou « Exempt ».");
+
         RuleFor(c => c.Rate).InclusiveBetween(0m, 1m);
     }
 }
@@ -57,7 +81,8 @@ internal sealed class CreateTaxRuleCommandHandler : ICommandHandler<CreateTaxRul
 
     public async Task<Result<Guid>> Handle(CreateTaxRuleCommand command, CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<TaxType>(command.Type, ignoreCase: true, out var type))
+        // `IsDefined` : sans lui, « 9 » se parse en `(TaxType)9` et s'enregistre.
+        if (!Enum.TryParse<TaxType>(command.Type, ignoreCase: true, out var type) || !Enum.IsDefined(type))
         {
             return Result.Failure<Guid>(Error.Validation("tax.type_invalid", "Type de taxe inconnu."));
         }
@@ -112,7 +137,8 @@ internal sealed class UpdateTaxRuleCommandHandler : ICommandHandler<UpdateTaxRul
 
     public async Task<Result> Handle(UpdateTaxRuleCommand command, CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<TaxType>(command.Type, ignoreCase: true, out var type))
+        // `IsDefined` : sans lui, « 9 » se parse en `(TaxType)9` et s'enregistre.
+        if (!Enum.TryParse<TaxType>(command.Type, ignoreCase: true, out var type) || !Enum.IsDefined(type))
         {
             return Result.Failure(Error.Validation("tax.type_invalid", "Type de taxe inconnu."));
         }

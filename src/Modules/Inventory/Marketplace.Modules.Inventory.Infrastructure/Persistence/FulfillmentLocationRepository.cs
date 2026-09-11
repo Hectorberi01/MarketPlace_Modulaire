@@ -21,10 +21,24 @@ internal sealed class FulfillmentLocationRepository : IFulfillmentLocationReposi
     public async Task<IReadOnlyList<FulfillmentLocation>> ListByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
         => await _dbContext.FulfillmentLocations.Where(l => l.OwnerId == ownerId).ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<FulfillmentLocation>> ListAllAsync(int take = 500, CancellationToken cancellationToken = default)
-        => await _dbContext.FulfillmentLocations
+    public async Task<(IReadOnlyList<FulfillmentLocation> Items, int Total)> ListAllAsync(
+        int take = 500, CancellationToken cancellationToken = default)
+    {
+        // Le compte est fait sur la table entière, la page est bornée. Deux requêtes
+        // plutôt qu'une, et c'est le prix à payer pour pouvoir dire « 500 sur 1 240 » au
+        // lieu de laisser un écran déduire d'une liste pleine qu'elle est complète.
+        var total = await _dbContext.FulfillmentLocations.CountAsync(cancellationToken);
+
+        var items = await _dbContext.FulfillmentLocations
             .AsNoTracking()
             .OrderByDescending(l => l.CreatedOnUtc)
+            // Départage : PostgreSQL ne garantit aucun ordre entre deux lignes créées
+            // dans la même transaction, et sans lui la borne coupe à un endroit qui
+            // change d'une requête à l'autre.
+            .ThenBy(l => l.Id)
             .Take(take)
             .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
 }

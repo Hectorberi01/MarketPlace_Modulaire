@@ -521,9 +521,40 @@ public class WalletLedgerInvariantTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(Guid ownerId, int take, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(
+            WalletOwnerType ownerType, Guid ownerId, int take, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<WalletTransaction>>(
-                Lines.Where(l => l.OwnerId == ownerId).Take(take).ToList());
+                Lines.Where(l => l.OwnerType == ownerType && l.OwnerId == ownerId).Take(take).ToList());
+
+        public Task<IReadOnlyList<WalletTransaction>> ListInPeriodAsync(
+            WalletOwnerType ownerType, Guid ownerId, DateTime fromUtc, DateTime toUtc,
+            int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<WalletTransaction>>(
+                Lines.Where(l => l.OwnerType == ownerType
+                        && l.OwnerId == ownerId
+                        && l.CreatedAtUtc >= fromUtc
+                        && l.CreatedAtUtc < toUtc)
+                    .OrderByDescending(l => l.CreatedAtUtc)
+                    .Take(take)
+                    .ToList());
+
+        // Le MÊME filtre que le dépôt réel, borne droite exclue comprise : un double qui
+        // arrondit la règle fait passer des tests que la production échoue.
+        public Task<LedgerPeriodTotal> SumInPeriodAsync(
+            WalletOwnerType ownerType, Guid ownerId, string referenceType,
+            WalletDirection direction, DateTime fromUtc, DateTime toUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var retenues = Lines.Where(l => l.OwnerType == ownerType
+                && l.OwnerId == ownerId
+                && l.ReferenceType == referenceType
+                && l.Direction == direction
+                && l.CreatedAtUtc >= fromUtc
+                && l.CreatedAtUtc < toUtc)
+                .ToList();
+
+            return Task.FromResult(new LedgerPeriodTotal(retenues.Sum(l => l.Amount), retenues.Count));
+        }
 
         public Task<bool> ExistsForReferenceAsync(string referenceType, Guid referenceId, CancellationToken cancellationToken = default)
             => Task.FromResult(Lines.Any(l => l.ReferenceType == referenceType && l.ReferenceId == referenceId));

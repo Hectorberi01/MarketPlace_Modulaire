@@ -151,10 +151,11 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
     /// </summary>
     private const int MaxPageSize = 200;
 
-    public async Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(Guid ownerId, int take, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WalletTransaction>> ListByOwnerAsync(
+        WalletOwnerType ownerType, Guid ownerId, int take, CancellationToken cancellationToken = default)
         => await _dbContext.WalletTransactions
             .AsNoTracking()
-            .Where(t => t.OwnerId == ownerId)
+            .Where(t => t.OwnerType == ownerType && t.OwnerId == ownerId)
             .OrderByDescending(t => t.CreatedAtUtc)
             // BORNÉ DES DEUX CÔTÉS. Le plancher existait, le PLAFOND non : les quatre
             // BFF passent la chaîne de requête telle quelle, donc
@@ -167,6 +168,60 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
             // ajoutant une cinquième surface.
             .Take(Math.Clamp(take <= 0 ? DefaultPageSize : take, 1, MaxPageSize))
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<WalletTransaction>> ListInPeriodAsync(
+        WalletOwnerType ownerType, Guid ownerId, DateTime fromUtc, DateTime toUtc,
+        int take, CancellationToken cancellationToken = default)
+        => await _dbContext.WalletTransactions
+            .AsNoTracking()
+            .Where(t => t.OwnerType == ownerType
+                && t.OwnerId == ownerId
+                && t.CreatedAtUtc >= fromUtc
+                && t.CreatedAtUtc < toUtc)
+            .OrderByDescending(t => t.CreatedAtUtc)
+            // Départage les écritures d'un même instant : deux lignes posées dans la
+            // même transaction portent la même date à la microseconde près, et sans ce
+            // second critère leur ordre change d'un affichage à l'autre.
+            .ThenByDescending(t => t.Id)
+            .Take(Math.Clamp(take <= 0 ? DefaultPageSize : take, 1, MaxPageSize))
+            .ToListAsync(cancellationToken);
+
+    public async Task<LedgerPeriodTotal> SumInPeriodAsync(
+        WalletOwnerType ownerType, Guid ownerId, string referenceType,
+        WalletDirection direction, DateTime fromUtc, DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var lignes = _dbContext.WalletTransactions
+            .AsNoTracking()
+            .Where(t => t.OwnerType == ownerType
+                && t.OwnerId == ownerId
+                && t.ReferenceType == referenceType
+                && t.Direction == direction
+                && t.CreatedAtUtc >= fromUtc
+                && t.CreatedAtUtc < toUtc);
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // DEUX AGRÉGATS PLUTÔT QU'UN `GroupBy` SUR CONSTANTE.
+        //
+        // La version en une requête regroupait sur `_ => 1` pour ramener somme et
+        // décompte ensemble. Elle aurait sans doute fonctionné — mais ce serait le SEUL
+        // regroupement sur constante du dépôt, donc le seul dont la traduction ne
+        // s'appuie sur aucun précédent en production, et un échec de traduction n'est
+        // pas une valeur fausse : c'est un 500 sur l'écran.
+        //
+        // Deux allers-retours, donc, sur deux formes dont la traduction n'est douteuse
+        // nulle part. Le risque d'incohérence entre les deux lectures est nul en
+        // pratique : le grand livre est en AJOUT SEUL, une écriture concurrente ne peut
+        // qu'apparaître à la fin, jamais rendre un montant sans son décompte.
+        //
+        // Le `(decimal?)` n'est pas décoratif : sans lui, `SumAsync` sur un ensemble
+        // vide matérialise un NULL SQL dans un `decimal` et lève.
+        // ─────────────────────────────────────────────────────────────────────────
+        var montant = await lignes.SumAsync(t => (decimal?)t.Amount, cancellationToken) ?? 0m;
+        var nombre = await lignes.CountAsync(cancellationToken);
+
+        return new LedgerPeriodTotal(montant, nombre);
+    }
 
     /// <summary>
     /// Le grand livre a-t-il déjà une écriture pour cette référence ?

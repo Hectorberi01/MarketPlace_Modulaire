@@ -112,7 +112,8 @@ internal sealed class ListCustomerWalletTransactionsQueryHandler
     public async Task<Result<IReadOnlyList<WalletTransactionView>>> Handle(
         ListCustomerWalletTransactionsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _ledger.ListByOwnerAsync(query.CustomerId, query.Take, cancellationToken);
+        var items = await _ledger.ListByOwnerAsync(
+            WalletOwnerType.Customer, query.CustomerId, query.Take, cancellationToken);
         IReadOnlyList<WalletTransactionView> views = items.Select(WalletMapper.ToView).ToList();
         return Result.Success(views);
     }
@@ -279,7 +280,7 @@ internal sealed class RequestCustomerWithdrawalCommandHandler
         // solde insuffisant fait échouer le débit, et rien n'est écrit.
         var debit = await _mutations.DebitAsync(
             WalletOwnerType.Customer, command.CustomerId, WalletAccount.Available, command.Amount,
-            wallet.Currency, "withdrawal_request", "withdrawal", withdrawal.Id.Value, cancellationToken);
+            wallet.Currency, "withdrawal_request", WalletMutations.WithdrawalReferenceType, withdrawal.Id.Value, cancellationToken);
 
         if (debit.IsFailure)
         {

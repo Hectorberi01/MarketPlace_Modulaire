@@ -169,7 +169,8 @@ internal sealed class ListSellerWalletTransactionsQueryHandler : IQueryHandler<L
 
     public async Task<Result<IReadOnlyList<WalletTransactionView>>> Handle(ListSellerWalletTransactionsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _ledger.ListByOwnerAsync(query.SellerId, query.Take, cancellationToken);
+        var items = await _ledger.ListByOwnerAsync(
+            WalletOwnerType.Seller, query.SellerId, query.Take, cancellationToken);
         IReadOnlyList<WalletTransactionView> views = items.Select(WalletMapper.ToView).ToList();
         return Result.Success(views);
     }
@@ -288,7 +289,8 @@ internal sealed class ListPlatformWalletTransactionsQueryHandler : IQueryHandler
 
     public async Task<Result<IReadOnlyList<WalletTransactionView>>> Handle(ListPlatformWalletTransactionsQuery query, CancellationToken cancellationToken)
     {
-        var items = await _ledger.ListByOwnerAsync(Wallet.PlatformOwnerId, query.Take, cancellationToken);
+        var items = await _ledger.ListByOwnerAsync(
+            WalletOwnerType.Platform, Wallet.PlatformOwnerId, query.Take, cancellationToken);
         IReadOnlyList<WalletTransactionView> views = items.Select(WalletMapper.ToView).ToList();
         return Result.Success(views);
     }

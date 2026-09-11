@@ -63,6 +63,6 @@ public sealed class WithdrawalSettlement
         // codé en dur : la même clôture vaut pour un vendeur, un livreur ou un client.
         await _mutations.CreditAsync(
             withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
-            withdrawal.Currency, "withdrawal_refund", "withdrawal", withdrawal.Id.Value, cancellationToken);
+            withdrawal.Currency, "withdrawal_refund", WalletMutations.WithdrawalReferenceType, withdrawal.Id.Value, cancellationToken);
     }
 }

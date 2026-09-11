@@ -50,6 +50,32 @@ public static class AdminCourierEndpoints
         // l'adresse et le secret.
         couriers.MapGet("/positions", FleetAsync);
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // L'ARGENT D'UN COURSIER, ENFIN VISIBLE DE L'ADMINISTRATION.
+        //
+        // `GetCourierWalletQuery` et le relevé existaient — exposés au seul BFF LIVREUR.
+        // Un administrateur voyait donc les demandes de retrait d'un coursier sans
+        // pouvoir voir ni son solde, ni ce qu'il avait gagné, ni en combien de courses.
+        // Il approuvait un versement sans pouvoir répondre à la seule question qui
+        // compte : cet argent, d'où vient-il ?
+        //
+        // DES LECTURES, ET AUCUNE ÉCRITURE. Approuver ou refuser un retrait reste où
+        // c'est déjà : `/admin/wallet/withdrawals/{id}/approve`, un seul chemin pour les
+        // trois acteurs. En ouvrir un second ici ferait deux endroits où le même geste
+        // s'écrit, donc deux endroits où le garde-fou de simulation devrait être tenu
+        // d'accord.
+        //
+        // PAS DE ROUTE `/wallet` SÉPARÉE : le relevé porte déjà les trois soldes, et une
+        // route que rien n'appelle est une surface que personne ne verra casser.
+        // ═══════════════════════════════════════════════════════════════════════════
+        couriers.MapGet("/{id:guid}/statement", StatementAsync);
+        couriers.MapGet("/{id:guid}/withdrawals", WithdrawalsAsync);
+
+        // Le sélecteur de l'écran Règlement. Vue MAIGRE et bornée : `GET ""` juste
+        // au-dessus rend des `CourierSummary` complets, compte Mobile Money inclus, ce
+        // qui n'a rien à faire dans un menu déroulant.
+        couriers.MapGet("/picker", PickerAsync);
+
         return app;
     }
 
@@ -124,6 +150,60 @@ public static class AdminCourierEndpoints
     /// </summary>
     private static async Task<IResult> FleetAsync(IDeliveryModuleApi delivery, CancellationToken ct)
         => Results.Ok(await delivery.GetFleetAsync(ct));
+
+    /// <summary>Les coursiers pour un menu déroulant : nom, téléphone, statut.</summary>
+    private static async Task<IResult> PickerAsync(ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListCouriersForPickerQuery(), ct)).Match(l => Results.Ok(l));
+
+    /// <summary>
+    /// Le relevé d'un coursier sur une période. Par défaut, les trente derniers jours.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LES DATES REÇUES SONT RAMENÉES EN UTC AVANT D'ÊTRE UTILISÉES.
+    ///
+    /// Une date de chaîne de requête arrive avec le `Kind` que la liaison lui a donné,
+    /// et ce n'est pas toujours `Utc` — « 2026-09-01T00:00:00Z » peut ressortir en
+    /// heure LOCALE du serveur. Deux conséquences, l'une visible et l'autre non :
+    ///
+    ///   - Npgsql REFUSE d'écrire un DateTime de `Kind` local dans une colonne
+    ///     « timestamp with time zone ». La requête lève, et l'écran affiche une erreur
+    ///     technique sur une saisie parfaitement légitime.
+    ///   - Un `Kind` non spécifié passe, lui, silencieusement — et décale la période du
+    ///     fuseau du serveur. Une course livrée le 1er à 00h30 tombe alors dans le mois
+    ///     précédent, et le relevé est faux sans que rien ne le signale.
+    ///
+    /// La conversion est faite ICI, à la frontière, plutôt que dans le handler : c'est
+    /// le seul endroit qui sait que la valeur vient du dehors.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> StatementAsync(
+        Guid id, ISender sender, CancellationToken ct, DateTime? from = null, DateTime? to = null)
+    {
+        var fin = EnUtc(to) ?? DateTime.UtcNow;
+        var debut = EnUtc(from) ?? fin.AddDays(-30);
+
+        return (await sender.Send(new GetCourierStatementQuery(id, debut, fin), ct))
+            .Match(r => Results.Ok(r));
+    }
+
+    /// <summary>Demandes de retrait d'un coursier, toutes périodes et tous statuts.</summary>
+    private static async Task<IResult> WithdrawalsAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new ListCourierWithdrawalsQuery(id), ct)).Match(w => Results.Ok(w));
+
+    /// <summary>
+    /// Ramène une date reçue à de l'UTC, quel que soit le `Kind` que la liaison lui a
+    /// donné. `Unspecified` est traité comme de l'UTC : c'est ce que le client envoie,
+    /// et le supposer local décalerait la période sans le dire.
+    /// </summary>
+    private static DateTime? EnUtc(DateTime? valeur)
+        => valeur is not { } d
+            ? null
+            : d.Kind switch
+            {
+                DateTimeKind.Utc => d,
+                DateTimeKind.Local => d.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(d, DateTimeKind.Utc),
+            };
 
     public sealed record RegisterCourierRequest(
         Guid UserId, string DisplayName, string Phone,

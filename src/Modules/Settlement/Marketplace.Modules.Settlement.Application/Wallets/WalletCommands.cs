@@ -76,7 +76,7 @@ internal sealed class RequestWithdrawalCommandHandler : ICommandHandler<RequestW
         // API qui les lie. Un solde insuffisant remonte l'erreur du domaine telle quelle.
         var debit = await _mutations.DebitAsync(
             WalletOwnerType.Seller, command.SellerId, WalletAccount.Available, command.Amount,
-            wallet.Currency, "withdrawal_request", "withdrawal", withdrawal.Id.Value, cancellationToken);
+            wallet.Currency, "withdrawal_request", WalletMutations.WithdrawalReferenceType, withdrawal.Id.Value, cancellationToken);
 
         if (debit.IsFailure)
         {
@@ -230,7 +230,7 @@ internal sealed class ApproveWithdrawalCommandHandler : ICommandHandler<ApproveW
         withdrawal.Fail(reason);
         await _mutations.CreditAsync(
             withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
-            withdrawal.Currency, "withdrawal_refund", "withdrawal", withdrawal.Id.Value, ct);
+            withdrawal.Currency, "withdrawal_refund", WalletMutations.WithdrawalReferenceType, withdrawal.Id.Value, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
         return Result.Failure<WithdrawalView>(Error.Failure("wallet.withdrawal_failed", reason));
@@ -272,7 +272,7 @@ internal sealed class RejectWithdrawalCommandHandler : ICommandHandler<RejectWit
 
         await _mutations.CreditAsync(
             withdrawal.OwnerType, withdrawal.OwnerId, WalletAccount.Available, withdrawal.Amount,
-            withdrawal.Currency, "withdrawal_reject", "withdrawal", withdrawal.Id.Value, cancellationToken);
+            withdrawal.Currency, "withdrawal_reject", WalletMutations.WithdrawalReferenceType, withdrawal.Id.Value, cancellationToken);
 
         var reason = string.IsNullOrWhiteSpace(command.Reason) ? "Demande refusée par l'administrateur." : command.Reason.Trim();
         withdrawal.Reject(reason);

@@ -77,15 +77,78 @@ public sealed class CommissionRule : AggregateRoot<CommissionRuleId>
             return Error.Validation("billing.target_required", "Une règle Category/Seller exige une cible.");
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // UN PLANCHER OU UN PLAFOND NÉGATIF N'A PAS DE SENS, ET RIEN NE LE REFUSAIT.
+        //
+        // Seul `max < min` était vérifié. Un plancher à −500 passait donc, et `Compute`
+        // l'applique : la commission « bornée par le bas » devient un montant NÉGATIF,
+        // c'est-à-dire que la plateforme paie le vendeur en plus de sa vente. Personne
+        // n'écrit cela volontairement — c'est le signe moins de trop, sur un écran où
+        // les deux champs sont facultatifs et donc rarement relus.
+        // ─────────────────────────────────────────────────────────────────────────
+        if (minFee is < 0m || maxFee is < 0m)
+        {
+            return Error.Validation(
+                "billing.bounds_negative",
+                "Le plancher et le plafond de commission ne peuvent pas être négatifs.");
+        }
+
         if (minFee is { } min && maxFee is { } max && max < min)
         {
             return Error.Validation("billing.bounds_invalid", "MaxFee doit être supérieur ou égal à MinFee.");
         }
 
+        var devise = NormaliserDevise(currency);
+        if (devise.IsFailure)
+        {
+            return devise.Error;
+        }
+
         return new CommissionRule(
             CommissionRuleId.New(), scope, scope == CommissionScope.Global ? null : targetId,
-            rate, fixedFee, currency.Trim().ToUpperInvariant(), minFee, maxFee, effectiveFromUtc);
+            rate, fixedFee, devise.Value, minFee, maxFee, effectiveFromUtc);
     }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// UNE DEVISE VIDE PERSISTAIT, ET LE BARÈME NE VOULAIT PLUS RIEN DIRE.
+    ///
+    /// Le validateur `Length(3)` n'existait QUE pour la création : aucun
+    /// `UpdateCommissionRuleCommandValidator` n'a jamais été écrit, et `Update`
+    /// écrivait `currency.Trim().ToUpperInvariant()` sans condition. Vider le champ
+    /// devise dans le formulaire d'édition — un champ texte libre — enregistrait donc
+    /// une chaîne vide.
+    ///
+    /// Ce qui en découle : `FixedFee`, `MinFee` et `MaxFee` sont des MONTANTS. Sans
+    /// devise, ils ne désignent rien, et l'arrondi de `Compute` suit une devise
+    /// inconnue. L'écran affiche alors un barème dont personne ne peut dire s'il est
+    /// en francs ou en euros.
+    ///
+    /// LE GARDE EST DANS L'AGRÉGAT, pas dans un validateur de commande : c'est le seul
+    /// endroit que les deux chemins — création et modification — traversent forcément,
+    /// et le seul qu'un appelant futur ne peut pas contourner. C'est précisément parce
+    /// que le validateur de création existait et que celui de modification manquait que
+    /// le défaut a pu vivre.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static Result<string> NormaliserDevise(string? currency)
+    {
+        var code = currency?.Trim().ToUpperInvariant() ?? string.Empty;
+
+        // Trois lettres exactement, comme ISO 4217. On ne vérifie pas que le code
+        // EXISTE : la liste vit ailleurs, elle bouge, et refuser un code inconnu
+        // bloquerait une place qui s'ouvre à un pays de plus. Trois lettres suffisent à
+        // écarter le vide et la saisie manifestement fausse, qui sont les deux cas vus.
+        if (code.Length != 3 || !code.All(char.IsAsciiLetterUpper))
+        {
+            return Error.Validation(
+                "billing.currency_invalid",
+                "La devise doit être un code à trois lettres (XOF, EUR, USD…).");
+        }
+
+        return code;
+    }
+
 
     /// <summary>
     /// Calcule la commission prélevée sur un montant brut, bornée si nécessaire.
@@ -134,14 +197,31 @@ public sealed class CommissionRule : AggregateRoot<CommissionRuleId>
             return  Result.Failure( Error.Validation("billing.fixed_fee_invalid", "Le frais fixe ne peut pas être négatif."));
         }
 
+        // Même règle qu'à la création, et pour la même raison : voir `Create`. Elle est
+        // répétée plutôt que factorisée parce que les deux méthodes rendent des types
+        // différents ; la factoriser demanderait un aiguillage qui coûte plus à lire que
+        // les quatre lignes qu'il économise.
+        if (minFee is < 0m || maxFee is < 0m)
+        {
+            return Result.Failure(Error.Validation(
+                "billing.bounds_negative",
+                "Le plancher et le plafond de commission ne peuvent pas être négatifs."));
+        }
+
         if (minFee is { } min && maxFee is { } max && max < min)
         {
             return  Result.Failure( Error.Validation("billing.bounds_invalid", "MaxFee doit être supérieur ou égal à MinFee."));
         }
 
+        var devise = NormaliserDevise(currency);
+        if (devise.IsFailure)
+        {
+            return Result.Failure(devise.Error);
+        }
+
         Rate = rate;
         FixedFee = fixedFee;
-        Currency = currency.Trim().ToUpperInvariant();
+        Currency = devise.Value;
         MinFee = minFee;
         MaxFee = maxFee;
         EffectiveFromUtc = effectiveFromUtc;
