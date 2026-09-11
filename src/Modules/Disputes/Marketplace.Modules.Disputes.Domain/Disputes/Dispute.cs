@@ -51,8 +51,13 @@ public sealed class Dispute : AggregateRoot<DisputeId>
             return Error.Validation("disputes.message_required", "Le motif du litige est obligatoire.");
         }
 
+        if (!PreuveRecevable(photoUrl, out var preuve))
+        {
+            return Error.Validation("disputes.photo_url_invalid", PreuveRefusee);
+        }
+
         var dispute = new Dispute(DisputeId.New(), orderId, raisedBy, type);
-        dispute._messages.Add(new DisputeMessage(Guid.NewGuid(), raisedBy, initialMessage.Trim(), photoUrl));
+        dispute._messages.Add(new DisputeMessage(Guid.NewGuid(), raisedBy, initialMessage.Trim(), preuve));
         dispute.Raise(new DisputeOpenedDomainEvent(dispute.Id.Value, orderId, raisedBy, type.ToString()));
         return dispute;
     }
@@ -69,8 +74,104 @@ public sealed class Dispute : AggregateRoot<DisputeId>
             return Result.Failure(Error.Validation("disputes.message_required", "Le message ne peut pas être vide."));
         }
 
-        _messages.Add(new DisputeMessage(Guid.NewGuid(), authorId, body.Trim(), photoUrl));
+        if (!PreuveRecevable(photoUrl, out var preuve))
+        {
+            return Result.Failure(Error.Validation("disputes.photo_url_invalid", PreuveRefusee));
+        }
+
+        _messages.Add(new DisputeMessage(Guid.NewGuid(), authorId, body.Trim(), preuve));
         return Result.Success();
+    }
+
+    private const string PreuveRefusee =
+        "La pièce jointe doit être une adresse https:// complète.";
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// CETTE CHAÎNE DEVIENT UN LIEN CLIQUABLE DANS LA CONSOLE D'ADMINISTRATION.
+    ///
+    /// Elle n'était vérifiée NULLE PART. `OpenDisputeCommandValidator` contrôle
+    /// l'auteur, la commande, le type et le message — jamais la preuve ; et
+    /// `AddDisputeMessageCommand` n'a aucun validateur. N'importe quel client ou
+    /// vendeur authentifié pouvait donc déposer la chaîne de son choix, et l'écran
+    /// Modération la rendait telle quelle dans un `href`.
+    ///
+    /// `javascript:` dans un `href` est un point d'exécution connu, et la CSP de la
+    /// console ne le bloque pas : son `script-src` porte `'unsafe-inline'`, qui
+    /// autorise précisément ces URL. Le script tournait alors dans l'origine de la
+    /// console — où `/api/bff/*` est un proxy DÉJÀ authentifié : suspension de
+    /// boutique, validation de KYB, remboursement vers un numéro choisi.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// POURQUOI ICI, ET PAS DANS UN VALIDATEUR DE COMMANDE.
+    ///
+    /// Parce que c'est l'absence d'un validateur qui a créé le trou. Deux commandes
+    /// portent cette valeur, une seule avait un validateur, et la suivante n'en aura
+    /// peut-être pas non plus. L'agrégat est le seul passage obligé des deux chemins.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// CE QUE CE GARDE NE FAIT PAS : il n'impose pas d'HÔTE.
+    ///
+    /// Le module Catalogue a déjà la bonne réponse pour cela — `IMediaUrlPolicy`, une
+    /// liste blanche adossée aux hôtes de stockage réellement configurés. Elle vit
+    /// dans Catalogue, et la frontière de module interdit d'y toucher d'ici ; surtout,
+    /// aucune route de téléversement n'existe pour les litiges, donc on ignore d'où
+    /// viennent les preuves déjà déposées par les applications. Restreindre l'hôte
+    /// sans le savoir casserait un parcours client en production.
+    ///
+    /// Exiger `https://` ferme entièrement l'exécution : `javascript:`, `data:` et
+    /// `vbscript:` sont des URI absolues valides — `Uri.TryCreate` les accepte — et
+    /// c'est le contrôle de SCHÉMA, lui seul, qui les rejette. Il reste qu'une preuve peut
+    /// pointer vers un serveur quelconque, qui apprendra l'adresse IP du modérateur
+    /// qui l'ouvre. C'est une fuite, pas une prise de contrôle — et elle se fermera
+    /// le jour où les litiges auront leur propre téléversement.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static bool PreuveRecevable(string? photoUrl, out string? normalisee)
+    {
+        normalisee = null;
+
+        // La preuve est FACULTATIVE : la plupart des litiges n'en portent pas, et
+        // refuser l'absence transformerait ce garde en régression fonctionnelle.
+        if (string.IsNullOrWhiteSpace(photoUrl))
+        {
+            return true;
+        }
+
+        var brut = photoUrl.Trim();
+
+        // Borne de longueur : une URL de plus de 2 Ko n'est pas une adresse d'image,
+        // c'est une charge utile. La couper ici évite de la stocker et de la relire.
+        if (brut.Length > 2048)
+        {
+            return false;
+        }
+
+        // `UriKind.Absolute` n'écarte que les chemins relatifs — « /preuve.jpg »,
+        // « preuve.jpg ». IL N'ÉCARTE PAS « javascript: » NI « data: » : ce sont des
+        // URI absolues parfaitement valides, et `TryCreate` les accepte. C'est le seul
+        // point de ce fichier où il serait facile de croire le travail déjà fait.
+        if (!Uri.TryCreate(brut, UriKind.Absolute, out var parsee))
+        {
+            return false;
+        }
+
+        // VOICI LA LIGNE QUI FERME L'EXÉCUTION, et elle est seule à le faire.
+        //
+        // Une liste BLANCHE d'un seul schéma, et non une liste noire : refuser
+        // « javascript: » puis « data: » puis « vbscript: » revient à courir derrière
+        // la prochaine trouvaille. N'accepter que https ferme la question une fois.
+        //
+        // Https et pas « http ou https » : une preuve servie en clair peut être
+        // remplacée en transit, et c'est un modérateur qui la regarde pour trancher un
+        // litige d'argent.
+        if (parsee.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        normalisee = brut;
+        return true;
     }
 
     public Result StartReview()
