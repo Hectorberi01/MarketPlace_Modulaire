@@ -68,7 +68,7 @@ public class DisputeAggregateTests
     [InlineData("preuve.jpg")]
     public void Une_preuve_qui_n_est_pas_https_est_refusee(string preuve)
     {
-        Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.Damaged, "Colis abîmé.", preuve)
+        Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.DamagedItem, "Colis abîmé.", preuve)
             .IsFailure.Should().BeTrue($"« {preuve} » n'est pas une adresse https et finit dans un href de la console");
 
         var dispute = NewDispute();
@@ -81,7 +81,7 @@ public class DisputeAggregateTests
     {
         const string preuve = "https://images.hbamediacore.fr/litiges/abc.jpg";
 
-        var dispute = Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.Damaged, "Colis abîmé.", preuve);
+        var dispute = Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.DamagedItem, "Colis abîmé.", preuve);
 
         dispute.IsSuccess.Should().BeTrue();
         dispute.Value.Messages.Single().PhotoUrl.Should().Be(preuve);
@@ -106,7 +106,7 @@ public class DisputeAggregateTests
         // utile qu'on éviterait de stocker puis de relire.
         var trop = "https://exemple.test/" + new string('a', 2100);
 
-        Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.Damaged, "Colis abîmé.", trop)
+        Dispute.Open(Guid.NewGuid(), Guid.NewGuid(), DisputeType.DamagedItem, "Colis abîmé.", trop)
             .IsFailure.Should().BeTrue();
     }
 }
