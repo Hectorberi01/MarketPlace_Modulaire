@@ -270,7 +270,19 @@ public sealed class StockDepletedNotificationHandler : IIntegrationEventHandler<
             seller.UserId,
             "Rupture de stock",
             $"La référence {e.Sku} n'a plus de stock : elle n'est plus proposée à la vente. Réapprovisionnez-la pour la remettre en ligne.",
-            "Order",
+            // ═══════════════════════════════════════════════════════════════════════
+            // CE TYPE DISAIT « Order » POUR UN IDENTIFIANT D'ARTICLE DE STOCK.
+            //
+            // `relatedType` sert à deux choses : classer la notification dans une
+            // catégorie de préférences, et dire aux clients vers quoi pointer. La
+            // seconde était trompeuse — une console qui suit le type ouvre une fiche
+            // COMMANDE avec un `InventoryItemId`, donc une commande introuvable.
+            //
+            // La catégorie ne bouge pas : `NotificationCategories` range « inventory »
+            // avec les commandes, comme avant. Seule la cible change, et elle devient
+            // exacte.
+            // ═══════════════════════════════════════════════════════════════════════
+            "Inventory",
             e.InventoryItemId,
             cancellationToken);
     }

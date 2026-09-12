@@ -43,7 +43,15 @@ public static class SellerFinanceEndpoints
         var start = ToUtc(from) ?? end.AddDays(-30);
         if (end <= start)
         {
-            return Results.BadRequest(new { error = "invalid_period", hint = "'to' doit être postérieur à 'from'." });
+            // `message` EN PLUS DU CODE : les consoles affichent le premier champ
+            // textuel qu'elles trouvent, et `hint` n'en fait pas partie. Sans lui, le
+            // vendeur lisait « invalid_period » dans un bandeau d'erreur.
+            return Results.BadRequest(new
+            {
+                error = "invalid_period",
+                hint = "'to' doit être postérieur à 'from'.",
+                message = "La date de fin doit être postérieure à la date de début.",
+            });
         }
 
         // On récupère les LIGNES détaillées (un gain = une ligne) puis on projette

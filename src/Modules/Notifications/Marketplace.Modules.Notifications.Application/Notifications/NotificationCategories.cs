@@ -20,7 +20,11 @@ public static class NotificationCategories
     /// <summary>Catégorie d'un relatedType (null si non mappé → toujours envoyé).</summary>
     public static string? FromRelatedType(string? relatedType) => relatedType?.Trim().ToLowerInvariant() switch
     {
-        "order" or "shipment" => Orders,
+        // « inventory » : rupture de stock. Rangé avec les commandes — c'est la file
+        // de travail quotidienne du vendeur — mais il porte un identifiant d'ARTICLE
+        // DE STOCK, pas de commande. Le type était « order », ce qui envoyait les
+        // clients ouvrir une fiche commande introuvable.
+        "order" or "shipment" or "inventory" => Orders,
         "return" or "dispute" => Returns,
         "review" => Reviews,
         "message" or "conversation" => Messages,

@@ -70,6 +70,23 @@ public static class SellerMessagingEndpoints
                 id = c.Id,
                 customer = string.IsNullOrWhiteSpace(customer) ? "Client" : customer,
                 // ─────────────────────────────────────────────────────────────────
+                // L'IDENTIFIANT DE L'AUTRE PARTICIPANT, ET LA RAISON EST AILLEURS.
+                //
+                // La fiche commande proposait « Écrire au client » vers /messages, sans
+                // rien pour désigner le fil : l'écran ouvrait le plus récent, c'est-à-dire
+                // presque toujours celui d'un AUTRE client. Le nom ne permet pas de les
+                // rapprocher — il se replie sur « Client » quand Identity ne répond pas,
+                // et deux acheteurs peuvent être homonymes.
+                //
+                // `ParticipantIds` porte des identifiants Identity, exactement comme
+                // `Order.BuyerId` (les deux viennent du `sub` du jeton). Les projeter
+                // permet à la console de retrouver le fil du bon acheteur — ou de
+                // constater qu'il n'y en a aucun, ce qui est le cas le plus fréquent :
+                // seul l'ACHETEUR peut ouvrir un fil, ce BFF ne monte aucune route de
+                // création.
+                // ─────────────────────────────────────────────────────────────────
+                counterpartId = otherId,
+                // ─────────────────────────────────────────────────────────────────
                 // `ContextType` EST UNE CHAÎNE LIBRE DU CLIENT QUI OUVRE LE FIL.
                 //
                 // Elle vient du corps de requête (MessagingEndpoints), n'est validée

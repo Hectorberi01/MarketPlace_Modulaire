@@ -154,10 +154,25 @@ public static class SellerCatalogEndpoints
         [FromForm] string? tags = null,
         [FromForm] string? attributesJson = null)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ═════════════════════════════════════════════════════════════════════════
+        // ÉCRITURE DE CATALOGUE : LE DROIT DE VENDRE SE VÉRIFIE ICI.
+        //
+        // Cette route utilisait `ResolveSellerAsync`, qui rend la boutique QUEL QUE
+        // SOIT son statut. `SellerBff.ResolveSellingSellerAsync` le dit en toutes
+        // lettres : « un appelant qui utilise encore ResolveSellerAsync sur une
+        // écriture saute visiblement une étape ». C'était le cas ici.
+        //
+        // Conséquence mesurée avant correction : une boutique SUSPENDUE ou FERMÉE
+        // pouvait créer des produits, y attacher des photos et des déclinaisons.
+        // Pour « Closed », cela annulait la sanction — la fermeture dépublie le
+        // catalogue, et il suffisait de le recréer. `SellerRights.CanSell` couvre
+        // explicitement « produits, variantes, médias » ; la garde manquait, pas la
+        // règle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         if (images.Count == 0)
@@ -197,7 +212,7 @@ public static class SellerCatalogEndpoints
             .ToList();
 
         var result = await sender.Send(new CreateProductWithImagesCommand(
-            seller.Id, categoryId, name, description,
+            seller!.Id, categoryId, name, description,
             brandId, string.IsNullOrWhiteSpace(gtin) ? null : gtin, string.IsNullOrWhiteSpace(ean) ? null : ean,
             productGroupId,
             attributes is { Count: > 0 } ? attributes : null,
@@ -240,10 +255,24 @@ public static class SellerCatalogEndpoints
         ISellerModuleApi sellers,
         CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ═════════════════════════════════════════════════════════════════════════
+        // NE CRÉE RIEN, MAIS DÉPENSE — D'OÙ LA MÊME GARDE QUE LES ÉCRITURES.
+        //
+        // Cette route n'écrit pas dans le catalogue : elle expédie des octets à un
+        // service de traitement d'image FACTURÉ et rend le résultat. Laissée sur
+        // `ResolveSellerAsync`, une boutique suspendue ou fermée pouvait la solliciter
+        // en boucle — et le résultat ne lui servait à rien, puisque la création de
+        // produit à laquelle elle prépare est désormais refusée.
+        //
+        // Refuser ici évite au vendeur d'attendre un détourage dont il ne pourra rien
+        // faire, et à la plateforme d'en payer le coût.
+        // ═════════════════════════════════════════════════════════════════════════
+        // `_` : cette route n'a pas besoin de l'identité de la boutique, seulement de
+        // son droit. La déconstruire sous un nom inutilisé inviterait à s'en servir.
+        var (_, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
 
         var check = await UploadValidation.CheckImageAsync(image, ct);
@@ -288,12 +317,27 @@ public static class SellerCatalogEndpoints
 
     private static async Task<IResult> AddMediaAsync(ClaimsPrincipal user, Guid id, MediaRequest request, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ═════════════════════════════════════════════════════════════════════════
+        // ÉCRITURE DE CATALOGUE : LE DROIT DE VENDRE SE VÉRIFIE ICI.
+        //
+        // Cette route utilisait `ResolveSellerAsync`, qui rend la boutique QUEL QUE
+        // SOIT son statut. `SellerBff.ResolveSellingSellerAsync` le dit en toutes
+        // lettres : « un appelant qui utilise encore ResolveSellerAsync sur une
+        // écriture saute visiblement une étape ». C'était le cas ici.
+        //
+        // Conséquence mesurée avant correction : une boutique SUSPENDUE ou FERMÉE
+        // pouvait créer des produits, y attacher des photos et des déclinaisons.
+        // Pour « Closed », cela annulait la sanction — la fermeture dépublie le
+        // catalogue, et il suffisait de le recréer. `SellerRights.CanSell` couvre
+        // explicitement « produits, variantes, médias » ; la garde manquait, pas la
+        // règle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
-        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, id, ct))
+        if (!await SellerBff.OwnsProductAsync(catalog, seller!.Id, id, ct))
         {
             return SellerBff.NotFoundOrForbidden("product");
         }
@@ -309,12 +353,27 @@ public static class SellerCatalogEndpoints
         ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct,
         [FromForm] string? alt = null, [FromForm] bool isPrimary = false)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ═════════════════════════════════════════════════════════════════════════
+        // ÉCRITURE DE CATALOGUE : LE DROIT DE VENDRE SE VÉRIFIE ICI.
+        //
+        // Cette route utilisait `ResolveSellerAsync`, qui rend la boutique QUEL QUE
+        // SOIT son statut. `SellerBff.ResolveSellingSellerAsync` le dit en toutes
+        // lettres : « un appelant qui utilise encore ResolveSellerAsync sur une
+        // écriture saute visiblement une étape ». C'était le cas ici.
+        //
+        // Conséquence mesurée avant correction : une boutique SUSPENDUE ou FERMÉE
+        // pouvait créer des produits, y attacher des photos et des déclinaisons.
+        // Pour « Closed », cela annulait la sanction — la fermeture dépublie le
+        // catalogue, et il suffisait de le recréer. `SellerRights.CanSell` couvre
+        // explicitement « produits, variantes, médias » ; la garde manquait, pas la
+        // règle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
-        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, id, ct))
+        if (!await SellerBff.OwnsProductAsync(catalog, seller!.Id, id, ct))
         {
             return SellerBff.NotFoundOrForbidden("product");
         }
@@ -350,12 +409,27 @@ public static class SellerCatalogEndpoints
 
     private static async Task<IResult> AddVariantAsync(ClaimsPrincipal user, Guid id, VariantRequest request, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
     {
-        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
-        if (seller is null)
+        // ═════════════════════════════════════════════════════════════════════════
+        // ÉCRITURE DE CATALOGUE : LE DROIT DE VENDRE SE VÉRIFIE ICI.
+        //
+        // Cette route utilisait `ResolveSellerAsync`, qui rend la boutique QUEL QUE
+        // SOIT son statut. `SellerBff.ResolveSellingSellerAsync` le dit en toutes
+        // lettres : « un appelant qui utilise encore ResolveSellerAsync sur une
+        // écriture saute visiblement une étape ». C'était le cas ici.
+        //
+        // Conséquence mesurée avant correction : une boutique SUSPENDUE ou FERMÉE
+        // pouvait créer des produits, y attacher des photos et des déclinaisons.
+        // Pour « Closed », cela annulait la sanction — la fermeture dépublie le
+        // catalogue, et il suffisait de le recréer. `SellerRights.CanSell` couvre
+        // explicitement « produits, variantes, médias » ; la garde manquait, pas la
+        // règle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var (seller, denied) = await SellerBff.ResolveSellingSellerAsync(user, sellers, ct);
+        if (denied is not null)
         {
-            return SellerBff.NotASeller();
+            return denied;
         }
-        if (!await SellerBff.OwnsProductAsync(catalog, seller.Id, id, ct))
+        if (!await SellerBff.OwnsProductAsync(catalog, seller!.Id, id, ct))
         {
             return SellerBff.NotFoundOrForbidden("product");
         }
@@ -496,6 +570,26 @@ public static class SellerCatalogEndpoints
     /// </summary>
     private static async Task<IResult> DeleteAsync(ClaimsPrincipal user, Guid id, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
     {
+        // ═════════════════════════════════════════════════════════════════════════
+        // SEULE ÉCRITURE DE CATALOGUE LAISSÉE SANS CONTRÔLE DE STATUT, ET C'EST
+        // DÉLIBÉRÉ — MAIS CE N'EST PAS TRANCHÉ.
+        //
+        // Les quatre autres routes qui utilisaient encore `ResolveSellerAsync` sur
+        // une écriture (création de produit, ajout de média, téléversement de média,
+        // ajout de déclinaison) ont été fermées : elles AGRANDISSENT le catalogue, et
+        // pour une boutique fermée cela annulait la sanction.
+        //
+        // La suppression n'agrandit rien, et deux lectures s'opposent :
+        //   - la fermer, parce qu'une boutique SUSPENDUE ne devrait pas pouvoir
+        //     effacer des fiches pendant qu'on instruit son dossier ;
+        //   - la laisser, parce qu'un vendeur qui range son catalogue après une
+        //     fermeture volontaire ne contourne aucune sanction, et que l'enfermer
+        //     sur des fiches qu'il ne peut plus ni vendre ni retirer n'a pas de sens.
+        //
+        // C'est une décision de politique produit, pas un oubli de garde. On ne la
+        // prend pas ici : le comportement reste celui d'avant, et la console ne
+        // prétend PAS que la suppression est bloquée.
+        // ═════════════════════════════════════════════════════════════════════════
         var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
         if (seller is null)
         {
