@@ -27,7 +27,20 @@ internal sealed class GetCategoryQueryHandler : IQueryHandler<GetCategoryQuery, 
             async ct =>
             {
                 var category = await _categoryRepository.GetByIdAsync(new CategoryId(query.CategoryId), ct);
-                return category is null ? null : CategoryMapping.ToSummary(category);
+                if (category is null)
+                {
+                    return null;
+                }
+
+                // DEUX LECTURES DE PLUS, ET ELLES SONT LE PRIX DE L'HÉRITAGE : les
+                // ancêtres portent une partie du schéma servi, et « est-ce une
+                // feuille ? » décide si un produit peut y être créé. Toutes deux sont
+                // des requêtes indexées, et le résultat entier est mis en cache sous
+                // la clé de la catégorie — donc payées une fois par TTL, pas par appel.
+                var ancetres = await _categoryRepository.ListAncestorsAsync(category.Path, ct);
+                var aDesEnfants = await _categoryRepository.HasChildrenAsync(category.Id.Value, ct);
+
+                return CategoryMapping.ToSummary(ancetres, category, aDesEnfants);
             },
             CatalogCacheKeys.ReferenceDataTtl,
             CatalogCacheKeys.MissTtl,

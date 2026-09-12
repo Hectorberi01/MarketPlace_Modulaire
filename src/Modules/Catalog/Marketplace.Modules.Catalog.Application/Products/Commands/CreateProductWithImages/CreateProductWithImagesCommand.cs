@@ -59,8 +59,10 @@ internal sealed class CreateProductWithImagesCommandHandler
         // avant la moindre écriture en base, et rien ne les supprime si la suite
         // échoue. Un refus d'attribut placé après l'upload laisserait donc des objets
         // orphelins, facturés, jamais référencés. Placé avant, il ne coûte rien.
+        // `forCreation: true` : c'est ce qui exige une catégorie FEUILLE. La
+        // modification d'un produit ne le fait pas — voir ProductAttributeGuard.
         var attributes = await _attributeGuard.ResolveAsync(
-            command.CategoryId, command.Attributes, cancellationToken);
+            command.CategoryId, command.Attributes, cancellationToken, forCreation: true);
         if (attributes.IsFailure)
         {
             return Result.Failure<ProductWithImagesResult>(attributes.Error);

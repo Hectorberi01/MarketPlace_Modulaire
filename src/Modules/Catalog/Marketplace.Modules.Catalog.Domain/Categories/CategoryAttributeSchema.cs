@@ -88,17 +88,31 @@ public sealed record CategoryAttributeDefinition(
 ///   }
 ///
 /// ─────────────────────────────────────────────────────────────────────────────────
-/// CHAQUE CATÉGORIE DÉFINIT LE SIEN — IL N'Y A PAS D'HÉRITAGE.
+/// CHAQUE CATÉGORIE DÉFINIT LE SIEN, ET HÉRITE DE CEUX DE SES ANCÊTRES.
 ///
-/// Une catégorie fille ne reprend pas les attributs de son parent. C'est un choix, et
-/// il se défend : un schéma hérité ne se lit nulle part en entier, il faut remonter
-/// l'arbre pour savoir ce qu'un produit doit porter, et le jour où un attribut est
-/// ajouté haut dans l'arbre, TOUS les produits des branches en dessous deviennent
-/// invalides d'un coup, sans qu'aucun vendeur n'ait rien fait.
+/// ─────────────────────────────────────────────────────────────────────────────────
+/// CE PARAGRAPHE DISAIT L'INVERSE, ET IL A ÉTÉ VRAI. Il annonçait « il n'y a pas
+/// d'héritage », et l'argumentait : un schéma qu'on lit d'un seul endroit vaut mieux
+/// qu'un schéma qu'on déduit, et le prix — « couleur » redéfini dans dix catégories —
+/// était accepté.
 ///
-/// Le prix de ce choix est la répétition : « couleur » sera redéfini dans plusieurs
-/// catégories. C'est le bon prix — un schéma qu'on lit d'un seul endroit vaut mieux
-/// qu'un schéma qu'on déduit.
+/// Le prix s'est révélé plus lourd que prévu. Une place de marché pose ses attributs
+/// COMMUNS en haut de l'arbre — marque, garantie, pays de fabrication — et la
+/// répétition ne tenait pas : soit on les recopiait dans chaque feuille, avec des
+/// libellés et des bornes qui divergeaient dès la deuxième, soit on ne les posait nulle
+/// part. C'est la seconde qui s'est produite.
+///
+/// LA COMPOSITION SE FAIT À LA LECTURE, JAMAIS EN BASE. Chaque catégorie ne stocke que
+/// ce qu'elle déclare ; <see cref="ResolvedCategorySchema"/> recompose la branche
+/// depuis le chemin matérialisé. Un attribut posé sur un parent est donc attendu, à
+/// l'instant même, dans toutes les feuilles dessous — sans repasser sur aucune d'elles.
+///
+/// L'OBJECTION DE L'ANCIEN PARAGRAPHE RESTE VALABLE, ET ELLE EST TRAITÉE. Ajouter un
+/// attribut haut dans l'arbre rendrait d'un coup invalides tous les produits des
+/// branches en dessous, sans qu'aucun vendeur n'ait rien fait. C'est exactement ce que
+/// `CategorySchemaCompatibilityGuard` refuse : un schéma ne peut plus se durcir contre
+/// les fiches qui existent déjà sous lui.
+/// ─────────────────────────────────────────────────────────────────────────────────
 ///
 /// ─────────────────────────────────────────────────────────────────────────────────
 /// LE SCHÉMA VIDE N'INTERDIT RIEN.
@@ -145,6 +159,30 @@ public sealed class CategoryAttributeSchema
     /// <summary>Schéma sans aucune contrainte : c'est celui de toutes les catégories qui n'en déclarent pas.</summary>
     public static CategoryAttributeSchema Empty { get; } =
         new(Array.Empty<CategoryAttributeDefinition>(), allowUnknown: true);
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// CONSTRUIT UN SCHÉMA À PARTIR DE DÉFINITIONS DÉJÀ LUES — SANS REPASSER PAR LE JSON.
+    ///
+    /// C'est ce dont la composition hiérarchique a besoin
+    /// (<see cref="ResolvedCategorySchema"/>) : les définitions des ancêtres ont déjà
+    /// été validées par <see cref="Parse"/> au moment où leur catégorie les a
+    /// enregistrées. Les re-sérialiser pour les relire aurait été un aller-retour
+    /// coûteux, et surtout une seconde occasion de diverger.
+    ///
+    /// AUCUNE VALIDATION ICI, ET C'EST ASSUMÉ : cette méthode n'est appelée qu'avec des
+    /// définitions issues de `Parse`. Elle est publique parce que la composition vit
+    /// dans le même dossier mais pas dans cette classe ; elle n'est pas un point
+    /// d'entrée pour des données venues de l'extérieur.
+    ///
+    /// LE PLAFOND DE 50 ATTRIBUTS NE S'APPLIQUE PAS À LA COMPOSITION. Il borne ce
+    /// qu'UNE catégorie déclare ; une branche profonde en accumule légitimement
+    /// davantage, et le refuser reviendrait à interdire une taxonomie fine.
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static CategoryAttributeSchema FromDefinitions(
+        IReadOnlyList<CategoryAttributeDefinition> definitions, bool allowUnknown)
+        => new(definitions, allowUnknown);
 
     /// <summary>Vrai si le schéma ne contraint rien.</summary>
     public bool IsEmpty => Attributes.Count == 0 && AllowUnknownAttributes;

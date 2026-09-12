@@ -46,4 +46,32 @@ public interface IProductRepository
     Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(CancellationToken cancellationToken = default);
 
     Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LES ATTRIBUTS DES PRODUITS RANGÉS DANS CES CATÉGORIES. RIEN D'AUTRE.
+    ///
+    /// Sert à répondre à une seule question, mais elle est décisive : « si je retire ou
+    /// si je durcis cet attribut, est-ce que je casse des produits existants ? ». Sans
+    /// elle, l'administration peut rendre obligatoire un champ que trois cents fiches
+    /// n'ont pas — et ces fiches deviennent alors non modifiables, y compris pour en
+    /// corriger le prix.
+    ///
+    /// ON NE REND QUE LES DICTIONNAIRES D'ATTRIBUTS, pas les produits : le contrôle
+    /// n'a besoin de rien d'autre, et charger les agrégats entiers (variantes et médias
+    /// compris) pour lire une colonne serait disproportionné.
+    ///
+    /// LA PORTÉE EST DONNÉE PAR L'APPELANT, sous forme d'identifiants de catégories —
+    /// la catégorie modifiée ET toute sa descendance, puisque l'attribut y est hérité.
+    /// Le dépôt des catégories sait produire cette liste en une requête sur les chemins.
+    ///
+    /// Opération d'ADMINISTRATION, rare, sur un périmètre borné à une branche : le coût
+    /// est accepté en échange d'une réponse exacte. Un filtre jsonb en base serait plus
+    /// économique, mais la colonne passe par un convertisseur de valeur — EF ne sait
+    /// pas traduire une recherche à l'intérieur — et le rattraper en SQL brut ferait
+    /// dépendre une garantie métier d'une syntaxe PostgreSQL écrite à la main.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task<IReadOnlyList<IReadOnlyDictionary<string, string>>> ListAttributesByCategoriesAsync(
+        IReadOnlyCollection<Guid> categoryIds, CancellationToken cancellationToken = default);
 }

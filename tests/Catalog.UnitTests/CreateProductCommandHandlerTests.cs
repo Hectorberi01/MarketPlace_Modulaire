@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Marketplace.Modules.Catalog.Application.Abstractions;
+using Marketplace.Modules.Catalog.Application.Categories;
 using Marketplace.Modules.Catalog.Application.Products;
 using Marketplace.Modules.Catalog.Application.Products.Commands.CreateProduct;
 using Marketplace.Modules.Catalog.Domain.Categories;
@@ -16,7 +17,7 @@ public class CreateProductCommandHandlerTests
         var repository = new FakeProductRepository();
         var categories = FakeCategoryRepository.SansSchema();
         var unitOfWork = new FakeUnitOfWork();
-        var handler = new CreateProductCommandHandler(repository, new ProductAttributeGuard(categories), unitOfWork);
+        var handler = new CreateProductCommandHandler(repository, Garde(categories), unitOfWork);
 
         var command = new CreateProductCommand(Guid.NewGuid(), Guid.NewGuid(), "Tongs plage", "Confort");
 
@@ -36,7 +37,7 @@ public class CreateProductCommandHandlerTests
         repository.ExistingSlugs.Add("doublon");
         var categories = FakeCategoryRepository.SansSchema();
         var unitOfWork = new FakeUnitOfWork();
-        var handler = new CreateProductCommandHandler(repository, new ProductAttributeGuard(categories), unitOfWork);
+        var handler = new CreateProductCommandHandler(repository, Garde(categories), unitOfWork);
 
         var command = new CreateProductCommand(Guid.NewGuid(), Guid.NewGuid(), "Doublon", "x");
 
@@ -57,7 +58,7 @@ public class CreateProductCommandHandlerTests
         var repository = new FakeProductRepository();
         var unitOfWork = new FakeUnitOfWork();
         var handler = new CreateProductCommandHandler(
-            repository, new ProductAttributeGuard(FakeCategoryRepository.Introuvable()), unitOfWork);
+            repository, Garde(FakeCategoryRepository.Introuvable()), unitOfWork);
 
         var command = new CreateProductCommand(Guid.NewGuid(), Guid.NewGuid(), "Tongs plage", "Confort");
 
@@ -75,7 +76,7 @@ public class CreateProductCommandHandlerTests
         var repository = new FakeProductRepository();
         var unitOfWork = new FakeUnitOfWork();
         var handler = new CreateProductCommandHandler(
-            repository, new ProductAttributeGuard(FakeCategoryRepository.AvecSchemaChaussures()), unitOfWork);
+            repository, Garde(FakeCategoryRepository.AvecSchemaChaussures()), unitOfWork);
 
         var command = new CreateProductCommand(
             Guid.NewGuid(), Guid.NewGuid(), "Tongs plage", "Confort",
@@ -96,7 +97,7 @@ public class CreateProductCommandHandlerTests
         var repository = new FakeProductRepository();
         var unitOfWork = new FakeUnitOfWork();
         var handler = new CreateProductCommandHandler(
-            repository, new ProductAttributeGuard(FakeCategoryRepository.AvecSchemaChaussures()), unitOfWork);
+            repository, Garde(FakeCategoryRepository.AvecSchemaChaussures()), unitOfWork);
 
         var command = new CreateProductCommand(
             Guid.NewGuid(), Guid.NewGuid(), "Tongs plage", "Confort",
@@ -109,6 +110,18 @@ public class CreateProductCommandHandlerTests
         product.Attributes.Should().ContainKey("pointure").And.ContainKey("couleur");
         product.Attributes.Should().NotContainKey("Pointure").And.NotContainKey("COULEUR");
     }
+
+    /// <summary>
+    /// Le garde-fou, avec son résolveur de branche.
+    ///
+    /// `ProductAttributeGuard` compose désormais le schéma de la catégorie avec ceux de
+    /// ses ancêtres : il prend un `CategorySchemaResolver`, qui lit le même dépôt. Les
+    /// catégories de ces tests sont des RACINES sans ancêtre, donc le schéma composé est
+    /// exactement celui de la catégorie — ces tests continuent de vérifier ce qu'ils
+    /// vérifiaient. L'héritage a ses propres tests.
+    /// </summary>
+    private static ProductAttributeGuard Garde(ICategoryRepository categories)
+        => new(categories, new CategorySchemaResolver(categories));
 
     /// <summary>
     /// Catégorie servie au garde-fou d'attributs. Elle est renvoyée quel que soit
@@ -158,6 +171,15 @@ public class CreateProductCommandHandlerTests
 
         public Task<IReadOnlyList<Category>> ListDescendantsAsync(string path, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<Category>>([]);
+
+        // La catégorie de ces tests est une RACINE sans enfant : aucun ancêtre à
+        // composer, et le contrôle de feuille passe. C'est ce qui fait que ces tests
+        // continuent de porter sur ce qu'ils portaient.
+        public Task<IReadOnlyList<Category>> ListAncestorsAsync(string path, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Category>>([]);
+
+        public Task<bool> HasChildrenAsync(Guid categoryId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
     }
 
     private sealed class FakeProductRepository : IProductRepository
@@ -195,6 +217,12 @@ public class CreateProductCommandHandlerTests
 
         public Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingSlugs.Contains(slug));
+
+        // Sert au contrôle de compatibilité d'un schéma avec les fiches existantes.
+        // Ces tests ne le sollicitent pas : aucune fiche à confronter.
+        public Task<IReadOnlyList<IReadOnlyDictionary<string, string>>> ListAttributesByCategoriesAsync(
+            IReadOnlyCollection<Guid> categoryIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<IReadOnlyDictionary<string, string>>>([]);
 
         public void Remove(Product product) => Products.Remove(product);
     }

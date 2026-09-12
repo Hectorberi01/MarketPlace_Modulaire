@@ -10,6 +10,7 @@ using Marketplace.Modules.Catalog.Application.Categories.Commands.DeleteCategory
 using Marketplace.Modules.Catalog.Application.Categories.Commands.PublishCategory;
 using Marketplace.Modules.Catalog.Application.Categories.Commands.UpdateCategory;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.GetCategory;
+using Marketplace.Modules.Catalog.Application.Categories.Queries.GetCategoryFormPreview;
 using Marketplace.Modules.Catalog.Application.Products.Commands.AddProductMedia;
 using Marketplace.Modules.Catalog.Application.Products.Commands.AddProductVariant;
 using Marketplace.Modules.Catalog.Application.Products.Commands.ChangeProductStatus;
@@ -171,6 +172,31 @@ public static class CatalogEndpoints
         group.MapPut("/{id:guid}", UpdateCategoryAsync).WithName("UpdateCategory");
         group.MapDelete("/{id:guid}", DeleteCategoryAsync).WithName("DeleteCategory");
         group.MapPost("/{id:guid}/publish", PublishCategoryAsync).WithName("PublishCategory");
+
+        // Aperçu du formulaire produit engendré par la branche — voir le handler.
+        group.MapGet("/{id:guid}/form-preview", PreviewCategoryFormAsync).WithName("PreviewCategoryForm");
+    }
+
+    /// <summary>
+    /// Aperçu du formulaire produit qu'engendre cette catégorie, héritage compris.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// L'ADMINISTRATEUR NE VOYAIT JAMAIS CE QU'IL IMPOSAIT.
+    ///
+    /// Poser un attribut sur « Informatique » le fait apparaître dans le formulaire de
+    /// toutes les feuilles dessous, mêlé à ceux des étages intermédiaires. Depuis
+    /// l'écran où on le pose, rien ne montre ce résultat composé : il fallait ouvrir la
+    /// console vendeur avec un compte de test pour le découvrir — quand on y pensait.
+    ///
+    /// La réponse est le MODÈLE du formulaire, groupé par étage d'origine. La console
+    /// d'administration le passe au même composant que la console vendeur : un seul
+    /// rendu, donc un aperçu qui ne peut pas diverger de la réalité.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> PreviewCategoryFormAsync(Guid id, ISender sender, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetCategoryFormPreviewQuery(id), ct);
+        return result.Match(preview => Results.Ok(preview));
     }
 
     /// <summary>Crée une catégorie (statut Draft), éventuellement rattachée à un parent.</summary>

@@ -110,7 +110,39 @@ internal sealed class CatalogModuleApi : ICatalogModuleApi
                     .AsNoTracking()
                     .FirstOrDefaultAsync(c => c.Id == id, ct);
 
-                return category is null ? null : CategoryMapping.ToSummary(category);
+                if (category is null)
+                {
+                    return null;
+                }
+
+                // Les ancêtres, par le chemin matérialisé — même règle qu'en dépôt
+                // (`Category.AncestorPathsOf`), pas une seconde écrite ici. L'ordre
+                // racine → parent est contractuel : il décide quel étage l'emporte sur
+                // une clé déclarée deux fois.
+                var chemins = Category.AncestorPathsOf(category.Path);
+                var ancetres = chemins.Count == 0
+                    ? new List<Category>()
+                    : await _dbContext.Categories
+                        .AsNoTracking()
+                        .Where(c => chemins.Contains(c.Path))
+                        .OrderBy(c => c.Path)
+                        .ToListAsync(ct);
+
+                // LE MÊME TEST QUE `CategoryRepository.HasChildrenAsync`, FILTRE COMPRIS.
+                //
+                // Les deux chemins alimentent la MÊME clé de cache
+                // (`catalog:category:{id}`) : une sous-catégorie archivée comptée ici et
+                // pas là-bas ferait dépendre `IsLeaf` — donc le droit de créer un
+                // produit — de celui des deux qui a rempli le cache en premier.
+                //
+                // Les archivées ne comptent pas : archiver l'unique sous-catégorie d'un
+                // rayon condamnerait son parent, ce que personne ne veut dire en
+                // archivant. Les brouillons, eux, comptent — le rayon va ouvrir.
+                var aDesEnfants = await _dbContext.Categories
+                    .AsNoTracking()
+                    .AnyAsync(c => c.ParentId == categoryId && c.Status != CategoryStatus.Archived, ct);
+
+                return CategoryMapping.ToSummary(ancetres, category, aDesEnfants);
             },
             CatalogCacheKeys.ReferenceDataTtl,
             CatalogCacheKeys.MissTtl,

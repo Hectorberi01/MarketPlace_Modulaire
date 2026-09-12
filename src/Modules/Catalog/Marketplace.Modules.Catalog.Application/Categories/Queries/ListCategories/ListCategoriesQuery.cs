@@ -31,7 +31,11 @@ internal sealed class ListCategoriesQueryHandler : IQueryHandler<ListCategoriesQ
             async ct =>
             {
                 var categories = await _repository.ListAllAsync(ct);
-                return categories.Select(CategoryMapping.ToSummary).ToList();
+                // `ProjectAll` compose l'héritage EN MÉMOIRE : les ancêtres et les
+                // enfants se déduisent de la liste déjà chargée. Projeter ligne à
+                // ligne aurait demandé deux requêtes par catégorie — six cents
+                // allers-retours pour afficher un sélecteur de trois cents entrées.
+                return CategoryMapping.ProjectAll(categories).ToList();
             },
             CatalogCacheKeys.ReferenceDataTtl,
             cancellationToken: cancellationToken);

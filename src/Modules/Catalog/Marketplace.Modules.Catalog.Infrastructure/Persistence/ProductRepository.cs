@@ -97,6 +97,31 @@ internal sealed class ProductRepository : IProductRepository
         return (items, total, statusCounts.ToDictionary(x => x.Status.ToString(), x => x.Count));
     }
 
+    public async Task<IReadOnlyList<IReadOnlyDictionary<string, string>>> ListAttributesByCategoriesAsync(
+        IReadOnlyCollection<Guid> categoryIds, CancellationToken cancellationToken = default)
+    {
+        if (categoryIds.Count == 0)
+        {
+            return Array.Empty<IReadOnlyDictionary<string, string>>();
+        }
+
+        // PROJECTION SUR LA SEULE COLONNE UTILE. `Attributes` passe par un
+        // convertisseur de valeur, qu'EF applique aussi dans une projection : on
+        // récupère les dictionnaires sans matérialiser les agrégats, donc sans leurs
+        // variantes ni leurs médias.
+        var attributs = await _dbContext.Products
+            .AsNoTracking()
+            .Where(p => categoryIds.Contains(p.CategoryId))
+            .Select(p => p.Attributes)
+            .ToListAsync(cancellationToken);
+
+        // `Attributes` est déclaré NON annulable et le convertisseur remplace déjà une
+        // colonne vide par un dictionnaire vide : il n'y a pas de nul à rattraper ici.
+        return attributs
+            .Select(a => (IReadOnlyDictionary<string, string>)a)
+            .ToList();
+    }
+
     public async Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
     {
         var slugResult = Slug.Create(slug);

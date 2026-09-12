@@ -102,6 +102,47 @@ public sealed class Category : AggregateRoot<CategoryId>
     }
 
     /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LES CHEMINS DE TOUS LES ANCÊTRES, DÉDUITS DU SEUL CHEMIN MATÉRIALISÉ.
+    ///
+    /// « /informatique/ordinateurs/portables » donne « /informatique » puis
+    /// « /informatique/ordinateurs », DANS CET ORDRE — de la racine au parent direct.
+    /// L'ordre n'est pas cosmétique : c'est lui qui décide, à la composition des
+    /// schémas, quel étage l'emporte sur une clé déclarée deux fois.
+    ///
+    /// POURQUOI ICI, ET POURQUOI PAS UNE REMONTÉE PAR `ParentId`. Remonter de parent en
+    /// parent demande une requête par étage, donc autant d'allers-retours que la
+    /// branche est profonde — et il faut les faire à chaque lecture de catégorie. Le
+    /// chemin porte déjà la branche entière : une seule requête `WHERE path IN (…)`
+    /// ramène tous les ancêtres, quelle que soit la profondeur.
+    ///
+    /// C'est le même raisonnement que <c>ListDescendantsAsync</c>, dans l'autre sens.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public static IReadOnlyList<string> AncestorPathsOf(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return Array.Empty<string>();
+        }
+
+        var segments = path.Trim().Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        // Un seul segment = catégorie racine : elle n'a pas d'ancêtre. La boucle
+        // s'arrête à `segments.Length - 1` pour ne jamais rendre le chemin lui-même.
+        var chemins = new List<string>(Math.Max(0, segments.Length - 1));
+        var courant = string.Empty;
+
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            courant = $"{courant}/{segments[i]}";
+            chemins.Add(courant);
+        }
+
+        return chemins;
+    }
+
+    /// <summary>
     /// Crée une catégorie. <paramref name="parentPath"/> est le chemin du parent
     /// (résolu par l'Application en chargeant le parent), null si racine.
     /// </summary>
@@ -179,10 +220,53 @@ public sealed class Category : AggregateRoot<CategoryId>
     }
 
     /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// REPOSE LE CHEMIN D'UN DESCENDANT APRÈS LE RENOMMAGE D'UN ANCÊTRE.
+    ///
+    /// Le chemin matérialisé n'était PAS répercuté : renommer « Informatique »
+    /// laissait ses enfants sur « /informatique/… » pendant que le parent passait à
+    /// « /informatique-reseaux ». Tant que le chemin ne servait qu'à l'affichage,
+    /// c'était un défaut cosmétique.
+    ///
+    /// L'HÉRITAGE EN FAIT UNE PERTE DE CONTRAINTE. Les ancêtres sont désormais
+    /// retrouvés PAR LE CHEMIN (<see cref="AncestorPathsOf"/>) : une branche
+    /// désaccordée ne remonte plus rien, la composition n'échoue pas — elle compose
+    /// avec moins d'étages — et toutes les contraintes héritées disparaissent en
+    /// silence, sur un simple renommage.
+    ///
+    /// ON REMPLACE UN PRÉFIXE, ON NE RECONSTRUIT PAS. Le descendant ne connaît ni son
+    /// parent ni sa profondeur ; ce qui change est exactement le début de son chemin.
+    /// Le contrôle d'appartenance au préfixe est ici plutôt que chez l'appelant : une
+    /// catégorie qui n'est pas sous ce préfixe ne doit RIEN faire, et le lui demander
+    /// est un défaut d'appel, pas une donnée à corriger en silence.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <param name="oldPrefix">Ancien chemin de l'ancêtre renommé.</param>
+    /// <param name="newPrefix">Son nouveau chemin.</param>
+    public Result RebasePath(string oldPrefix, string newPrefix)
+    {
+        // Le séparateur final délimite la branche : sans lui, « /animaux/chiens »
+        // ramasserait « /animaux/chiens-de-chasse », qui n'en est pas un descendant.
+        // Même raisonnement que ListDescendantsAsync, et il doit rester le même.
+        var prefixe = oldPrefix.TrimEnd('/') + "/";
+        if (!Path.StartsWith(prefixe, StringComparison.Ordinal))
+        {
+            return Result.Failure(Error.Validation(
+                "catalog.category.not_under_prefix",
+                $"La catégorie « {Name} » n'est pas sous « {oldPrefix} » : son chemin ne peut pas en dériver."));
+        }
+
+        Path = newPrefix.TrimEnd('/') + Path[oldPrefix.TrimEnd('/').Length..];
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Met à jour le nom (slug et chemin recalculés à partir du
     /// <paramref name="parentPath"/> fourni par l'Application), l'image et le
-    /// schéma d'attributs. Le rattachement parent n'est pas modifié ici, et les
-    /// chemins des descendants ne sont pas répercutés (évolution future).
+    /// schéma d'attributs. Le rattachement parent n'est pas modifié ici.
+    ///
+    /// LES CHEMINS DES DESCENDANTS SONT RÉPERCUTÉS PAR L'APPLICATION, qui seule les
+    /// connaît — voir <see cref="RebasePath"/> et UpdateCategoryCommandHandler.
     /// </summary>
     public Result Update(string name, string? parentPath, string? imageUrl, string? attributeSchema)
     {

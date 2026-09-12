@@ -14,6 +14,7 @@ using Marketplace.Modules.Catalog.Application.Categories.Commands.PublishCategor
 using Marketplace.Modules.Catalog.Application.Categories.Commands.UnpublishCategory;
 using Marketplace.Modules.Catalog.Application.Categories.Commands.UpdateCategory;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.GetCategory;
+using Marketplace.Modules.Catalog.Application.Categories.Queries.GetCategoryFormPreview;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 
 namespace Marketplace.Bff.Admin.Endpoints;
@@ -26,6 +27,16 @@ public static class AdminCatalogEndpoints
         var categories = app.MapAdminGroup("/admin/categories", "Admin · Catégories");
         categories.MapGet("/", ListCategoriesAsync);
         categories.MapGet("/{id:guid}", GetCategoryAsync);
+        // ═════════════════════════════════════════════════════════════════════════
+        // L'APERÇU DOIT ÊTRE MONTÉ **ICI**, ET PAS SEULEMENT SUR L'API.
+        //
+        // La console d'administration ne parle qu'à ce BFF (`/admin/…`) : une route
+        // ajoutée à `Marketplace.Api` sous `/api/catalog/…` lui est INATTEIGNABLE.
+        // L'aperçu aurait répondu 404 à chaque ouverture, sans que rien dans le code
+        // d'un côté ou de l'autre ne le laisse voir — les deux fichiers sont corrects
+        // séparément.
+        // ═════════════════════════════════════════════════════════════════════════
+        categories.MapGet("/{id:guid}/form-preview", PreviewCategoryFormAsync);
         categories.MapPost("/", CreateCategoryAsync);
         categories.MapPut("/{id:guid}", UpdateCategoryAsync);
         categories.MapPost("/import", ImportCategoriesAsync);
@@ -50,6 +61,17 @@ public static class AdminCatalogEndpoints
 
     private static async Task<IResult> GetCategoryAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new GetCategoryQuery(id), ct)).Match(c => Results.Ok(c));
+
+    /// <summary>
+    /// Aperçu du formulaire produit qu'engendre cette catégorie, héritage compris.
+    ///
+    /// Poser un attribut sur une catégorie haute le fait apparaître dans le formulaire
+    /// de toutes les feuilles dessous, mêlé à ceux des étages intermédiaires. Depuis
+    /// l'écran où on le pose, rien ne montrait ce résultat composé : il fallait ouvrir
+    /// la console vendeur avec un compte de test pour le découvrir.
+    /// </summary>
+    private static async Task<IResult> PreviewCategoryFormAsync(Guid id, ISender sender, CancellationToken ct)
+        => (await sender.Send(new GetCategoryFormPreviewQuery(id), ct)).Match(p => Results.Ok(p));
 
     private static async Task<IResult> CreateCategoryAsync(CategoryRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new CreateCategoryCommand(request.Name, request.ParentId, request.ImageUrl, request.AttributeSchema), ct)).Match(id => Results.Ok(new { categoryId = id }));

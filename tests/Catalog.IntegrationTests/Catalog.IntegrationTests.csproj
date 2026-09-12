@@ -17,6 +17,9 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <!-- MediatR n'est câblé que dans les hôtes : la fixture l'enregistre elle-même
+         pour pouvoir faire passer de vraies commandes. -->
+    <PackageReference Include="MediatR" />
   </ItemGroup>
 
 </Project>

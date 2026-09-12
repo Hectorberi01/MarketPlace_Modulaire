@@ -11,6 +11,7 @@ using Marketplace.BuildingBlocks.IntegrationEvents;
 using Marketplace.Modules.Sellers.Contracts.IntegrationEvents;
 using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Catalog.Application.Brands.EventHandlers;
+using Marketplace.Modules.Catalog.Application.Categories;
 using Marketplace.Modules.Catalog.Application.Categories.EventHandlers;
 using Marketplace.Modules.Catalog.Application.Products.Commands.CreateProduct;
 using Marketplace.Modules.Catalog.Application.Products;
@@ -57,9 +58,22 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         services.AddScoped<IBrandRepository, BrandRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
 
-        // Point de passage unique du contrôle « un produit respecte le schéma
-        // d'attributs de sa catégorie ». Injecté par les trois handlers qui écrivent
-        // des attributs, plutôt que recopié dans chacun.
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES TROIS POINTS DE PASSAGE DU SCHÉMA D'ATTRIBUTS.
+        //
+        //   • `CategorySchemaResolver` compose le schéma d'une catégorie avec ceux de
+        //     ses ancêtres. Rien n'est recopié en base : l'héritage se résout à la
+        //     lecture, à partir du chemin matérialisé.
+        //   • `CategorySchemaCompatibilityGuard` refuse un schéma qui casserait des
+        //     fiches existantes de la branche.
+        //   • `ProductAttributeGuard` contrôle un produit contre le schéma EFFECTIF de
+        //     sa catégorie, et exige une feuille à la création.
+        //
+        // Tous trois sont injectés plutôt que recopiés : c'est le seul moyen que les
+        // six surfaces qui en dépendent ne divergent pas.
+        // ─────────────────────────────────────────────────────────────────────────
+        services.AddScoped<CategorySchemaResolver>();
+        services.AddScoped<CategorySchemaCompatibilityGuard>();
         services.AddScoped<ProductAttributeGuard>();
         services.AddScoped<ICatalogModuleApi, CatalogModuleApi>();
 

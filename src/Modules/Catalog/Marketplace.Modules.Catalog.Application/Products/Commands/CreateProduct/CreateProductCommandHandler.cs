@@ -26,8 +26,10 @@ internal sealed class CreateProductCommandHandler : ICommandHandler<CreateProduc
     {
         // La catégorie et son schéma d'attributs, AVANT le slug : c'est le contrôle
         // qui peut refuser, et il ne coûte rien de le faire d'abord.
+        // `forCreation: true` : c'est ce qui exige une catégorie FEUILLE. La
+        // modification d'un produit ne le fait pas — voir ProductAttributeGuard.
         var attributes = await _attributeGuard.ResolveAsync(
-            command.CategoryId, command.Attributes, cancellationToken);
+            command.CategoryId, command.Attributes, cancellationToken, forCreation: true);
         if (attributes.IsFailure)
         {
             return Result.Failure<Guid>(attributes.Error);

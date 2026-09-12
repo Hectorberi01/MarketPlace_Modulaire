@@ -10,11 +10,16 @@ internal sealed class CreateCategoryCommandHandler : ICommandHandler<CreateCateg
 {
     private readonly ICategoryRepository _categoryRepository;
     private readonly ICatalogUnitOfWork _unitOfWork;
+    private readonly CategorySchemaResolver _resolver;
 
-    public CreateCategoryCommandHandler(ICategoryRepository categoryRepository, ICatalogUnitOfWork unitOfWork)
+    public CreateCategoryCommandHandler(
+        ICategoryRepository categoryRepository,
+        ICatalogUnitOfWork unitOfWork,
+        CategorySchemaResolver resolver)
     {
         _categoryRepository = categoryRepository;
         _unitOfWork = unitOfWork;
+        _resolver = resolver;
     }
 
     public async Task<Result<Guid>> Handle(CreateCategoryCommand command, CancellationToken cancellationToken)
@@ -39,6 +44,28 @@ internal sealed class CreateCategoryCommandHandler : ICommandHandler<CreateCateg
         }
 
         var category = result.Value;
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // UNE CLÉ DÉJÀ PORTÉE PAR UN ANCÊTRE EST REFUSÉE ICI, PAS PLUS TARD.
+        //
+        // `Category.Create` a déjà validé la FORME du schéma ; ce qu'elle ne peut pas
+        // savoir, c'est ce que portent les parents — le domaine ne lit pas la base.
+        // Sans ce contrôle, une sous-catégorie pouvait redéclarer « marque » en
+        // facultatif alors que son parent l'exige, et la question « cet attribut
+        // est-il obligatoire ? » n'aurait plus eu de réponse stable : elle aurait
+        // dépendu de l'étage d'où l'on regarde.
+        // ═════════════════════════════════════════════════════════════════════════
+        var schemaLu = category.ParseSchema();
+        if (schemaLu.IsFailure)
+        {
+            return Result.Failure<Guid>(schemaLu.Error);
+        }
+
+        var collision = await _resolver.EnsureNoAncestorKeyClashAsync(parentPath, schemaLu.Value, cancellationToken);
+        if (collision.IsFailure)
+        {
+            return Result.Failure<Guid>(collision.Error);
+        }
 
         // Unicité par CHEMIN, pas par slug : « Alimentation » peut exister sous
         // « Chiens » et sous « Chats », mais pas deux fois sous le même parent.
