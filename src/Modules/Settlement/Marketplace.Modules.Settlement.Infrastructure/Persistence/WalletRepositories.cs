@@ -157,6 +157,16 @@ internal sealed class WalletTransactionRepository : IWalletTransactionRepository
             .AsNoTracking()
             .Where(t => t.OwnerType == ownerType && t.OwnerId == ownerId)
             .OrderByDescending(t => t.CreatedAtUtc)
+            // MÊME DÉPARTAGE QUE `ListInPeriodAsync`, ET POUR UNE RAISON DE PLUS.
+            //
+            // Deux écritures posées dans la même transaction portent la même date à la
+            // microseconde près : sans second critère, leur ordre relatif change d'un
+            // appel à l'autre. Ici cela ne faisait que réordonner deux lignes voisines
+            // du tableau — mais la console s'appuie désormais sur le DERNIER élément
+            // reçu pour savoir si sa fenêtre est complète (courbe du portefeuille). Au
+            // 200ᵉ rang, « le plus ancien reçu » devenait alors une valeur instable, et
+            // avec elle la preuve de complétude.
+            .ThenByDescending(t => t.Id)
             // BORNÉ DES DEUX CÔTÉS. Le plancher existait, le PLAFOND non : les quatre
             // BFF passent la chaîne de requête telle quelle, donc
             // `?take=100000000` matérialisait tout le grand livre de l'appelant. Pas une

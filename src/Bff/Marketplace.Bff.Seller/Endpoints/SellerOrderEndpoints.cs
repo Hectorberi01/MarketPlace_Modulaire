@@ -21,6 +21,10 @@ public static class SellerOrderEndpoints
         var orders = app.MapSellerGroup("/seller/orders", "Vendeur · Commandes");
 
         orders.MapGet("/", ListMineAsync);
+        // AVANT la route « /{id:guid} » n'est pas nécessaire — la contrainte de route
+        // exclut déjà « series » —, mais la lisibilité veut que les collections
+        // précèdent les éléments.
+        orders.MapGet("/series", SeriesAsync);
         orders.MapGet("/{id:guid}", DetailAsync);
 
         return app;
@@ -230,6 +234,184 @@ public static class SellerOrderEndpoints
         // Pending / AwaitingPayment (et tout état antérieur) : paiement non encore encaissé.
         _ => "Pending",
     };
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// COMMANDES PAR JOUR, SUR UNE PÉRIODE. POURQUOI CETTE ROUTE EXISTE.
+    ///
+    /// La liste est PAGINÉE. Une courbe d'évolution construite côté console à partir
+    /// de la page affichée n'aurait montré que vingt commandes triées par date, avec
+    /// l'allure d'une tendance : un graphe faux est pire qu'une absence de graphe,
+    /// parce qu'on le croit.
+    ///
+    /// L'agrégation se fait donc ici, sur l'ENSEMBLE des commandes du vendeur —
+    /// `ListOrdersBySellerQuery` les rend toutes, la pagination n'intervenant que plus
+    /// bas dans `ListMineAsync`.
+    ///
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// AUCUN MONTANT ICI, ET C'EST DÉLIBÉRÉ.
+    ///
+    /// La somme des sous-totaux de commandes N'EST PAS un chiffre d'affaires : elle
+    /// ignore les annulations, les remboursements, la commission et les frais du
+    /// prestataire. Le relevé (`/seller/finance/statement`) porte déjà les montants
+    /// réellement crédités, et son en-tête dit pourquoi il est le seul à faire foi.
+    /// Servir ici un second montant, calculé autrement, aurait mis deux chiffres
+    /// contradictoires sur deux écrans de la même console.
+    ///
+    /// Cette route compte des commandes. Les montants se lisent dans le relevé.
+    /// ─────────────────────────────────────────────────────────────────────────────
+    ///
+    /// `offsetMinutes` : décalage du vendeur par rapport à UTC, en minutes vers l'est
+    /// (60 pour le Bénin). Les seaux sont des JOURS, et un jour n'existe que dans un
+    /// fuseau : sans ce décalage, une commande passée à 00 h 30 à Cotonou tomberait la
+    /// VEILLE, parce qu'elle vaut 23 h 30 UTC. La console envoie le décalage réel du
+    /// navigateur. Limite assumée : un fuseau à heure d'été verrait les jours situés
+    /// de l'autre côté du changement décalés d'une heure — sans objet en UEMOA, qui
+    /// n'en pratique pas.
+    /// </summary>
+    private static async Task<IResult> SeriesAsync(
+        ClaimsPrincipal user, ISender sender, ISellerModuleApi sellers, CancellationToken ct,
+        DateTime? from = null, DateTime? to = null, int offsetMinutes = 0)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        // Bornes du décalage : au-delà de ±14 h aucun fuseau n'existe, et une valeur
+        // aberrante déplacerait silencieusement toutes les commandes d'un jour.
+        if (offsetMinutes < -840 || offsetMinutes > 840)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_offset",
+                message = "Décalage horaire hors des fuseaux existants (±14 h).",
+            });
+        }
+
+        var end = ToUtc(to) ?? DateTime.UtcNow;
+        var start = ToUtc(from) ?? end.AddDays(-30);
+        if (end <= start)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_period",
+                message = "La date de fin doit être postérieure à la date de début.",
+            });
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE DÉCALAGE S'APPLIQUE APRÈS AVOIR VÉRIFIÉ QU'IL NE FAIT PAS DÉBORDER.
+        //
+        // `start + offset` était calculé AVANT le contrôle de période. Aux extrêmes du
+        // domaine `DateTime`, l'addition lève `ArgumentOutOfRangeException` :
+        // « from=0001-01-01T00:00:00Z&offsetMinutes=-1 » rendait un 500 non géré, avec
+        // deux valeurs pourtant acceptées par les bornes que ce handler s'était
+        // données. Un contrôle qu'on peut franchir par le bas n'est pas un contrôle.
+        // ═════════════════════════════════════════════════════════════════════════
+        var offset = TimeSpan.FromMinutes(offsetMinutes);
+        if (start.Ticks + offset.Ticks < DateTime.MinValue.Ticks
+            || end.Ticks + offset.Ticks > DateTime.MaxValue.Ticks)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_period",
+                message = "Les dates demandées sortent des valeurs représentables.",
+            });
+        }
+
+        // Plafond de période : un seau par jour, et on renvoie les jours VIDES (voir
+        // plus bas). Au-delà de 400 points, la réponse n'est plus affichable — et la
+        // console applique le même plafond à sa courbe de relevé, pour la même raison.
+        //
+        // ─────────────────────────────────────────────────────────────────────────
+        // CE PLAFOND NE PROTÈGE PAS LE SERVEUR, ET IL NE FAUT PAS LE CROIRE.
+        //
+        // `ListOrdersBySellerQuery` passe par `OrderRepository.ListBySellerAsync`, qui
+        // fait un `Include(o => o.Lines)` SANS filtre de date ni `Take` : tout
+        // l'historique de commandes du vendeur, lignes comprises, est matérialisé —
+        // que la fenêtre demandée fasse sept jours ou quatre cents. Le filtre de
+        // période ci-dessous s'applique EN MÉMOIRE, après.
+        //
+        // C'est la même dépense que `ListMineAsync` consent déjà à chaque affichage de
+        // liste, et son propre commentaire prend deux mille commandes pour ordre de
+        // grandeur. Borner réellement demande un filtre de date jusque dans le dépôt,
+        // c'est-à-dire une signature de plus sur `IOrderRepository` — un chantier de
+        // module, pas de BFF. Ce plafond-ci ne borne que la TAILLE DE LA RÉPONSE.
+        // ─────────────────────────────────────────────────────────────────────────
+        var premierJour = DateOnly.FromDateTime(start + offset);
+        var dernierJour = DateOnly.FromDateTime(end + offset);
+        var nbJours = dernierJour.DayNumber - premierJour.DayNumber + 1;
+        if (nbJours > 400)
+        {
+            return Results.BadRequest(new
+            {
+                error = "period_too_long",
+                message = "La période ne peut pas dépasser 400 jours.",
+            });
+        }
+
+        var result = await sender.Send(new ListOrdersBySellerQuery(seller.Id), ct);
+        if (result.IsFailure)
+        {
+            // Même politique que le relevé : on ne sert PAS une courbe à zéro sur une
+            // panne. Une courbe plate se lit « vous n'avez rien vendu », pas « la
+            // donnée manque », et c'est la confusion la plus coûteuse de cet écran.
+            //
+            // `Match` rend le ProblemDetails de l'erreur ; la branche de succès n'est
+            // jamais empruntée ici, on est déjà dans `IsFailure`.
+            return result.Match(_ => Results.Ok(new { }));
+        }
+
+        var dansLaPeriode = result.Value
+            .Where(o => o.CreatedAtUtc >= start && o.CreatedAtUtc <= end)
+            .ToList();
+
+        var comptes = new Dictionary<DateOnly, (int Total, int Annulees)>(nbJours);
+        foreach (var o in dansLaPeriode)
+        {
+            var jour = DateOnly.FromDateTime(o.CreatedAtUtc + offset);
+            comptes.TryGetValue(jour, out var c);
+            var perdue = o.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase)
+                         || o.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase);
+            comptes[jour] = (c.Total + 1, c.Annulees + (perdue ? 1 : 0));
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES JOURS SANS COMMANDE SONT RENVOYÉS, À ZÉRO.
+        //
+        // Une courbe qui saute les jours vides relie le 3 au 11 par un segment droit
+        // et donne à une semaine morte l'allure d'une progression régulière. C'est au
+        // serveur de rendre la grille complète : la console ne peut pas deviner les
+        // jours qu'elle n'a pas reçus.
+        // ─────────────────────────────────────────────────────────────────────────
+        var points = new List<object>(nbJours);
+        for (var i = 0; i < nbJours; i++)
+        {
+            var jour = premierJour.AddDays(i);
+            comptes.TryGetValue(jour, out var c);
+            points.Add(new
+            {
+                date = jour.ToString("yyyy-MM-dd"),
+                orders = c.Total,
+                cancelled = c.Annulees,
+            });
+        }
+
+        return Results.Ok(new
+        {
+            from = start,
+            to = end,
+            offsetMinutes,
+            totalOrders = dansLaPeriode.Count,
+            points,
+        });
+    }
+
+    /// <summary>Normalise une date en UTC (les colonnes sont « timestamptz », Npgsql exige Kind=Utc).</summary>
+    private static DateTime? ToUtc(DateTime? value)
+        => value is null ? null : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
 
     /// <summary>Projette une commande sur les seules lignes du vendeur + totaux recalculés.</summary>
     private static OrderSummary ScopeToSeller(OrderSummary order, Guid sellerId)
