@@ -152,14 +152,29 @@ internal sealed class CatalogModuleApi : ICatalogModuleApi
     {
         var limit = max is < 1 or > 50 ? 12 : max;
 
-        // `Tags` est un text[] natif : le filtre se traduit en `'featured' = ANY(tags)`
-        // côté PostgreSQL (index GIN possible). Aucun scan applicatif, aucune colonne
-        // dédiée — le tag EST le drapeau.
+        // `Tags` est un text[] natif : le filtre se traduit en `= ANY(tags)` côté
+        // PostgreSQL. Aucun scan applicatif, aucune colonne dédiée — le tag EST le
+        // drapeau.
+        //
+        // LA CONSTANTE, PAS LE LITTÉRAL. Ce tag est refusé aux vendeurs dans
+        // `Product.Create` et `Product.Update` ; garder ici une chaîne écrite à la main
+        // aurait laissé la garde et le filtre diverger au premier renommage — et une
+        // divergence dans ce sens-là rouvre exactement la porte qu'on vient de fermer.
+        //
+        // Passer par une variable locale change le SQL à la marge, et dans le bon sens :
+        // une `const` écrite dans la lambda serait inlinée en littérale, alors qu'ici EF
+        // la sort en PARAMÈTRE (`@__tagMisEnAvant_0 = ANY(tags)`) — même résultat, plan
+        // PostgreSQL réutilisable.
+        //
+        // (Le commentaire précédent annonçait « index GIN possible ». C'était trompeur
+        // avant comme après : `x = ANY(arr)` n'utilise pas un index GIN — il faudrait
+        // `tags @> ARRAY[x]` — et AUCUN index n'est déclaré sur `Tags`.)
+        var tagMisEnAvant = ProductTags.Featured;
         var products = await _dbContext.Products
             .AsNoTracking()
             .Include(p => p.Variants)
             .Include(p => p.Media)
-            .Where(p => p.Status == ProductStatus.Active && p.Tags.Contains("featured"))
+            .Where(p => p.Status == ProductStatus.Active && p.Tags.Contains(tagMisEnAvant))
             .OrderByDescending(p => p.CreatedOnUtc)
             .Take(limit)
             .ToListAsync(cancellationToken);

@@ -141,7 +141,10 @@ public sealed class Product : AggregateRoot<ProductId>
             Clean(ean),
             productGroupId,
             attributes is null ? new Dictionary<string, string>() : new Dictionary<string, string>(attributes),
-            tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct().ToList() ?? new List<string>());
+            // TAGS RÉSERVÉS RETIRÉS. Un produit ne peut pas naître « mis en avant » :
+            // la mise en avant est une décision éditoriale, elle passe par la route
+            // d'administration dédiée. Voir `ProductTags`.
+            ProductTags.FromSeller(tags));
 
         return product;
     }
@@ -371,9 +374,16 @@ public sealed class Product : AggregateRoot<ProductId>
     /// Remplace la liste des tags (nettoyés, sans doublons ni vides). Sert la
     /// curation éditoriale : marquer un produit « featured » ne demande qu'un tag,
     /// sans colonne dédiée. Idempotent.
+    ///
+    /// <para>
+    /// SEULE MÉTHODE QUI ACCEPTE LES TAGS RÉSERVÉS, et c'est sa raison d'être.
+    /// `Create` les retire et `Update` reconduit ceux déjà posés : ni l'un ni l'autre
+    /// ne permet d'en ajouter. Celle-ci n'est atteignable que par la route
+    /// d'administration (`SetProductTagsCommand`), qui doit pouvoir mettre en avant
+    /// ET retirer la mise en avant.
+    /// </para>
     /// </summary>
-    public void SetTags(IReadOnlyList<string>? tags)
-        => Tags = tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct().ToList() ?? new List<string>();
+    public void SetTags(IReadOnlyList<string>? tags) => Tags = ProductTags.Clean(tags);
 
     /// <summary>Publie le produit (Draft -> Active).</summary>
     public Result Activate()
@@ -475,7 +485,15 @@ public sealed class Product : AggregateRoot<ProductId>
         Ean = Clean(ean);
         ProductGroupId = productGroupId;
         Attributes = attributes is null ? new Dictionary<string, string>() : new Dictionary<string, string>(attributes);
-        Tags = tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct().ToList() ?? new List<string>();
+        // ─────────────────────────────────────────────────────────────────────────
+        // LE VENDEUR REMPLACE SES TAGS, PAS CEUX DE L'ADMINISTRATION.
+        //
+        // `Update` remplace la liste ENTIÈRE. Filtrer simplement les tags réservés de
+        // l'entrée aurait effacé la mise en avant à la première correction de nom faite
+        // par le vendeur — l'administration aurait perdu sa décision sans que personne
+        // ne s'en aperçoive. Les réservés sont donc repris de l'état courant.
+        // ─────────────────────────────────────────────────────────────────────────
+        Tags = ProductTags.MergeFromSeller(tags, Tags);
 
         // L'ÉVÉNEMENT QUI MANQUAIT. Sans lui l'index de recherche gardait le nom et
         // le slug du jour de la création : le produit renommé restait trouvable sous

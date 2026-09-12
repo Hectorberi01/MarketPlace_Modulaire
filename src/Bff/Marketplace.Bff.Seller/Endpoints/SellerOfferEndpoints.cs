@@ -196,9 +196,22 @@ public static class SellerOfferEndpoints
         //
         // Le produit était contrôlé, le lieu ne l'était pas — alors que le même champ
         // l'est côté stock (`SellerInventoryEndpoints.CreateItemAsync`). Une offre
-        // pouvait donc s'adosser à l'entrepôt d'un concurrent : c'est ce lieu qui sert
-        // d'origine aux estimations de délai de livraison affichées à l'acheteur, et
-        // le vendeur visé n'avait aucun moyen de le voir.
+        // pouvait donc s'adosser à l'entrepôt d'un concurrent, sans que le vendeur visé
+        // ait le moindre moyen de le voir.
+        //
+        // CE QUE CE LIEU DÉCIDE RÉELLEMENT — la version précédente de ce commentaire
+        // disait « les estimations de délai de livraison affichées à l'acheteur », ce
+        // qui est faux : le délai annoncé vient de `ShippingRate.Eta`, résolu sur la
+        // commune de DESTINATION. `ShipFromLocationId` sert à TROIS choses, et la
+        // troisième est la plus lourde :
+        //   - le groupage des expéditions, par (vendeur, entrepôt) ;
+        //   - l'adresse où le coursier vient chercher le colis ;
+        //   - la RÉSERVATION DU STOCK, faite sur le couple (SKU, lieu)
+        //     (`TryReserveAsync(line.Sku, line.ShipFromLocationId, …)`), et sa libération.
+        //
+        // Une offre adossée à l'entrepôt d'autrui n'envoyait donc pas seulement un
+        // coursier chez un tiers : elle consommait la réservation de stock de ce tiers.
+        // Le commentaire d'origine sous-estimait son propre argument.
         // ─────────────────────────────────────────────────────────────────────────
         if (!await SellerBff.OwnsLocationAsync(sender, seller.Id, request.ShipFromLocationId, ct))
         {

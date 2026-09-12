@@ -145,9 +145,22 @@ public class PreservationDesMisesAJourTests
             ["UpdatePaymentMethodCommand"] = (Verdict.NonAudite,
                 "Six champs annulables. Appelée depuis l'espace client, non audité."),
 
-            ["UpdateProductCommand"] = (Verdict.NonAudite,
-                "BrandId, Gtin, Ean, ProductGroupId, Attributes, Tags. Appelée depuis "
-                + "l'espace vendeur, non audité. La console ne l'appelle pas."),
+            ["UpdateProductCommand"] = (Verdict.Remplace,
+                "BrandId, Gtin, Ean, ProductGroupId, Attributes, Tags. LA CONSOLE "
+                + "L'APPELLE — l'entrée précédente disait le contraire : "
+                + "la console vendeur (`product-identity-form`) ET l'app mobile vendeur "
+                + "(`_EditProductSheet`, qui relit la fiche et repasse `fresh.brandId`, "
+                + "`fresh.productGroupId`, `fresh.attributes`, `fresh.tags`) rechargent "
+                + "TOUS les champs annulables avant d'éditer, y compris ceux qu'elles "
+                + "n'affichent pas. L'écrasement n'est donc atteint par aucun des deux "
+                + "clients connus. Ces clients vivent hors de ce dépôt : la promesse "
+                + "porte sur eux, pas sur du code vérifiable ici — c'est le prix de ce "
+                + "verdict, et il est assumé. "
+                + "UNE EXCEPTION, ET ELLE EST DANS L'AGRÉGAT : les tags RÉSERVÉS "
+                + "(« featured ») ne sont plus lus depuis la commande. `Product.Update` "
+                + "les reconduit depuis l'état courant et refuse d'en ajouter — sans "
+                + "quoi une correction de nom par le vendeur aurait effacé une mise en "
+                + "avant décidée par l'administration. Voir `ProductTags`."),
 
             ["UpdateProductVariantCommand"] = (Verdict.NonAudite,
                 "Attributes et Barcode. Espace vendeur, non audité."),
