@@ -92,6 +92,12 @@ public static class SellerOrderEndpoints
         {
             id = o.Id,
             buyerId = o.BuyerId,
+            // DEVISE PROJETÉE : `OrderSummary` la portait, la LISTE l'omettait — alors
+            // que le DÉTAIL la renvoyait. La console formatait donc les totaux de la
+            // liste en franc CFA par défaut, et ceux de la fiche dans la vraie devise :
+            // le vendeur cliquait sur une ligne à « 12 F CFA » et arrivait sur une fiche
+            // qui disait « 12,40 € ». Même commande, deux montants.
+            currency = o.Currency,
             status = o.Status,
             paymentStatus = ToPaymentStatus(o.Status),
             createdAtUtc = o.CreatedAtUtc,
@@ -368,14 +374,33 @@ public static class SellerOrderEndpoints
             .Where(o => o.CreatedAtUtc >= start && o.CreatedAtUtc <= end)
             .ToList();
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES DEUX PRÉDICATS SONT ÉCRITS UNE FOIS, ET C'EST LE POINT.
+        //
+        // Ils servent à la fois aux points de la courbe et aux totaux de l'écran.
+        // Recopier « annulée » d'un côté et de l'autre aurait suffi à ce qu'une
+        // vignette annonce 4 annulations pendant que la courbe en trace 3 — le genre
+        // d'écart qu'on ne voit qu'une fois en production, et qui fait douter des
+        // deux chiffres à la fois.
+        //
+        // `Failed` COMPTE COMME ANNULÉE, et ce n'est pas une approximation : c'est un
+        // paiement refusé, donc une vente qui n'aura pas lieu. Le vendeur n'a rien à
+        // en faire, et la distinguer lui demanderait de connaître le vocabulaire du
+        // Saga de paiement.
+        // ─────────────────────────────────────────────────────────────────────────
+        static bool EstAnnulee(string statut)
+            => statut.Equals("Cancelled", StringComparison.OrdinalIgnoreCase)
+               || statut.Equals("Failed", StringComparison.OrdinalIgnoreCase);
+
+        static bool EstLivree(string statut)
+            => statut.Equals("Delivered", StringComparison.OrdinalIgnoreCase);
+
         var comptes = new Dictionary<DateOnly, (int Total, int Annulees)>(nbJours);
         foreach (var o in dansLaPeriode)
         {
             var jour = DateOnly.FromDateTime(o.CreatedAtUtc + offset);
             comptes.TryGetValue(jour, out var c);
-            var perdue = o.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase)
-                         || o.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase);
-            comptes[jour] = (c.Total + 1, c.Annulees + (perdue ? 1 : 0));
+            comptes[jour] = (c.Total + 1, c.Annulees + (EstAnnulee(o.Status) ? 1 : 0));
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -399,12 +424,41 @@ public static class SellerOrderEndpoints
             });
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // LES TROIS TRANCHES PARTITIONNENT LE TOTAL, PAR CONSTRUCTION.
+        //
+        // `annulées` et `livrées` se comptent sur un statut nommé ; « en cours » est
+        // le RESTE — jamais une troisième liste de statuts. Deux raisons, et la
+        // seconde est la vraie :
+        //
+        //   1. Les quatre chiffres s'additionnent toujours. Un vendeur qui vérifie
+        //      « 12 = 3 + 7 + 2 » trouve son compte, et c'est le premier geste de
+        //      quiconque découvre un tableau de bord.
+        //   2. Un statut AJOUTÉ demain au domaine (« Returned », « OnHold »…) tombe
+        //      automatiquement dans « en cours » au lieu de disparaître de l'écran.
+        //      Avec trois listes explicites, il serait compté dans le total et dans
+        //      aucune tranche : les vignettes cesseraient de s'additionner sans que
+        //      rien, nulle part, ne signale l'écart.
+        //
+        // « EN COURS » N'EST PAS « À TRAITER », et les deux écrans ne mentent pas
+        // pour autant. Le reste inclut `Pending` et `AwaitingPayment` — des commandes
+        // dont le paiement n'est pas encaissé, sur lesquelles le vendeur ne peut RIEN
+        // faire. Elles sont bien en cours, elles ne sont pas dans sa file de travail.
+        // Le compteur « À traiter » du tableau de bord, lui, se limite à `Paid` et
+        // `Confirmed` : c'est une autre question, posée sur un autre écran.
+        // ─────────────────────────────────────────────────────────────────────────
+        var annulees = dansLaPeriode.Count(o => EstAnnulee(o.Status));
+        var livrees = dansLaPeriode.Count(o => EstLivree(o.Status));
+
         return Results.Ok(new
         {
             from = start,
             to = end,
             offsetMinutes,
             totalOrders = dansLaPeriode.Count,
+            deliveredOrders = livrees,
+            cancelledOrders = annulees,
+            inProgressOrders = dansLaPeriode.Count - livrees - annulees,
             points,
         });
     }
