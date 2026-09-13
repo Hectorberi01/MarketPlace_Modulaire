@@ -49,10 +49,19 @@ marketplace_connection_external: >-
 root_domain: hba-express.org
 
 # Console vendeur : nom d'hôte COMPLET, sur une AUTRE racine que root_domain.
-# `pro.{{ root_domain }}` aurait donné « pro.hba-express.org » — un nom que
-# personne n'utilise, et pour lequel Let's Encrypt aurait quand même émis un
-# certificat, donnant l'illusion que tout va bien.
-seller_console_domain: pro.hba-express.com
+# `consolevendeur.{{ root_domain }}` aurait donné « consolevendeur.hba-express.org »
+# — un nom que personne n'utilise, et pour lequel Let's Encrypt aurait quand même
+# émis un certificat, donnant l'illusion que tout va bien.
+#
+# LE FRONT SUR .COM, LE BACK SUR .ORG. Ce découpage ne coûte rien : le navigateur ne
+# parle jamais au BFF, il n'appelle que la console, qui relaie côté serveur. Aucune
+# requête inter-origines, donc aucun CORS à ouvrir, et le cookie de session est posé
+# par Next sur sa propre origine.
+#
+# C'EST ICI QUE LE NOM SE CHANGE, ET NULLE PART AILLEURS. Ansible regénère le
+# `.env.prod` du VPS à chaque déploiement : une valeur corrigée à la main sur le
+# serveur tient jusqu'au prochain `deploy-prod.sh`, puis disparaît sans bruit.
+seller_console_domain: consolevendeur.hba-express.com
 acme_email: hector.adjakpa@hbatechettrade.com
 
 # Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
@@ -189,6 +198,13 @@ fail2ban_sshd_maxretry: 3
 # renverrait un 404 de Traefik, indistinguable d'un backend sain. On vise donc pour
 # ces deux-là un chemin RÉELLEMENT routé. Un 404 applicatif est un succès : il prouve
 # que la requête est arrivée jusqu'à l'application.
+#
+# LA CONSOLE VENDEUR MANQUAIT À CETTE LISTE, ET ÇA S'EST VU. Elle est la seule
+# surface servie sur une AUTRE racine, donc la seule dont le nom d'hôte puisse
+# diverger sans que rien d'autre ne bouge — exactement ce qui s'est produit : un 404
+# de Traefik sur `consolevendeur.hba-express.com`, découvert à la main dans un
+# navigateur, alors que le déploiement s'était déclaré réussi. La vérification après
+# déploiement ne valait que pour les six surfaces de `root_domain`.
 post_deploy_public_urls:
   - "https://m.{{ root_domain }}/"
   - "https://seller.{{ root_domain }}/"
@@ -196,3 +212,4 @@ post_deploy_public_urls:
   - "https://driver.{{ root_domain }}/"
   - "https://api.{{ root_domain }}/api/payments/return"
   - "https://dispatch.{{ root_domain }}/api/courier"
+  - "https://{{ seller_console_domain }}/api/health"
