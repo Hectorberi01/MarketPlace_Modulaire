@@ -194,6 +194,51 @@
   register: compose_up
   changed_when: true
 
+# ═══════════════════════════════════════════════════════════════════════════════════
+# BASE EXTERNE : RETIRER LES POSTGRES LOCAUX, ET PAS SEULEMENT LES DÉSACTIVER.
+#
+# Vider COMPOSE_PROFILES retire `postgres` et `postgres-dispatch` de la pile, mais NE
+# LES ARRÊTE PAS : ils portent `restart: always`, et Docker les relance au démarrage
+# suivant de la machine. `--remove-orphans` ne les attrape pas davantage — il ne retire
+# que les services DISPARUS du fichier compose, or ceux-ci y figurent toujours,
+# simplement inactifs.
+#
+# Les laisser tourner est le scénario exact contre lequel tout le runbook met en garde :
+# une base VIDE qui continue de répondre au nom `postgres` sur le réseau interne. Une
+# variable mal résolue — un `.env` régénéré, un repli qui reprend le dessus — y
+# renverrait l'application, qui appliquerait ses vingt-six migrations, sèmerait le compte
+# admin, et se déclarerait en bonne santé. La plateforme remonterait vide, sans une seule
+# erreur.
+#
+# LES VOLUMES SONT CONSERVÉS. `pgdata` et `pgdata-dispatch` sont le retour arrière ; ils
+# ne coûtent que de l'espace disque. Les supprimer est une décision manuelle, après
+# vingt-quatre heures de fonctionnement normal — voir docs/RUNBOOK_Bascule_Base.md,
+# étape 7.
+#
+# `--profile local-db` est nécessaire pour que compose VOIE ces services : sans lui il ne
+# les connaît pas et ne saurait pas quoi retirer. `rm -s` les arrête d'abord, `-f` évite
+# la confirmation. Idempotent : sans conteneur, la commande ne fait rien.
+# ═══════════════════════════════════════════════════════════════════════════════════
+- name: Retirer les conteneurs Postgres locaux (la base vit désormais sur le VPS base)
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      --profile local-db
+      rm -s -f postgres postgres-dispatch
+    chdir: "{{ app_dir }}"
+  register: retrait_postgres_local
+  changed_when: "'Removing' in (retrait_postgres_local.stdout | default('')) or 'Removing' in (retrait_postgres_local.stderr | default(''))"
+  failed_when: false
+  when: use_external_database | default(false)
+
+- name: Ce qui a été retiré
+  ansible.builtin.debug:
+    var: retrait_postgres_local.stderr_lines
+  when:
+    - use_external_database | default(false)
+    - retrait_postgres_local.stderr_lines | default([]) | length > 0
+
 # La config STATIQUE de Traefik (traefik.<env>.yml : entrypoints, metrics :8082) n'est
 # relue qu'à la RECRÉATION du conteneur — un « up -d » ne suffit pas quand seul le
 # fichier bind-monté a changé. On recrée donc Traefik explicitement, sinon les

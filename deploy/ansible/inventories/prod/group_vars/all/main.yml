@@ -73,7 +73,15 @@ wg_db_endpoint_host: "51.255.40.214"
 # restauration doit viser ces noms-là.
 app_db_name: HbaExpressDb
 app_db_user: HbaExpressUser
-postgres_version: 16
+# Version du cluster RÉELLEMENT installé sur le VPS base, pas celle qu'on souhaite :
+# le rôle `postgres_host` n'installe pas PostgreSQL, il le CONSTATE. Cette valeur ne
+# sert qu'à construire `/etc/postgresql/<version>/main` et à recharger le bon cluster.
+#
+# 18 et non 16 : le VPS base a été provisionné à la main, hors Ansible, avec la version
+# des dépôts de la distribution. Le conteneur de l'applicatif, lui, reste en 16 — un
+# dump produit par un pg_dump 16 se restaure sans difficulté dans un serveur 18, c'est
+# le sens normal d'une migration. L'inverse ne serait pas vrai.
+postgres_version: 18
 
 # Taille du pool Npgsql, PAR HÔTE applicatif. Cinq hôtes lisent cette base
 # (api + 4 BFF) : le total côté serveur doit rester très en dessous de

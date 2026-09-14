@@ -57,7 +57,7 @@ Les deux machines doivent répondre. Si `prod-db-1` ne répond pas, c'est le SSH
 
 ```bash
 # Sur le VPS applicatif : la taille de ce qu'on va déplacer
-ssh root@193.168.145.162 \
+ssh -p 8022 ubuntu@79.137.35.129 \
   'cd /opt/marketplace && docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
    exec -T postgres psql -U postgres -d HbaExpressDb -c \
    "SELECT pg_size_pretty(pg_database_size(current_database()));"'
@@ -68,7 +68,7 @@ Notez ce chiffre. Il donne l'ordre de grandeur de l'interruption, et il servira 
 **Et relevez les noms réels de la base et du rôle** — c'est ce qui décide de la suite :
 
 ```bash
-ssh root@193.168.145.162 \
+ssh -p 8022 ubuntu@79.137.35.129 \
   'grep -E "^(POSTGRES_DB|POSTGRES_USER)=" /opt/marketplace/deploy/.env.prod'
 ```
 
@@ -115,7 +115,7 @@ Ce que ce rôle fait : génère la locale `fr_FR.UTF-8`, dépose `conf.d/10-mark
 **Contrôle.** Depuis le VPS applicatif, la base doit répondre par le tunnel — et seulement par lui :
 
 ```bash
-ssh root@193.168.145.162 'PGPASSWORD=<mot_de_passe> psql -h 10.20.0.2 -U HbaExpressUser -d HbaExpressDb -c "\l"'
+ssh -p 8022 ubuntu@79.137.35.129 'PGPASSWORD=<mot_de_passe> psql -h 10.20.0.2 -U HbaExpressUser -d HbaExpressDb -c "\l"'
 ```
 
 Et depuis n'importe où ailleurs, elle ne doit **pas** répondre :
@@ -128,22 +128,51 @@ Si cette seconde commande demande un mot de passe, `listen_addresses` n'a pas é
 
 ---
 
+## Les valeurs réelles, relevées sur les serveurs
+
+Tout ce qui suit a été **vérifié en septembre 2026**, sur les machines. Les versions précédentes de ce document contenaient des valeurs supposées, dont une adresse IP qui n'est pas la vôtre.
+
+| | valeur |
+|---|---|
+| VPS applicatif | `ubuntu@79.137.35.129`, port SSH **8022** |
+| VPS base | `ubuntu@51.255.40.214`, port SSH **22**, clé `id_ed25519_cicd` |
+| Tunnel | applicatif `10.20.0.1` ↔ base `10.20.0.2` — opérationnel |
+| Base source | conteneur `marketplace-prod-postgres-1`, base **`marketplace`**, rôle `postgres`, **PostgreSQL 16** |
+| Base dispatch source | conteneur `marketplace-prod-postgres-dispatch-1`, base `dispatch` |
+| Base cible | `HbaExpressDb`, rôle `HbaExpressUser`, **PostgreSQL 18** |
+| Volume de repli | `marketplace_pgdata` sur l'applicatif |
+
+**Trois corrections par rapport à la version précédente de ce document**, chacune capable de faire échouer la bascule :
+
+1. L'adresse de l'applicatif était `79.137.35.129`. **C'est `79.137.35.129`.**
+2. Le dump visait la base `HbaExpressDb` **dans le conteneur**. Elle n'y existe pas : la base locale s'appelle `marketplace`, avec le rôle `postgres`. Le renommage se fait **à la restauration**, pas au dump.
+3. Le dump du dispatch visait le service `postgres`. Le dispatch a **son propre conteneur** et son propre volume.
+
+Un dump 16 se restaure sans difficulté dans un serveur 18 — c'est le sens normal d'une migration. L'inverse ne serait pas vrai.
+
+---
+
 ## 3. La sauvegarde, avant tout le reste
 
 ```bash
+cd deploy/ansible
 ansible-playbook -i inventories/prod/hosts.ini site.yml \
   --limit database --tags backup --ask-vault-pass -e backup_run_now=true
 ```
 
-> `-e backup_run_now=true` est explicite, et le défaut est `false` : un `pg_dump` complet des deux bases suivi d'un envoi vers R2 n'a rien d'idempotent, et le déclencher à chaque passage du playbook coûterait le temps du dump et la bande passante à chaque déploiement.
+> `-e backup_run_now=true` est explicite, et le défaut est `false` : un `pg_dump` complet suivi d'un envoi vers R2 n'a rien d'idempotent, et le déclencher à chaque passage du playbook coûterait le temps du dump et la bande passante à chaque déploiement.
 
-Le rôle installe le script, sa configuration, sa rotation de journal, deux tâches cron — et **exécute une première sauvegarde tout de suite**. Il ne se termine pas sur « cron posé, on verra dans six heures » : si la configuration est fausse, vous le savez maintenant.
+Le rôle installe le script, sa configuration, sa rotation de journal, les tâches cron — et **exécute une première sauvegarde tout de suite**. Si la configuration est fausse, vous le savez maintenant plutôt que dans six heures.
 
-Cette sauvegarde-là porte sur la base **vide** du VPS base. Son intérêt n'est pas son contenu : c'est de prouver que la chaîne fonctionne de bout en bout — dump, contrôle de lisibilité, envoi vers R2 — avant qu'on en ait besoin pour de vrai.
+Cette sauvegarde porte sur les bases **vides** du VPS base. Son intérêt n'est pas son contenu : c'est de prouver que la chaîne fonctionne de bout en bout — dump, contrôle de lisibilité, envoi vers R2 — avant qu'on en ait besoin pour de vrai.
+
+**Elle échouera volontairement si les identifiants R2 manquent** : le script traite l'absence d'envoi distant comme une erreur, pas comme un avertissement. Les variables attendues dans le vault sont `r2_account_id`, `r2_backup_access_key_id` et `r2_backup_secret_access_key` — à défaut, `r2_access_key_id` et `r2_secret_access_key`.
 
 ```bash
-ssh root@51.255.40.214 'ls -la /var/backups/marketplace/'
+ssh -p 22 ubuntu@51.255.40.214 'sudo ls -lh /var/backups/marketplace/'
 ```
+
+> **Ce que cette étape répare.** Jusqu'ici, aucune sauvegarde automatique n'avait jamais tourné : le rôle n'avait jamais été appliqué, et le script refuse de s'exécuter ailleurs que sur le VPS base. La seule copie existante de la production est celle prise à la main. Cette étape est donc la première sauvegarde planifiée de l'histoire de la plateforme.
 
 ---
 
@@ -151,41 +180,74 @@ ssh root@51.255.40.214 'ls -la /var/backups/marketplace/'
 
 C'est ici que l'interruption commence. Tout ce qui précède était sans effet sur le service.
 
+### 4a. Les chiffres de référence — AVANT d'arrêter quoi que ce soit
+
+Sans eux, vous ne pourrez pas distinguer une restauration réussie d'une restauration plausible.
+
 ```bash
-ssh root@193.168.145.162
+ssh -p 8022 ubuntu@79.137.35.129
 cd /opt/marketplace
 
-# 4a. Arrêter ce qui écrit. Postgres reste debout ; l'application, non.
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
+sudo docker exec marketplace-prod-postgres-1 psql -U postgres -d marketplace -c "
+SELECT 'commandes' AS quoi, count(*) FROM ordering.orders
+UNION ALL SELECT 'paiements',    count(*) FROM payments.payments
+UNION ALL SELECT 'portefeuilles', count(*) FROM settlement.wallets;"
+
+sudo docker exec marketplace-prod-postgres-1 psql -U postgres -d marketplace -c "
+SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables
+WHERE n_live_tup > 0 ORDER BY n_live_tup DESC LIMIT 25;"
+```
+
+**Notez ces chiffres ailleurs que dans le terminal.**
+
+### 4b. Arrêter ce qui écrit
+
+Postgres reste debout ; l'application, non.
+
+```bash
+C="deploy/docker-compose.prod.yml"; E="deploy/.env.prod"
+sudo docker compose -f "$C" --env-file "$E" \
   stop api bff-client bff-seller bff-admin bff-driver dispatch
 ```
 
-> **Arrêter les applications, pas Postgres.** Un `pg_dump` sur une base qui reçoit encore des écritures est cohérent — Postgres le garantit — mais il photographie un instant qui n'est pas celui de la bascule : les commandes passées entre le dump et le basculement seraient perdues. Couper les écrivains d'abord, c'est la seule façon d'avoir un dump *final*.
+> Un `pg_dump` sur une base qui reçoit encore des écritures est cohérent — Postgres le garantit — mais il photographie un instant qui n'est pas celui de la bascule : les commandes passées entre le dump et le basculement seraient perdues. Couper les écrivains d'abord est la seule façon d'avoir un dump *final*.
+
+### 4c. Les dumps
 
 ```bash
-# 4b. Les rôles, puis les deux bases.
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
-  exec -T postgres pg_dumpall -U postgres --globals-only > /tmp/globals.sql
+H=$(date +%F-%H%M)
 
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
-  exec -T postgres pg_dump -U postgres -d HbaExpressDb --format=custom --compress=6 \
-  > /tmp/HbaExpressDb.dump
+# La base de la place de marché. Elle s'appelle « marketplace » ICI — le nom cible
+# HbaExpressDb n'apparaît qu'à la restauration.
+sudo docker exec marketplace-prod-postgres-1 \
+  pg_dump -U postgres -d marketplace --format=custom --compress=6 \
+  | sudo tee /var/backups/marketplace-app/marketplace-$H.dump >/dev/null
 
-# Si une base dispatch existe déjà localement :
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
-  exec -T postgres pg_dump -U postgres -d dispatch --format=custom --compress=6 \
-  > /tmp/dispatch.dump 2>/dev/null || echo "pas de base dispatch locale — normal"
-
-# 4c. Le dump se relit-il ? Le contrôle le moins cher qui existe.
-pg_restore --list /tmp/HbaExpressDb.dump | head
-ls -la /tmp/*.dump /tmp/globals.sql
+# Le dispatch — AUTRE CONTENEUR, autre volume.
+sudo docker ps --format '{{.Names}}' | grep dispatch
+sudo docker exec marketplace-prod-postgres-dispatch-1 \
+  pg_dump -U postgres -d dispatch --format=custom --compress=6 \
+  | sudo tee /var/backups/marketplace-app/dispatch-$H.dump >/dev/null
 ```
 
-Si `pg_restore --list` échoue ou si le fichier fait quelques centaines d'octets, **arrêtez-vous** : le dump est inutilisable, et relancer l'application vous ramène exactement où vous étiez.
+> **Pas de `globals.sql` à restaurer.** La version précédente de ce document dumpait les rôles pour les rejouer sur la cible. C'est inutile ici — Ansible a déjà créé `HbaExpressUser` avec le mot de passe du vault — et c'est **risqué** : `pg_dumpall --globals-only` contient un `ALTER ROLE postgres … PASSWORD …` qui écraserait le mot de passe du superutilisateur du VPS base. Gardez-en une copie d'archive si vous voulez, ne la rejouez pas.
+
+### 4d. Le dump se relit-il ?
 
 ```bash
-# 4d. Vers le VPS base, par le tunnel.
-scp /tmp/HbaExpressDb.dump /tmp/globals.sql root@10.20.0.2:/tmp/
+sudo pg_restore --list /var/backups/marketplace-app/marketplace-$H.dump | wc -l
+ls -lh /var/backups/marketplace-app/
+```
+
+Si `pg_restore --list` échoue, ou si le fichier fait quelques centaines d'octets, **arrêtez-vous**. Relancer les applications vous ramène exactement où vous étiez.
+
+### 4e. Vers le VPS base, par le tunnel
+
+```bash
+sudo chmod 644 /var/backups/marketplace-app/*-$H.dump
+scp /var/backups/marketplace-app/marketplace-$H.dump \
+    /var/backups/marketplace-app/dispatch-$H.dump \
+    ubuntu@10.20.0.2:/tmp/
 ```
 
 ---
@@ -193,62 +255,111 @@ scp /tmp/HbaExpressDb.dump /tmp/globals.sql root@10.20.0.2:/tmp/
 ## 5. La restauration
 
 ```bash
-ssh root@51.255.40.214
+ssh -p 22 ubuntu@51.255.40.214
 cd /tmp
+```
 
-# 5a. Les rôles d'abord. Sans eux, la base restaurée n'a pas de compte applicatif.
-#     Les « already exists » sont normaux : le rôle applicatif vient d'être créé
-#     par Ansible.
-psql -U postgres -f globals.sql 2>&1 | grep -v "already exists" || true
+### 5a. Retirer l'extension de la table des matières — SINON LA RESTAURATION S'ARRÊTE
 
-# 5b. Les données. `--jobs 4` parallélise : sur vingt-six schémas, c'est
-#     plusieurs minutes de gagnées.
-# Remplacer les deux noms par ceux d'`app_db_name` / `app_db_user`.
-sudo -u postgres pg_restore -U postgres -d HbaExpressDb \
+**Constaté en répétition, le 14/09/2026.** Le dump contient un
+`COMMENT ON EXTENSION pg_stat_statements`. Or `--role=HbaExpressUser` fait exécuter tout
+le contenu sous `SET ROLE`, et seul le PROPRIÉTAIRE de l'extension — `postgres` — peut la
+commenter. L'erreur tombe, `--exit-on-error` arrête net, et la base reste à moitié
+restaurée :
+
+```
+pg_restore: error: could not execute query: ERROR:  must be owner of extension pg_stat_statements
+```
+
+En pleine bascule, cela veut dire une interruption qui s'allonge pendant qu'on cherche.
+
+On ne baisse pas la garde pour autant : ni `--no-comments`, qui supprimerait TOUS les
+commentaires du schéma, ni le retrait d'`--exit-on-error`, qui laisserait passer une
+restauration partielle. On retire l'extension de la table des matières — elle existe déjà
+côté cible, posée par Ansible, donc il n'y a rien à perdre.
+
+```bash
+sudo -u postgres pg_restore -l /tmp/marketplace-*.dump > /tmp/toc.list
+grep -v "pg_stat_statements" /tmp/toc.list > /tmp/toc-filtre.list
+```
+
+### 5b. Les données de la place de marché
+
+```bash
+# --no-owner : le dump porte « postgres » comme propriétaire, la cible veut
+# HbaExpressUser. --role fait la bascule de propriété à l'insertion.
+sudo -u postgres pg_restore -d HbaExpressDb \
   --no-owner --role=HbaExpressUser --jobs 4 --exit-on-error \
-  /tmp/HbaExpressDb.dump
+  -L /tmp/toc-filtre.list \
+  /tmp/marketplace-*.dump
+
+# Le dispatch — même filtre si son dump porte l'extension.
+sudo -u postgres pg_restore -d dispatch \
+  --no-owner --jobs 2 --exit-on-error \
+  /tmp/dispatch-*.dump
 ```
 
 > **`--exit-on-error`, et c'est délibéré.** Par défaut, `pg_restore` continue après une erreur et se termine en annonçant le nombre d'erreurs — sur un terminal que personne ne relit en entier. Une base restaurée à 97 % est le pire des états : elle démarre, elle répond, et il manque des lignes. Mieux vaut un échec franc.
 
-**Le contrôle qui compte.** Comparez les volumes, table par table, avec ce que vous aviez :
+> **Si la restauration s'arrête en cours de route**, la base est dans un état partiel —
+> avec `--jobs 4`, une partie du travail a pu aboutir. Repartez propre, ne reprenez pas :
+>
+> ```bash
+> sudo -u postgres psql <<'SQL'
+> DROP DATABASE IF EXISTS "HbaExpressDb";
+> CREATE DATABASE "HbaExpressDb" OWNER "HbaExpressUser";
+> SQL
+> sudo -u postgres psql -d HbaExpressDb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+> ```
+
+### Le contrôle qui compte
+
+**`ANALYZE` D'ABORD, ET C'EST L'ORDRE QUI COMPTE.** `n_live_tup` est une ESTIMATION
+statistique : après une restauration fraîche, elle vaut zéro tant qu'`ANALYZE` n'a pas
+tourné, même sur une base pleine. Une version précédente de ce document plaçait `ANALYZE`
+après ce contrôle — on y lisait donc des zéros partout, on en concluait à un échec, et on
+recommençait une restauration parfaitement valide, en pleine interruption.
 
 ```bash
-sudo -u postgres psql -U postgres -d HbaExpressDb -c "
-SELECT schemaname, relname, n_live_tup
-FROM pg_stat_user_tables
-WHERE n_live_tup > 0
-ORDER BY n_live_tup DESC
-LIMIT 25;"
-
-# Et les trois qui portent l'argent :
-sudo -u postgres psql -U postgres -d HbaExpressDb -c "
-SELECT 'commandes' AS quoi, count(*) FROM ordering.orders
-UNION ALL SELECT 'paiements',   count(*) FROM payments.payments
-UNION ALL SELECT 'portefeuilles', count(*) FROM settlement.wallets;"
+sudo -u postgres psql -d HbaExpressDb -c "ANALYZE;"
+sudo -u postgres psql -d dispatch      -c "ANALYZE;"
 ```
 
-Ces trois chiffres doivent correspondre à ceux de la base d'origine. Prenez-les **avant** l'étape 4 si vous ne l'avez pas fait — c'est le seul contrôle qui distingue une restauration réussie d'une restauration plausible.
+Les `count(*)` ci-dessous, eux, sont exacts et ne dépendent pas des statistiques. Ce sont
+les mêmes requêtes qu'à l'étape 4a : **les chiffres doivent correspondre.**
 
 ```bash
-# 5c. L'extension de statistiques, que le dump ne transporte pas.
-sudo -u postgres psql -U postgres -d HbaExpressDb \
-  -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+sudo -u postgres psql -d HbaExpressDb -c "
+SELECT 'commandes' AS quoi, count(*) FROM ordering.orders
+UNION ALL SELECT 'paiements',    count(*) FROM payments.payments
+UNION ALL SELECT 'portefeuilles', count(*) FROM settlement.wallets;"
 
-# 5d. Les statistiques du planificateur. Sans ANALYZE, la base restaurée n'a
-#     aucune statistique : les premiers plans de requête sont catastrophiques, et
-#     l'application semble lente sans raison pendant des heures.
-sudo -u postgres psql -U postgres -d HbaExpressDb -c "ANALYZE;"
+sudo -u postgres psql -d HbaExpressDb -c "
+SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables
+WHERE n_live_tup > 0 ORDER BY n_live_tup DESC LIMIT 25;"
+```
+
+### 5c. Ce que le dump ne transporte pas
+
+```bash
+# L'extension de statistiques.
+sudo -u postgres psql -d HbaExpressDb -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+
+# (ANALYZE a déjà été lancé plus haut — voir « Le contrôle qui compte ». Sans lui, la
+# base restaurée n'a aucune statistique : les premiers plans de requête sont
+# catastrophiques et l'application semble lente sans raison pendant des heures.)
+
+# Les droits du rôle applicatif sur ce qui vient d'être créé.
+sudo -u postgres psql -d HbaExpressDb -c "
+GRANT USAGE ON SCHEMA public TO \"HbaExpressUser\";
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \"HbaExpressUser\";"
 ```
 
 ---
 
 ## 6. Basculer
 
-```bash
-# Sur votre poste
-cd deploy/ansible
-```
+Un seul drapeau, et il vient **en dernier**.
 
 ```yaml
 # inventories/prod/group_vars/marketplace/main.yml
@@ -256,14 +367,23 @@ use_external_database: true
 ```
 
 ```bash
+cd deploy/ansible
 ansible-playbook -i inventories/prod/hosts.ini site.yml \
-  --tags deploy --ask-vault-pass --check --diff
+  --limit marketplace --tags deploy --ask-vault-pass --check --diff
 ```
 
-Le diff sur `.env.prod` doit montrer exactement trois choses : `MARKETPLACE_CONNECTION` qui passe de `Host=postgres` à `Host=10.20.0.2`, les trois `POSTGRES_*` qui disparaissent, et `COMPOSE_PROFILES` qui se vide. **S'il montre autre chose, ne poursuivez pas.**
+Le diff sur `.env.prod` doit montrer **exactement quatre choses** :
+
+- `MARKETPLACE_CONNECTION` passe de `Host=postgres` à `Host=10.20.0.2`
+- `DISPATCH_CONNECTION` passe de `Host=postgres-dispatch` à `Host=10.20.0.2`
+- les trois `POSTGRES_*` disparaissent
+- `COMPOSE_PROFILES` se vide
+
+**S'il montre autre chose, ne poursuivez pas.**
 
 ```bash
-ansible-playbook -i inventories/prod/hosts.ini site.yml --tags deploy --ask-vault-pass
+ansible-playbook -i inventories/prod/hosts.ini site.yml \
+  --limit marketplace --tags deploy --ask-vault-pass
 ```
 
 ---
@@ -271,38 +391,55 @@ ansible-playbook -i inventories/prod/hosts.ini site.yml --tags deploy --ask-vaul
 ## 7. Vérifier, et seulement ensuite nettoyer
 
 ```bash
-ssh root@193.168.145.162
+ssh -p 8022 ubuntu@79.137.35.129
 cd /opt/marketplace
+C="deploy/docker-compose.prod.yml"; E="deploy/.env.prod"
 
-# Le conteneur postgres ne doit plus apparaître.
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod ps
+# Les deux conteneurs postgres ne doivent PLUS apparaître.
+sudo docker compose -f "$C" --env-file "$E" ps
 
 # L'API répond, et sa sonde de disponibilité teste réellement la base.
 curl -fsS https://api.hba-express.org/health/ready && echo "  ← prêt"
 
 # Aucun conteneur en boucle.
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod ps \
-  --format json | grep -i "restarting\|exited" && echo "PROBLÈME" || echo "tout est stable"
+sudo docker compose -f "$C" --env-file "$E" ps --format json \
+  | grep -i "restarting\|exited" && echo "PROBLÈME" || echo "tout est stable"
 ```
 
-Puis les contrôles métier, qui sont les seuls à prouver que ce sont bien **vos** données : ouvrez la console admin, vérifiez qu'une commande connue est là, qu'un solde vendeur est le bon, et qu'une recherche produit renvoie des résultats.
+**Un piège à connaître.** Les conteneurs `postgres` et `postgres-dispatch` portent `restart: always`. Vider `COMPOSE_PROFILES` les retire de la pile, mais **ne les arrête pas** : Docker les relance au démarrage. Il faut les arrêter explicitement, sinon une base vide continue de répondre au nom `postgres` sur le réseau interne — exactement le scénario contre lequel tout ce document met en garde.
 
-**Ne supprimez rien avant vingt-quatre heures.** Le volume `pgdata` du VPS applicatif est votre retour arrière ; il ne coûte que de l'espace disque.
+```bash
+sudo docker stop marketplace-prod-postgres-1 marketplace-prod-postgres-dispatch-1
+sudo docker update --restart=no marketplace-prod-postgres-1 marketplace-prod-postgres-dispatch-1
+```
+
+Puis les contrôles métier, les seuls à prouver que ce sont bien **vos** données : ouvrez la console d'administration, vérifiez qu'une commande connue est là, qu'un solde vendeur est le bon, qu'une recherche produit renvoie des résultats.
+
+**Ne supprimez rien avant vingt-quatre heures.** Les volumes du VPS applicatif sont votre retour arrière ; ils ne coûtent que de l'espace disque.
 
 ```bash
 # Après vingt-quatre heures de fonctionnement normal, et pas avant :
-docker volume rm marketplace_pgdata
+sudo docker rm marketplace-prod-postgres-1 marketplace-prod-postgres-dispatch-1
+sudo docker volume rm marketplace_pgdata marketplace_pgdata-dispatch
 ```
 
 ---
 
 ## Le retour arrière
 
-**Jusqu'à l'étape 6 incluse**, il tient en une ligne : remettre `use_external_database: false` et relancer `--tags deploy`. Le conteneur local redémarre sur son volume `pgdata`, qui n'a pas bougé — les données y sont exactement comme à l'étape 4.
+**Jusqu'à l'étape 6 incluse**, il tient en trois lignes : remettre `use_external_database: false`, relancer `--tags deploy`, et redémarrer les conteneurs locaux. Leurs volumes n'ont pas bougé — les données y sont exactement comme à l'étape 4.
+
+```yaml
+use_external_database: false
+```
+
+```bash
+ansible-playbook -i inventories/prod/hosts.ini site.yml --limit marketplace --tags deploy --ask-vault-pass
+```
 
 La seule chose perdue est ce qui aurait été écrit sur le VPS base entre-temps. D'où l'intérêt de faire les contrôles de l'étape 7 **avant** de rouvrir le service aux clients.
 
-**Après suppression du volume**, le retour arrière passe par la sauvegarde — c'est-à-dire par la chaîne que l'étape 3 a précisément servi à valider.
+**Après suppression des volumes**, le retour arrière passe par la sauvegarde — c'est-à-dire par la chaîne que l'étape 3 a précisément servi à valider.
 
 ---
 
@@ -310,9 +447,8 @@ La seule chose perdue est ce qui aurait été écrit sur le VPS base entre-temps
 
 Pour mémoire, et pour ne pas croire le chantier terminé :
 
-- **L'archivage WAL reste désactivé.** `wal_level = replica` le prépare sans l'activer : il n'y a pas de restauration à un instant précis, et le point de reprise est le dernier dump. Six heures, dans le pire cas.
-- **La supervision de la base**, sur le VPS applicatif, la joint maintenant par le tunnel — mais il n'existe toujours **aucune règle d'alerte Postgres** dans `prometheus-rules.yml`. Un exporter qui mesure une base que personne n'écoute.
-- **Le canal d'alerte de production est vide.** Alertmanager tourne avec des receivers sans destinataire et abandonne chaque notification en silence. Tant que ce n'est pas réglé, la surveillance de sauvegarde de l'étape 3 ne tient que par l'e-mail de cron — qui est d'ailleurs, pour cette raison, volontairement indépendant de Prometheus.
-- **Les secrets publiés en clair sur GitHub** ne sont pas concernés par ce runbook et restent la priorité absolue.
-
-Voir `docs/AUDIT_Deploiement.md`, section 7, pour l'ordre complet.
+- **Le VPS base a divergé de sa description Ansible** sur cinq points, dont un port 5432 ouvert sur Internet — fermé le 14/09/2026. Après la bascule, repasser le play complet et comparer.
+- **`postgresql.auto.conf` masque la configuration gérée par Ansible** depuis la fermeture d'urgence du port. À réinitialiser une fois `conf.d/10-marketplace.conf` vérifié.
+- **L'archivage WAL reste désactivé.** Pas de restauration à un instant précis : le point de reprise est le dernier dump, six heures dans le pire cas.
+- **Aucune règle d'alerte Postgres** dans `prometheus-rules.yml`, et le canal d'alerte reste vide. La surveillance de sauvegarde de l'étape 3 ne tient que par l'e-mail de cron.
+- **L'authentification par mot de passe SSH** est encore active sur le VPS base.

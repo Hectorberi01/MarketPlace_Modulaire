@@ -30,7 +30,13 @@ registry_username: hectorberi01
 # La procédure de bascule est dans docs/RUNBOOK_Bascule_Base.md. Elle se termine
 # par ce drapeau, elle ne commence pas par lui.
 # ═══════════════════════════════════════════════════════════════════════════════
-use_external_database: false
+# BASCULÉ LE 14/09/2026, après restauration vérifiée sur le VPS base.
+#
+# La bascule n'a PAS consisté à retourner ce drapeau : les données ont d'abord été
+# dumpées, transférées et restaurées, et le chemin complet — tunnel, pare-feu,
+# listen_addresses, pg_hba, rôle, mot de passe — a été éprouvé depuis l'applicatif
+# avant que cette ligne ne change. Voir docs/RUNBOOK_Bascule_Base.md.
+use_external_database: true
 
 # Construite à partir de `postgres_db` / `postgres_user` (group_vars/all), pour que
 # l'identité de la base soit écrite à UN seul endroit. `marketplace_connection`
