@@ -99,11 +99,17 @@ internal sealed class ImportCategoriesCommandHandler
                     continue;
                 }
 
-                // L'image ne concerne que le DERNIER segment de la ligne.
+                // L'image ET le schéma d'attributs ne concernent que le DERNIER
+                // segment de la ligne. Les niveaux intermédiaires sont créés au
+                // passage, sans rien porter : les attributs communs d'un rayon se
+                // déclarent en écrivant une ligne POUR le rayon, qui les transmet à
+                // toute sa descendance par héritage.
                 var isLeaf = i == segments.Length - 1;
 
                 var createResult = Category.Create(
-                    name, parentId, parentPath, isLeaf ? row.ImageUrl : null);
+                    name, parentId, parentPath,
+                    isLeaf ? row.ImageUrl : null,
+                    isLeaf ? row.AttributeSchema : null);
 
                 if (createResult.IsFailure)
                 {

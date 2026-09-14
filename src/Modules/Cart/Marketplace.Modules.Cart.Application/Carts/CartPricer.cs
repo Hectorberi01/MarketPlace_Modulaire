@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Pricing.Contracts;
@@ -16,6 +17,7 @@ internal static class CartPricer
         CartAggregate cart,
         IPricingModuleApi pricing,
         IOrderingModuleApi ordering,
+        decimal platformFeeRate,
         CancellationToken cancellationToken)
     {
         var lines = new List<CartLineSummary>(cart.Items.Count);
@@ -128,9 +130,26 @@ internal static class CartPricer
             }
         }
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LE FRAIS DE SERVICE, ANNONCÉ AVANT LA COMMANDE.
+        //
+        // Même assiette et même arrondi que dans `Order.RecomputeTotals` : le total des
+        // articles APRÈS remises, arrondi une fois selon la devise. Les deux calculs
+        // doivent rendre le même franc, sans quoi le checkout refuserait la commande
+        // sur son propre contrôle « le montant a changé depuis l'affichage ».
+        //
+        // C'est bien la commande qui fait foi — ce montant-ci n'est qu'un affichage.
+        // Mais un affichage faux vaut ici un parcours d'achat bloqué, pas une simple
+        // coquille.
+        // ═════════════════════════════════════════════════════════════════════════
+        var fraisPlateforme = platformFeeRate <= 0m
+            ? 0m
+            : Money.Round(grand * platformFeeRate, cart.Currency);
+
         return new CartSummary(
             cart.Id.Value, cart.BuyerId, cart.Currency, cart.Status.ToString(),
-            lines, subtotal, totalSeller, totalPlatform, grand, cart.PromotionCode);
+            lines, subtotal, totalSeller, totalPlatform, grand + fraisPlateforme, cart.PromotionCode,
+            fraisPlateforme, platformFeeRate);
     }
 
     /// <summary>

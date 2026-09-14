@@ -71,10 +71,26 @@ public sealed record OrderSummary(
     /// </summary>
     decimal TaxTotal = 0m,
     /// <summary>Taux retenu et figé au moment de la commande (0.18 = 18 %).</summary>
-    decimal TaxRate = 0m)
+    decimal TaxRate = 0m,
+    /// <summary>
+    /// Frais de service AJOUTÉ à <paramref name="GrandTotal"/> — l'inverse exact de
+    /// <paramref name="TaxTotal"/>, qui en décrit une part. Le confondre avec la taxe
+    /// ferait soit disparaître le frais de la facture, soit le compter deux fois.
+    /// Zéro sur les commandes antérieures au modèle : elles n'en ont jamais payé.
+    /// </summary>
+    decimal PlatformFee = 0m,
+    /// <summary>Taux du frais de service, figé à la commande (0.02 = 2 %).</summary>
+    decimal PlatformFeeRate = 0m)
 {
     /// <summary>Part hors taxe du total. Un reste, comme dans l'agrégat.</summary>
     public decimal NetTotal => GrandTotal - TaxTotal;
+
+    /// <summary>
+    /// Total des ARTICLES, remises déduites : le total que l'acheteur lisait dans son
+    /// panier, avant livraison et avant frais de service. Reconstitué plutôt que
+    /// transporté, pour la raison donnée sur <see cref="AmountDue"/>.
+    /// </summary>
+    public decimal ItemsTotal => GrandTotal - ShippingFee - PlatformFee;
 
     /// <summary>
     /// Montant restant à encaisser. Calculé plutôt que transporté : deux champs qui

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Marketplace.BuildingBlocks.Application.Options;
 using System.Reflection;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +33,18 @@ public sealed class OrderingModuleInstaller : IModuleInstaller
 
     public void Install(IServiceCollection services, IConfiguration configuration)
     {
+        // ─────────────────────────────────────────────────────────────────────────
+        // LE TAUX DU FRAIS DE SERVICE, LU PAR LES DEUX MODULES QUI EN ONT BESOIN.
+        //
+        // Cart l'ANNONCE dans le panier, Ordering le FIGE sur la commande. Les deux
+        // installeurs enregistrent donc le même singleton depuis la même section :
+        // `TryAddSingleton` fait que le premier chargé gagne et que le second ne le
+        // remplace pas — deux instances porteraient de toute façon la même valeur,
+        // mais l'écrasement silencieux est le genre de détail dont on ne veut pas
+        // dépendre de l'ordre de chargement des modules.
+        // ─────────────────────────────────────────────────────────────────────────
+        services.TryAddSingleton(PlatformFeeOptions.Depuis(configuration.GetSection("Pricing")["PlatformFeeRate"]));
+
         var connectionString = configuration.GetConnectionString("Marketplace")
             ?? throw new InvalidOperationException("Chaîne de connexion « Marketplace » absente.");
 

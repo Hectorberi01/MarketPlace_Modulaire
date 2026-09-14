@@ -1,4 +1,5 @@
 using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Application.Options;
 using Marketplace.BuildingBlocks.Domain.Geography;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Cart.Contracts;
@@ -24,6 +25,7 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
     private readonly ITaxModuleApi _taxModuleApi;
     private readonly IOrderRepository _orderRepository;
     private readonly IOrderingUnitOfWork _unitOfWork;
+    private readonly PlatformFeeOptions _platformFee;
 
     public PlaceOrderCommandHandler(
         ICartModuleApi cartModuleApi,
@@ -31,7 +33,8 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         ISettlementModuleApi settlementModuleApi,
         ITaxModuleApi taxModuleApi,
         IOrderRepository orderRepository,
-        IOrderingUnitOfWork unitOfWork)
+        IOrderingUnitOfWork unitOfWork,
+        PlatformFeeOptions platformFee)
     {
         _cartModuleApi = cartModuleApi;
         _inventoryModuleApi = inventoryModuleApi;
@@ -39,6 +42,7 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         _taxModuleApi = taxModuleApi;
         _orderRepository = orderRepository;
         _unitOfWork = unitOfWork;
+        _platformFee = platformFee;
     }
 
     public async Task<Result<Guid>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken)
@@ -59,7 +63,13 @@ internal sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderComma
         // CONFIRMATION (paiement encaissé). Sans ce report, Pricing recevrait un
         // « commande confirmée » sans savoir quel coupon consommer — et le coupon
         // resterait éternellement disponible. C'est exactement le bug d'origine.
-        var orderResult = Order.Create(command.BuyerId, cart.CartId, cart.Currency, drafts, cart.PromotionCode);
+        // Le TAUX est passé ici, une fois : la commande le fige et recalcule elle-même
+        // le montant à chaque changement de lignes ou de livraison. Reprendre le montant
+        // affiché dans le panier aurait laissé un chiffre décidé AILLEURS traverser le
+        // checkout — et un panier périmé aurait facturé l'ancien frais.
+        var orderResult = Order.Create(
+            command.BuyerId, cart.CartId, cart.Currency, drafts, cart.PromotionCode,
+            _platformFee.PlatformFeeRate);
         if (orderResult.IsFailure)
         {
             return Result.Failure<Guid>(orderResult.Error);

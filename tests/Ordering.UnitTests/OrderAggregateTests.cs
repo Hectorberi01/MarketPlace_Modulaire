@@ -33,6 +33,74 @@ public class OrderAggregateTests
     private static Order NewOrder(params OrderLineDraft[] lines)
         => Order.Create(Guid.NewGuid(), Guid.NewGuid(), "XOF", lines).Value;
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE FRAIS DE SERVICE S'AJOUTE AU TOTAL, ET PORTE SUR LES SEULS ARTICLES.
+    ///
+    /// Deux invariants que rien d'autre ne garde, et dont l'inversion coûterait cher :
+    ///
+    ///   • il s'AJOUTE, contrairement à la taxe qui décrit une part du total. Le jour
+    ///     où quelqu'un le traitera comme la TVA, l'acheteur cessera de le payer et
+    ///     personne ne s'en apercevra avant le relevé mensuel ;
+    ///   • son assiette EXCLUT les frais de livraison. La plateforme refacture le
+    ///     transport à l'identique ; prélever 2 % dessus serait une marge sur une
+    ///     prestation qu'elle ne rend pas.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Fact]
+    public void Le_frais_de_service_s_ajoute_au_total_et_ignore_la_livraison()
+    {
+        var order = Order.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "XOF",
+            [Line(2, 7000m, 2800m, 1000m, 10200m)],
+            promotionCode: null,
+            platformFeeRate: 0.02m).Value;
+
+        order.PlatformFeeRate.Should().Be(0.02m);
+        order.PlatformFee.Should().Be(204m, "2 % de 10 200, arrondis au franc");
+        order.GrandTotal.Should().Be(10404m);
+
+        order.SetShippingFee(1500m);
+
+        order.PlatformFee.Should().Be(204m, "la livraison n'entre pas dans l'assiette");
+        order.GrandTotal.Should().Be(10200m + 1500m + 204m);
+    }
+
+    /// <summary>
+    /// Le recalcul RE-calcule le frais, il ne l'accumule pas. `SetShippingFee` repasse
+    /// par `RecomputeTotals` : un frais qu'on ajouterait au précédent doublerait au
+    /// second appel, et le parcours d'achat en déclenche plusieurs.
+    /// </summary>
+    [Fact]
+    public void Le_frais_de_service_ne_se_cumule_pas_d_un_recalcul_a_l_autre()
+    {
+        var order = Order.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "XOF",
+            [Line(1, 10000m, 0m, 0m, 10000m)],
+            promotionCode: null,
+            platformFeeRate: 0.02m).Value;
+
+        order.SetShippingFee(1000m);
+        order.SetShippingFee(2000m);
+        order.SetShippingFee(500m);
+
+        order.PlatformFee.Should().Be(200m);
+        order.GrandTotal.Should().Be(10700m);
+    }
+
+    /// <summary>
+    /// Sans taux, aucun frais : c'est l'état des commandes passées sous l'ancien
+    /// modèle, et celui de tous les tests qui n'en parlent pas.
+    /// </summary>
+    [Fact]
+    public void Sans_taux_aucun_frais_de_service_n_est_ajoute()
+    {
+        var order = NewOrder(Line(1, 10000m, 0m, 0m, 10000m));
+
+        order.PlatformFee.Should().Be(0m);
+        order.GrandTotal.Should().Be(10000m);
+    }
+
     [Fact]
     public void Create_computes_totals_from_lines()
     {

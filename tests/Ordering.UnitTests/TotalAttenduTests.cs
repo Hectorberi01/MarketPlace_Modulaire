@@ -1,3 +1,4 @@
+using Marketplace.BuildingBlocks.Application.Options;
 using FluentAssertions;
 using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Inventory.Contracts;
@@ -99,8 +100,12 @@ public class TotalAttenduTests
     private static async Task<Marketplace.BuildingBlocks.Domain.Results.Result<Guid>> PlacerAsync(
         DepotFactice depot, StockFactice stock, decimal? totalAttendu)
     {
+        // Frais de service à ZÉRO : ces tests portent sur le contrôle du total attendu,
+        // pas sur la tarification. Un frais non nul décalerait chaque montant attendu
+        // sans rien prouver de plus. Les 2 % sont éprouvés ailleurs, sur l'agrégat.
         var handler = new PlaceOrderCommandHandler(
-            new PanierFactice(), stock, new SettlementFactice(), new TaxeFactice(), depot, depot);
+            new PanierFactice(), stock, new SettlementFactice(), new TaxeFactice(), depot, depot,
+            new PlatformFeeOptions { PlatformFeeRate = 0m });
 
         return await handler.Handle(
             new PlaceOrderCommand(

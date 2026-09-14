@@ -477,6 +477,11 @@ public static class ClientCheckoutEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
+        // `cart.GrandTotal` PORTE DÉJÀ le frais de service : c'est ce qui fait que ce
+        // total reste juste sans qu'on ait à y penser ici, et que `expectedTotal`
+        // correspondra à ce que la commande recalculera de son côté. Le frais est
+        // renvoyé À PART juste en dessous, pour l'AFFICHER — pas pour l'ajouter une
+        // seconde fois.
         var total = cart.GrandTotal + rate.Amount;
 
         // Solde DISPONIBLE, hors montants déjà engagés sur une autre commande en cours :
@@ -488,6 +493,9 @@ public static class ClientCheckoutEndpoints
         {
             subtotal = cart.Subtotal,
             discount = cart.TotalSellerDiscount + cart.TotalPlatformDiscount,
+            itemsTotal = cart.ItemsTotal,
+            platformFee = cart.PlatformFee,
+            platformFeeRate = cart.PlatformFeeRate,
             shipping = new { code = rate.ServiceCode, label = rate.Label, eta = rate.Eta, amount = rate.Amount, zone = rate.ZoneName },
             shippingOptions = options.Select(r => new { code = r.ServiceCode, label = r.Label, eta = r.Eta, amount = r.Amount }),
             total,

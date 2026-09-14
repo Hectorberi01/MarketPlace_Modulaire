@@ -67,6 +67,11 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ShippingFee).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
         builder.Property(o => o.GrandTotal).HasColumnType("numeric(18,2)").IsRequired();
 
+        // Frais de service AJOUTÉ à GrandTotal (contrairement à TaxTotal, qui en
+        // décrit une part). Le taux est figé à la commande : voir l'agrégat.
+        builder.Property(o => o.PlatformFee).HasColumnType("numeric(18,2)").IsRequired().HasDefaultValue(0m);
+        builder.Property(o => o.PlatformFeeRate).HasColumnType("numeric(9,5)").IsRequired().HasDefaultValue(0m);
+
         // ─────────────────────────────────────────────────────────────────────────
         // VENTILATION DE LA TAXE. Trois colonnes qui DÉCRIVENT le total sans jamais
         // l'augmenter : régime « TVA comprise ».

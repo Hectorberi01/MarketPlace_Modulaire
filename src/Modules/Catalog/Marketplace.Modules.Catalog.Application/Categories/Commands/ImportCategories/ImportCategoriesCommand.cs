@@ -13,7 +13,27 @@ namespace Marketplace.Modules.Catalog.Application.Categories.Commands.ImportCate
 /// plusieurs lignes, associer l'image à chaque niveau traversé conduirait à ce que la
 /// dernière ligne lue écrase silencieusement les précédentes.
 /// </param>
-public sealed record CategoryImportRow(string Path, string? ImageUrl);
+/// <param name="AttributeSchema">
+/// Schéma d'attributs (JSON), appliqué au DERNIER segment uniquement — même règle que
+/// l'image, et pour la même raison.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// CE N'EST PAS UNE LIMITE, C'EST LA FAÇON DE S'EN SERVIR.
+///
+/// Les schémas s'HÉRITENT le long de la branche (voir `CategoryAttributeSchema`) : un
+/// attribut posé sur « Animaux » est attendu dans toutes ses feuilles, à l'instant
+/// même. Pour déclarer les attributs communs d'un rayon, on écrit donc une ligne pour
+/// le rayon lui-même — « Animaux » — et non le même schéma recopié sur chacune de ses
+/// feuilles. La seconde méthode produirait dix copies qui divergeraient dès la
+/// première correction.
+///
+/// NUL N'EST PAS VIDE. `null` laisse intacte une catégorie déjà existante ; un schéma
+/// vide `{}` n'interdirait rien mais serait tout de même écrit. C'est la différence
+/// entre « ce fichier ne parle pas des attributs » et « ce fichier déclare qu'il n'y
+/// en a aucun ».
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </param>
+public sealed record CategoryImportRow(string Path, string? ImageUrl, string? AttributeSchema = null);
 
 /// <summary>Ce qu'il est advenu d'un nœud de l'arbre pendant l'import.</summary>
 /// <param name="Path">Chemin normalisé (slugifié), tel qu'il est stocké.</param>

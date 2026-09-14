@@ -19,13 +19,14 @@ public sealed class Order : AggregateRoot<OrderId>
     {
     }
 
-    private Order(OrderId id, Guid buyerId, Guid cartId, string currency, string? promotionCode)
+    private Order(OrderId id, Guid buyerId, Guid cartId, string currency, string? promotionCode, decimal platformFeeRate)
         : base(id)
     {
         BuyerId = buyerId;
         CartId = cartId;
         Currency = currency;
         PromotionCode = promotionCode;
+        PlatformFeeRate = platformFeeRate < 0m ? 0m : platformFeeRate;
         Status = OrderStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
     }
@@ -75,6 +76,34 @@ public sealed class Order : AggregateRoot<OrderId>
 
     /// <summary>Frais de livraison encaissés par la plateforme (forfait choisi au checkout).</summary>
     public decimal ShippingFee { get; private set; }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// FRAIS DE SERVICE DE LA PLATEFORME, AJOUTÉ AU TOTAL ET NON CONTENU DEDANS.
+    ///
+    /// C'est l'inverse exact de <see cref="TaxTotal"/>, et la confusion entre les deux
+    /// coûterait cher : la taxe DÉCRIT une part de <see cref="GrandTotal"/>, ce frais
+    /// s'y AJOUTE. L'acheteur paie les articles, la livraison, PLUS ce frais.
+    ///
+    /// Il remplace la majoration de 15 % qui était empilée sur le prix de chaque
+    /// article — invisible, fondue dans l'étiquette, et facturée même lorsque la
+    /// commande n'aboutissait pas au paiement attendu. Un frais annoncé sur une ligne
+    /// à part est à la fois plus honnête et plus simple à expliquer.
+    ///
+    /// L'ASSIETTE EST LE TOTAL DES ARTICLES, REMISES DÉDUITES. Pas les frais de
+    /// livraison : voir l'encadré de `PlatformFeeOptions`.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public decimal PlatformFee { get; private set; }
+
+    /// <summary>
+    /// Taux appliqué au moment de la commande (0.02 = 2 %). FIGÉ, pour la même raison
+    /// que <see cref="TaxRate"/> et que <see cref="OrderLine.CommissionRate"/> : passer
+    /// le frais de 2 % à 3 % ne doit pas réécrire ce qu'ont payé les commandes d'hier,
+    /// sous peine qu'une facture réimprimée ne corresponde plus à celle remise au
+    /// client.
+    /// </summary>
+    public decimal PlatformFeeRate { get; private set; }
 
     /// <summary>
     /// VALEUR DE LA COMMANDE. Ce n'est PAS le montant à encaisser — voir
@@ -200,7 +229,8 @@ public sealed class Order : AggregateRoot<OrderId>
         Guid cartId,
         string currency,
         IEnumerable<OrderLineDraft> drafts,
-        string? promotionCode = null)
+        string? promotionCode = null,
+        decimal platformFeeRate = 0m)
     {
         if (buyerId == Guid.Empty)
         {
@@ -223,7 +253,8 @@ public sealed class Order : AggregateRoot<OrderId>
             buyerId,
             cartId,
             currency.Trim().ToUpperInvariant(),
-            string.IsNullOrWhiteSpace(promotionCode) ? null : promotionCode.Trim().ToUpperInvariant());
+            string.IsNullOrWhiteSpace(promotionCode) ? null : promotionCode.Trim().ToUpperInvariant(),
+            platformFeeRate);
 
         foreach (var draft in draftList)
         {
@@ -304,7 +335,29 @@ public sealed class Order : AggregateRoot<OrderId>
         // et faux sur toute facture.
         TotalSellerDiscount = _lines.Sum(l => l.SellerDiscount);
         TotalPlatformDiscount = _lines.Sum(l => l.PlatformDiscount);
-        GrandTotal = _lines.Sum(l => l.LineTotal) + ShippingFee;
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // LE FRAIS DE SERVICE PORTE SUR LES ARTICLES SEULS.
+        //
+        // `articles` est le total des lignes, remises déjà déduites — c'est le « total
+        // du panier » tel que l'acheteur le lit à l'écran, et c'est donc sur lui que
+        // 2 % veut dire quelque chose. `ShippingFee` reste dehors : la plateforme
+        // refacture le transport à l'identique, prélever un pourcentage dessus serait
+        // une marge sur une prestation qu'elle ne rend pas.
+        //
+        // Le frais est recalculé À CHAQUE recalcul, jamais accumulé : `SetShippingFee`
+        // et les modifications de lignes repassent ici, et un frais qu'on ajouterait
+        // au précédent doublerait au second passage.
+        //
+        // L'ARRONDI EST FAIT ICI, UNE FOIS. En XOF la devise n'a pas de décimale et le
+        // frais doit être un entier de francs ; `Money.Round` connaît la règle de
+        // chaque devise, et l'appliquer une seule fois évite qu'un centime apparaisse
+        // entre l'affichage du panier et le montant réellement encaissé.
+        // ─────────────────────────────────────────────────────────────────────────
+        var articles = _lines.Sum(l => l.LineTotal);
+        PlatformFee = PlatformFeeRate <= 0m ? 0m : Money.Round(articles * PlatformFeeRate, Currency);
+
+        GrandTotal = articles + ShippingFee + PlatformFee;
 
         // La taxe DÉCRIT une part du total : elle ne peut pas lui être supérieure. Si le
         // total est recalculé à la baisse après la ventilation, on re-plafonne plutôt

@@ -26,6 +26,7 @@ public static class ClientOrderEndpoints
         orders.MapPost("/{id:guid}/cancel", CancelAsync);
         orders.MapPost("/{id:guid}/return", ReturnAsync);
         orders.MapGet("/{id:guid}/tracking", TrackingAsync);
+        orders.MapGet("/{id:guid}/invoice", InvoiceAsync);
 
         return app;
     }
@@ -102,6 +103,18 @@ public static class ClientOrderEndpoints
                 // à 1 150 XOF suivi d'un « sous-total » de 2 650 sans explication. Les
                 // 1 500 manquants étaient la livraison, simplement jamais envoyée.
                 shippingFee = o.ShippingFee,
+                // ─────────────────────────────────────────────────────────────────
+                // LE FRAIS DE SERVICE, ENVOYÉ AVEC SON TAUX ET SON ASSIETTE.
+                //
+                // Même leçon que les frais de livraison juste au-dessus : un montant
+                // que le domaine porte mais que la réponse tait devient un écart
+                // inexpliqué à l'écran. `itemsTotal` est envoyé PLUTÔT QUE laissé à
+                // calculer côté client — trois soustractions faites dans deux
+                // applications différentes finiraient par diverger d'un franc.
+                // ─────────────────────────────────────────────────────────────────
+                itemsTotal = o.ItemsTotal,
+                platformFee = o.PlatformFee,
+                platformFeeRate = o.PlatformFeeRate,
                 grandTotal = o.GrandTotal,
                 shippingAddress = o.ShippingAddress is null ? null : new
                 {
@@ -180,6 +193,135 @@ public static class ClientOrderEndpoints
 
     /// <summary>
     /// Charge une commande en garantissant qu'elle appartient à l'acheteur du jeton.
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// FACTURE D'UNE COMMANDE, POUR L'ACHETEUR.
+    ///
+    /// À ne pas confondre avec `Billing.Invoice`, qui est une facture VENDEUR : un
+    /// relevé de commissions sur une période. Celle-ci est le justificatif d'UN achat,
+    /// destiné à la personne qui a payé.
+    ///
+    /// ELLE N'EST PAS STOCKÉE, ELLE EST RENDUE. Tout ce qu'elle contient est déjà figé
+    /// sur la commande — les prix, les remises, la livraison, le taux de TVA, le taux
+    /// du frais de service. Créer une table de factures aurait dupliqué ces montants
+    /// dans une seconde source de vérité, avec la garantie qu'un jour les deux
+    /// divergent ; et le vrai besoin d'une facture — être IDENTIQUE à chaque
+    /// réimpression — est déjà couvert par le gel des taux sur la commande.
+    ///
+    /// LA TVA EST COMPRISE, LE FRAIS DE SERVICE EST AJOUTÉ. Les deux montants
+    /// apparaissent, mais pas au même endroit du décompte : `taxTotal` est une part de
+    /// `total`, `platformFee` s'y ajoute. Les présenter côte à côte sans le dire
+    /// conduirait n'importe quel comptable à additionner ce qui ne s'additionne pas.
+    ///
+    /// LE NUMÉRO EST DÉRIVÉ, PAS TIRÉ D'UNE SÉQUENCE. La commande n'a pas de référence
+    /// lisible, et en inventer une ici demanderait un compteur — donc un état, donc
+    /// des trous à la moindre transaction annulée. Les huit premiers caractères de
+    /// l'identifiant, préfixés de l'année, donnent un numéro stable, unique en
+    /// pratique, et reproductible : la même commande rend toujours la même facture.
+    /// Le jour où une numérotation séquentielle sera exigée par le fisc béninois,
+    /// elle devra vivre dans le domaine, pas ici.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> InvoiceAsync(
+        ClaimsPrincipal user, Guid id, ISender sender, ICatalogModuleApi catalog, CancellationToken ct)
+    {
+        var o = await LoadOwnedOrderAsync(user, id, sender, ct);
+        if (o is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Une commande sans paiement abouti n'est pas une facture : c'est un devis, ou
+        // une tentative. Éditer un justificatif d'achat pour une commande annulée ou en
+        // attente donnerait à l'acheteur une preuve de paiement qu'il n'a pas.
+        if (!EstFacturable(o.Status))
+        {
+            return Results.Conflict(new
+            {
+                error = "ordering.not_invoiceable",
+                message = $"La commande est « {o.Status} » : une facture n'est émise qu'une fois le paiement encaissé.",
+            });
+        }
+
+        // Séquentiel : le DbContext (scoped) de Catalog n'est pas thread-safe. Même
+        // raison qu'au détail de commande juste au-dessus.
+        var lignes = new List<object>(o.Lines.Count);
+        foreach (var l in o.Lines)
+        {
+            var produit = await catalog.GetProductAsync(l.ProductId, ct);
+            lignes.Add(new
+            {
+                designation = produit?.Name ?? l.Sku,
+                sku = l.Sku,
+                quantite = l.Quantity,
+                prixUnitaire = l.FinalUnitPrice,
+                remise = l.SellerDiscount + l.PlatformDiscount,
+                total = l.LineTotal,
+            });
+        }
+
+        return Results.Ok(new
+        {
+            numero = $"HBA-{o.CreatedAtUtc:yyyy}-{o.Id.ToString("N")[..8].ToUpperInvariant()}",
+            emiseLe = DateTime.UtcNow,
+            commande = new { id = o.Id, passeeLe = o.CreatedAtUtc, statut = o.Status },
+            devise = o.Currency,
+            client = o.ShippingAddress is null ? null : new
+            {
+                nom = o.ShippingAddress.Recipient,
+                telephone = o.ShippingAddress.Phone,
+                adresse = o.ShippingAddress.Line1,
+                quartier = o.ShippingAddress.Quartier,
+                commune = o.ShippingAddress.CommuneName,
+                pays = o.ShippingAddress.CountryCode,
+            },
+            lignes,
+            totaux = new
+            {
+                // L'ordre de ces champs EST le décompte, de haut en bas.
+                sousTotal = o.Subtotal,
+                remiseVendeur = o.TotalSellerDiscount,
+                remisePlateforme = o.TotalPlatformDiscount,
+                articles = o.ItemsTotal,
+                livraison = o.ShippingFee,
+                fraisDeService = o.PlatformFee,
+                tauxFraisDeService = o.PlatformFeeRate,
+                total = o.GrandTotal,
+                // Réglé par la cagnotte, et ce qui a donc été encaissé par un moyen
+                // de paiement. Les deux doivent apparaître : un acheteur qui a payé
+                // moitié cagnotte cherchera la trace de l'autre moitié.
+                cagnotte = o.WalletApplied,
+                encaisse = o.AmountDue,
+            },
+            tva = new
+            {
+                // COMPRISE dans `total`, jamais ajoutée : régime TVA incluse.
+                comprise = true,
+                montant = o.TaxTotal,
+                taux = o.TaxRate,
+                horsTaxe = o.NetTotal,
+            },
+        });
+    }
+
+    /// <summary>
+    /// Statuts pour lesquels une facture a un sens : le paiement est encaissé.
+    ///
+    /// LA LISTE EST CELLE DE `OrderStatus`, PAS UNE LISTE PLAUSIBLE. L'énumération du
+    /// domaine ne connaît que Pending, AwaitingPayment, Paid, Confirmed, Cancelled,
+    /// Failed et Delivered — pas de « Shipped » ni de « Completed ». Un statut inventé
+    /// ici ne casserait rien à la compilation : il rendrait simplement la facture
+    /// introuvable pour les commandes concernées, sans un message d'erreur pour le
+    /// dire.
+    ///
+    /// `Cancelled` et `Failed` en sont exclus : ils n'ont rien encaissé. Une commande
+    /// remboursée garde en revanche sa facture — c'est l'AVOIR qui manque, et ce sera
+    /// un autre document.
+    /// </summary>
+    private static bool EstFacturable(string statut)
+        => statut is "Paid" or "Confirmed" or "Delivered";
+
+    /// <summary>
     /// Renvoie null si la commande est absente OU ne lui appartient pas (on ne
     /// distingue pas les deux cas : pas de divulgation d'existence, anti-IDOR).
     /// </summary>

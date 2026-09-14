@@ -1,5 +1,6 @@
 using Marketplace.BuildingBlocks.Application.Abstractions;
 using Marketplace.BuildingBlocks.Application.Messaging;
+using Marketplace.BuildingBlocks.Application.Options;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Cart.Contracts;
 using Marketplace.Modules.Cart.Domain.Carts;
@@ -22,14 +23,17 @@ internal sealed class GetActiveCartQueryHandler : IQueryHandler<GetActiveCartQue
     private readonly IPricingModuleApi _pricing;
     private readonly IOrderingModuleApi _ordering;
     private readonly ICacheService _cache;
+    private readonly PlatformFeeOptions _platformFee;
 
     public GetActiveCartQueryHandler(
-        ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering, ICacheService cache)
+        ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering, ICacheService cache,
+        PlatformFeeOptions platformFee)
     {
         _cartRepository = cartRepository;
         _pricing = pricing;
         _ordering = ordering;
         _cache = cache;
+        _platformFee = platformFee;
     }
 
     public async Task<Result<CartSummary>> Handle(GetActiveCartQuery query, CancellationToken cancellationToken)
@@ -53,7 +57,7 @@ internal sealed class GetActiveCartQueryHandler : IQueryHandler<GetActiveCartQue
                 Array.Empty<CartLineSummary>(), 0m, 0m, 0m, 0m);
         }
 
-        var summary = await CartPricer.PriceAsync(cart, _pricing, _ordering, cancellationToken);
+        var summary = await CartPricer.PriceAsync(cart, _pricing, _ordering, _platformFee.PlatformFeeRate, cancellationToken);
         await _cache.SetAsync(key, summary, CacheTtl, cancellationToken);
         return summary;
     }
@@ -65,11 +69,16 @@ internal sealed class GetCartByIdQueryHandler : IQueryHandler<GetCartByIdQuery, 
     private readonly IPricingModuleApi _pricing;
     private readonly IOrderingModuleApi _ordering;
 
-    public GetCartByIdQueryHandler(ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering)
+    private readonly PlatformFeeOptions _platformFee;
+
+    public GetCartByIdQueryHandler(
+        ICartRepository cartRepository, IPricingModuleApi pricing, IOrderingModuleApi ordering,
+        PlatformFeeOptions platformFee)
     {
         _cartRepository = cartRepository;
         _pricing = pricing;
         _ordering = ordering;
+        _platformFee = platformFee;
     }
 
     public async Task<Result<CartSummary>> Handle(GetCartByIdQuery query, CancellationToken cancellationToken)
@@ -77,6 +86,6 @@ internal sealed class GetCartByIdQueryHandler : IQueryHandler<GetCartByIdQuery, 
         var cart = await _cartRepository.GetByIdAsync(new CartId(query.CartId), cancellationToken);
         return cart is null
             ? Error.NotFound("cart.not_found", "Panier introuvable.")
-            : await CartPricer.PriceAsync(cart, _pricing, _ordering, cancellationToken);
+            : await CartPricer.PriceAsync(cart, _pricing, _ordering, _platformFee.PlatformFeeRate, cancellationToken);
     }
 }
