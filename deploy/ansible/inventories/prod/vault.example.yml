@@ -110,6 +110,9 @@ dispatch_courier_share: "0.80"
 # Exigées en `${X:?}` par le compose (minimum 32 caractères).
 #   openssl rand -base64 32
 admin_session_secret: "CHANGE_ME_BASE64_32"
+
+# Vitrine acheteur. openssl rand -base64 48
+client_session_secret: "CHANGE_ME_BASE64_48"
 # seller_session_secret est déjà plus haut dans ce fichier.
 
 # ── REGISTRE D'IMAGES ────────────────────────────────────────────────────────
