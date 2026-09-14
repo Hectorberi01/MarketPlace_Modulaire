@@ -107,7 +107,7 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
 
         var status = ExtractStatus(await response.Content.ReadAsStringAsync(ct)) ?? string.Empty;
         var outcome = MapOutcome(status);
-        return new GatewayEvent(Verified: true, outcome, providerReference, outcome == GatewayOutcome.Failed ? status : null);
+        return new GatewayEvent(Verified: true, outcome, providerReference, outcome == GatewayOutcome.Failed ? MotifDEchec(status) : null);
     }
 
     public override Task<GatewayRefundResult> RefundAsync(string providerReference, CancellationToken ct = default)
@@ -147,7 +147,7 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
             var reference = ExtractReference(entity);
             var outcome = MapOutcome(status);
 
-            return Task.FromResult(new GatewayEvent(Verified: true, outcome, reference, outcome == GatewayOutcome.Failed ? status : null));
+            return Task.FromResult(new GatewayEvent(Verified: true, outcome, reference, outcome == GatewayOutcome.Failed ? MotifDEchec(status) : null));
         }
         catch (JsonException)
         {
@@ -155,13 +155,53 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
         }
     }
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// « EXPIRED » EST UN ÉCHEC, PAS UN ÉVÉNEMENT À IGNORER.
+    ///
+    /// FedaPay expire une transaction restée « pending » au bout de vingt-quatre
+    /// heures. Ce statut ne figurait pas dans cette table : il retombait sur
+    /// `_ => Ignored`, et `GatewayOutcomeApplier` n'applique RIEN sur un `Ignored`.
+    ///
+    /// Conséquence, qui est exactement le blocage observé : l'acheteur ne valide pas
+    /// à temps sur son téléphone (MTN renvoie alors COULD_NOT_PERFORM_TRANSACTION,
+    /// qui signifie « code PIN non saisi dans le délai »), la transaction expire, et
+    /// le paiement reste `Pending` chez nous POUR TOUJOURS. La garde
+    /// « Un paiement est déjà en cours pour cette commande » d'InitiatePayment le
+    /// prend alors au mot et refuse toute nouvelle tentative — y compris après la
+    /// réconciliation, puisque celle-ci traverse cette même table et n'en tire rien.
+    /// La commande devient impayable, sans aucun recours dans l'interface.
+    ///
+    /// Toutes les autres passerelles traitaient déjà le cas : « EXPIRED » chez Moov et
+    /// MTN, « checkout.session.expired » chez Stripe. Seule FedaPay — la seule
+    /// réellement en production — ne le faisait pas.
+    ///
+    /// Un statut INCONNU reste volontairement `Ignored` : il vaut mieux ne rien faire
+    /// que de conclure de travers sur un vocabulaire qu'on ne connaît pas. C'est
+    /// précisément pourquoi la table doit être tenue à jour, et pourquoi elle est
+    /// désormais couverte statut par statut par un test.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     protected override GatewayOutcome MapOutcome(string eventType) => eventType.ToLowerInvariant() switch
     {
         "approved" or "transferred" => GatewayOutcome.Captured,
-        "declined" or "canceled" or "cancelled" => GatewayOutcome.Failed,
+        "declined" or "canceled" or "cancelled" or "expired" => GatewayOutcome.Failed,
         "pending" => GatewayOutcome.Pending,
         "refunded" => GatewayOutcome.Refunded,
         _ => GatewayOutcome.Ignored
+    };
+
+    /// <summary>
+    /// Motif d'échec LISIBLE, stocké dans <c>Payment.FailureReason</c> et lu depuis la
+    /// console d'administration. Le statut brut (« expired », « canceled ») n'y disait
+    /// rien de ce qu'il fallait comprendre ni de ce qu'il fallait répondre à l'acheteur.
+    /// </summary>
+    private static string MotifDEchec(string status) => status.ToLowerInvariant() switch
+    {
+        "expired" => "Transaction expirée : l'acheteur ne l'a pas validée dans les 24 heures (code PIN Mobile Money non saisi).",
+        "canceled" or "cancelled" => "Transaction annulée par le prestataire : solde insuffisant ou incident de paiement.",
+        "declined" => "Transaction interrompue par l'acheteur.",
+        _ => $"Paiement refusé par FedaPay (statut « {status} »)."
     };
 
     protected override string? ExtractReference(JsonElement root)

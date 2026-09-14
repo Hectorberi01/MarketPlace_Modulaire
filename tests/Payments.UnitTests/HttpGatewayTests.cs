@@ -53,6 +53,9 @@ public class HttpGatewayTests : IDisposable
     private static StripeHttpGateway RealStripe(string webhookSecret = "")
         => new(new StubHttpClientFactory(), new StripeOptions { WebhookSecret = webhookSecret });
 
+    private static FedaPayHttpGateway RealFedaPay()
+        => new(new StubHttpClientFactory(), new FedaPayOptions());
+
     private const string StripeSecret = "whsec_stripe";
 
     private const string StripeBody =
@@ -149,6 +152,72 @@ public class HttpGatewayTests : IDisposable
 
         result.Verified.Should().BeTrue();
         result.Outcome.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA TABLE DES STATUTS FEDAPAY, STATUT PAR STATUT.
+    ///
+    /// « expired » manquait. Il retombait sur `Ignored`, et un `Ignored` n'applique
+    /// RIEN au paiement : celui-ci restait `Pending` définitivement, et la garde
+    /// « un paiement est déjà en cours pour cette commande » rendait la commande
+    /// impayable pour toujours. C'est le chemin exact qu'emprunte un acheteur qui ne
+    /// saisit pas son code PIN à temps — le cas le plus banal du Mobile Money.
+    ///
+    /// Ce test énumère le vocabulaire PUBLIÉ par FedaPay. Il n'est pas là pour
+    /// vérifier que le `switch` compile : il est là pour que l'ajout d'un statut au
+    /// catalogue du prestataire, ou le retrait d'une ligne du `switch`, se voie ici
+    /// plutôt qu'en production sur une commande bloquée.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    [Theory]
+    [InlineData("approved", GatewayOutcome.Captured)]
+    [InlineData("transferred", GatewayOutcome.Captured)]
+    [InlineData("pending", GatewayOutcome.Pending)]
+    [InlineData("declined", GatewayOutcome.Failed)]
+    [InlineData("canceled", GatewayOutcome.Failed)]
+    [InlineData("expired", GatewayOutcome.Failed)]
+    [InlineData("refunded", GatewayOutcome.Refunded)]
+    public async Task FedaPay_mappe_chaque_statut_publie(string statut, GatewayOutcome attendu)
+    {
+        var body = $"{{\"name\":\"transaction.{statut}\",\"entity\":{{\"id\":4242,\"status\":\"{statut}\"}}}}";
+
+        var result = await RealFedaPay().ParseWebhookAsync(body, signatureHeader: null);
+
+        result.Verified.Should().BeTrue();
+        result.Outcome.Should().Be(attendu, $"le statut FedaPay « {statut} » doit conclure le paiement");
+        result.ProviderReference.Should().Be("4242");
+    }
+
+    /// <summary>
+    /// Un statut expiré doit laisser dans le paiement un motif qui explique la suite à
+    /// donner. Le statut brut n'apprenait rien à qui lisait la console.
+    /// </summary>
+    [Fact]
+    public async Task FedaPay_explique_l_expiration_dans_le_motif_d_echec()
+    {
+        var body = "{\"name\":\"transaction.expired\",\"entity\":{\"id\":7,\"status\":\"expired\"}}";
+
+        var result = await RealFedaPay().ParseWebhookAsync(body, signatureHeader: null);
+
+        result.Outcome.Should().Be(GatewayOutcome.Failed);
+        result.FailureReason.Should().Contain("expirée").And.Contain("24 heures");
+    }
+
+    /// <summary>
+    /// Un statut hors catalogue reste sans effet — on préfère ne rien conclure plutôt
+    /// que de conclure de travers. Ce test fige ce choix pour qu'il reste DÉLIBÉRÉ,
+    /// et non le simple oubli qu'était « expired ».
+    /// </summary>
+    [Fact]
+    public async Task FedaPay_ignore_un_statut_inconnu_plutot_que_de_deviner()
+    {
+        var body = "{\"name\":\"transaction.quelque_chose\",\"entity\":{\"id\":7,\"status\":\"quelque_chose\"}}";
+
+        var result = await RealFedaPay().ParseWebhookAsync(body, signatureHeader: null);
+
+        result.Verified.Should().BeTrue();
+        result.Outcome.Should().Be(GatewayOutcome.Ignored);
     }
 
     [Fact]

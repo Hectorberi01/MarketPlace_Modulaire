@@ -258,7 +258,30 @@ services:
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+      # ═══════════════════════════════════════════════════════════════════════
+      # PAS DE « :? » ICI, ET CE N'EST PAS UN RELÂCHEMENT.
+      #
+      # Compose INTERPOLE TOUT LE FICHIER avant de filtrer par profil. Un
+      # `${POSTGRES_PASSWORD:?…}` sur un service désactivé fait donc échouer
+      # TOUTES les commandes compose — `pull`, `up`, `ps`, `config` — et pas
+      # seulement celles qui démarreraient ce service.
+      #
+      # Constaté en déploiement : depuis la bascule vers le VPS base, le gabarit
+      # n'écrit plus les POSTGRES_* dans .env.prod (ils n'ont plus de sens), et
+      # `docker compose pull` s'arrêtait sur « required variable POSTGRES_PASSWORD
+      # is missing a value » — pour deux services que ce déploiement n'allait
+      # justement PAS démarrer.
+      #
+      # CE QUI GARDE LE GARDE-FOU. Il remonte d'un cran, là où la valeur est
+      # produite : le rôle Ansible refuse désormais de déployer un Postgres
+      # co-hébergé sans mot de passe (tâche « Exiger un mot de passe… »). Et si
+      # l'on arrivait quand même ici avec une valeur vide, l'image postgres
+      # refuse d'initialiser un cluster sans mot de passe — l'erreur est claire,
+      # elle arrive au démarrage du conteneur, et elle n'emporte plus le reste.
+      # ═══════════════════════════════════════════════════════════════════════
+      # Voir l'encadré du service `postgres` : `:?` est impossible ici, Compose
+      # interpole AVANT de filtrer par profil.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -314,7 +337,9 @@ services:
       # `DISPATCH_CONNECTION` — mêmes variables, une seule source.
       POSTGRES_DB: "${DISPATCH_DB:-dispatch}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}"
+      # Voir l'encadré du service `postgres` : `:?` est impossible ici, Compose
+      # interpole AVANT de filtrer par profil.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
     volumes:
       - pgdata-dispatch:/var/lib/postgresql/data
     healthcheck:
