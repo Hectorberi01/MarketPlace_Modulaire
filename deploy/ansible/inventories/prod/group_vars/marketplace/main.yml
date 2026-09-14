@@ -62,6 +62,26 @@ root_domain: hba-express.org
 # `.env.prod` du VPS à chaque déploiement : une valeur corrigée à la main sur le
 # serveur tient jusqu'au prochain `deploy-prod.sh`, puis disparaît sans bruit.
 seller_console_domain: consolevendeur.hba-express.com
+
+# ═════════════════════════════════════════════════════════════════════════════════
+# TROIS SURFACES WEB SUR UNE AUTRE RACINE QUE LES BFF.
+#
+# Les API et les BFF restent sur `root_domain` (.org) ; ce que le PUBLIC voit vit sur
+# le .com. Ce sont donc des noms d'hôte COMPLETS, et non des sous-domaines dérivés :
+# écrire `www.{{ root_domain }}` produirait `www.hba-express.org`, c'est-à-dire un
+# domaine qui n'est pas celui qu'on sert — et silencieusement.
+#
+# Le certificat est émis par NOM D'HÔTE (challenge TLS-ALPN) : chacun de ces noms doit
+# résoudre vers le VPS AVANT le premier démarrage, sinon Traefik échoue à l'émettre et
+# le service reste injoignable en HTTPS.
+# ═════════════════════════════════════════════════════════════════════════════════
+
+# Vitrine acheteur. L'apex est servi aussi, pour qui tape le domaine sans « www ».
+site_domain: www.hba-express.com
+site_domain_apex: hba-express.com
+
+# Console d'administration.
+admin_console_domain: console.hba-express.com
 acme_email: hector.adjakpa@hbatechettrade.com
 
 # Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
@@ -149,7 +169,10 @@ fedapay_enable_payouts: false
 # hba-express.org n'est PAS vérifié dans ce compte (Resend renvoyait 403). Pour repasser
 # sur no-reply@hba-express.org, il faut d'abord vérifier ce domaine dans Resend (SPF+DKIM).
 email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
-email_app_base_url: "https://hba-express.org"
+# Base des liens cliquables envoyés aux ACHETEURS — confirmation d'adresse,
+# réinitialisation de mot de passe. C'est la vitrine qu'ils doivent atteindre, donc le
+# .com : un lien vers l'ancien domaine mènerait à une page qui n'existe plus.
+email_app_base_url: "https://www.hba-express.com"
 
 # Amorçage du 1er admin : compte créé au 1er démarrage (admin_password → vault).
 admin_email: "hector.adjakpa@hbatechettrade.com"
@@ -213,3 +236,5 @@ post_deploy_public_urls:
   - "https://api.{{ root_domain }}/api/payments/return"
   - "https://dispatch.{{ root_domain }}/api/courier"
   - "https://{{ seller_console_domain }}/api/health"
+  - "https://{{ site_domain }}/api/health"
+  - "https://{{ admin_console_domain }}/api/health"

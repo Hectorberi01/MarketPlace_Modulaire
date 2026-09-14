@@ -631,7 +631,10 @@ services:
       start_period: 20s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.console.rule=Host(`console.${ROOT_DOMAIN}`)"
+      # NOM D'HÔTE COMPLET, comme la console vendeur : la console publique vit sur le
+      # .com, les BFF restent sur le .org. Écrire `console.${ROOT_DOMAIN}` produirait
+      # `console.hba-express.org`, un domaine qu'on ne sert plus — et silencieusement.
+      - "traefik.http.routers.console.rule=Host(`${ADMIN_CONSOLE_DOMAIN:-console.${ROOT_DOMAIN}}`)"
       - "traefik.http.routers.console.entrypoints=websecure"
       - "traefik.http.routers.console.tls.certresolver=letsencrypt"
       - "traefik.http.routers.console.middlewares=edge-chain@file"
@@ -679,7 +682,14 @@ services:
       start_period: 20s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.site.rule=Host(`${ROOT_DOMAIN}`) || Host(`www.${ROOT_DOMAIN}`)"
+      # Les DEUX formes sont servies : « www » est la forme canonique — c'est elle que
+      # le sitemap et les balises canoniques déclarent — et l'apex répond aussi, pour qui
+      # tape le domaine sans préfixe. Pas de redirection : deux hôtes sur le même
+      # service, et la balise canonique dit à l'indexation laquelle compte.
+      #
+      # CHAQUE nom doit résoudre vers le VPS avant le premier démarrage : le certificat
+      # est émis par nom d'hôte.
+      - "traefik.http.routers.site.rule=Host(`${SITE_DOMAIN:-${ROOT_DOMAIN}}`) || Host(`${SITE_DOMAIN_APEX:-www.${ROOT_DOMAIN}}`)"
       - "traefik.http.routers.site.entrypoints=websecure"
       - "traefik.http.routers.site.tls.certresolver=letsencrypt"
       - "traefik.http.routers.site.middlewares=edge-chain@file"
