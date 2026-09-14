@@ -43,7 +43,7 @@ wg_app_public_key: "LvZzrirV5QAh2XxX9q9qO3BXyCoC87zJnaOtSNwf0jw="
 wg_db_public_key: "ZI9+NE77rozypwkCVEuYc+GNWt9oAS/6GMiaeOrwkDg="
 wg_prefix: 24
 
-wg_app_endpoint_host: "193.168.145.162"
+wg_app_endpoint_host: "79.137.35.129"
 wg_db_endpoint_host: "51.255.40.214"
 
 # ─────────────────────────────────────────────────────────────────────────────────

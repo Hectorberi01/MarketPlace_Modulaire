@@ -47,4 +47,24 @@ public static class NotificationDeduplicationKeys
     /// </summary>
     public static string CourierDeliveryFailedSeller(Guid deliveryJobId, Guid sellerUserId)
         => $"courier-delivery-failed:seller:{deliveryJobId}:{sellerUserId}";
+
+    /// <summary>« Nouveau litige à traiter » adressée à l'administrateur — une par litige.</summary>
+    public static string DisputeOpenedAdmin(Guid disputeId)
+        => $"dispute-opened:admin:{disputeId}";
+
+    /// <summary>
+    /// « Litige ouvert sur une commande » adressée à un vendeur — une par litige ET par
+    /// vendeur : une commande peut être expédiée par plusieurs boutiques.
+    /// </summary>
+    public static string DisputeOpenedSeller(Guid disputeId, Guid sellerUserId)
+        => $"dispute-opened:seller:{disputeId}:{sellerUserId}";
+
+    /// <summary>
+    /// « Litige tranché » adressée à un vendeur — une par litige et par vendeur.
+    ///
+    /// LA CLÉ PORTE LE LITIGE, PAS LA COMMANDE : une commande peut voir plusieurs litiges
+    /// successifs, et un litige rouvert puis re-tranché est un fait nouveau à annoncer.
+    /// </summary>
+    public static string DisputeResolvedSeller(Guid disputeId, Guid sellerUserId)
+        => $"dispute-resolved:seller:{disputeId}:{sellerUserId}";
 }

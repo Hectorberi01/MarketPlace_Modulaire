@@ -637,9 +637,53 @@ services:
       - "traefik.http.routers.console.middlewares=edge-chain@file"
       - "traefik.http.services.console.loadbalancer.server.port=3000"
 
-  # NOTE : le service « site » (hbaexpress-site) sera ajouté ICI quand son image
-  # aura été poussée (dépôt + CI hbaexpress-site). L'ajouter avant casserait le
-  # déploiement backend : Ansible ferait un `pull site:latest` d'une image absente.
+  # ---------------- Vitrine acheteur (hba-express.org) ----------------
+  # Le navigateur ne joint QUE ce service ; c'est lui qui parle au BFF client, par
+  # l'adresse interne Docker. Aucun jeton n'atteint la page : ils vivent dans un cookie
+  # chiffré côté Next.
+  #
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # LES URL PUBLIQUES NE SE RÈGLENT PAS ICI. Elles sont figées AU BUILD de l'image.
+  #
+  # Next remplace les variables `NEXT_PUBLIC_*` par leur valeur pendant la compilation,
+  # y compris dans le code serveur. Les poser dans ce fichier ne changerait donc rien —
+  # et pire, laisserait croire qu'elles sont réglées. Vérifié : une image construite
+  # sans elles sort `<loc>http://localhost:3002</loc>` dans son sitemap, quoi qu'on lui
+  # passe à l'exécution.
+  #
+  # Elles se passent en `--build-arg` : voir docker/boutique.Dockerfile et
+  # docs/mise-en-service.md du dépôt web.
+  # ═════════════════════════════════════════════════════════════════════════════════
+  site:
+    image: ${IMAGE_PREFIX:-marketplace}/boutique:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    networks: [marketplace-net]
+    environment:
+      NODE_ENV: "production"
+      CLIENT_BFF_URL: "http://bff-client:8080"
+      # `:?` et non `:-` : ce secret CHIFFRE LA SESSION ACHETEUR. Vide, il la rend
+      # forgeable. Il doit être DISTINCT de ceux des deux consoles — depuis que la
+      # surface entre dans le sceau de la session, un secret partagé n'est plus
+      # exploitable d'une surface à l'autre, mais rien ne justifie de le partager.
+      SESSION_SECRET: "${CLIENT_SESSION_SECRET:?CLIENT_SESSION_SECRET requis (openssl rand -base64 48)}"
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      bff-client:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.site.rule=Host(`${ROOT_DOMAIN}`) || Host(`www.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.site.entrypoints=websecure"
+      - "traefik.http.routers.site.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.site.middlewares=edge-chain@file"
+      - "traefik.http.services.site.loadbalancer.server.port=3000"
 
   # ---------------- BFF Driveur (coursier : compte + portefeuille) ----------------
   # Quatrième surface, découpée par AUDIENCE : la même API pour l'application mobile du

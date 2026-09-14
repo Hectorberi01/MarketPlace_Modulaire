@@ -211,9 +211,20 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         // devait rouvrir l'application pour découvrir une réponse.
         services.AddScoped<IIntegrationEventHandler<MessageSentIntegrationEvent>, MessageSentNotificationHandler>();
 
-        // LITIGES. À l'ouverture, l'ADMIN est alerté (sinon rien ne remonte hors console) ;
-        // à la résolution, l'ACHETEUR apprend la décision.
+        // LITIGES. TROIS destinataires, pas un.
+        //
+        //   · ouverture  → l'ADMIN (sinon rien ne remonte hors console) ET LE VENDEUR ;
+        //   · résolution → l'ACHETEUR ET LE VENDEUR.
+        //
+        // Le vendeur ne recevait rien, dans aucun des deux cas : il découvrait un litige
+        // en ouvrant l'écran par hasard, sur la fonction où le délai de réponse joue le
+        // plus contre lui. `DisputeSellerTargets` fait la traduction commande →
+        // EXPÉDITIONS → vendeurs → comptes, que le module Litiges ne peut pas faire
+        // lui-même (il ne connaît ni vendeur ni boutique). Le passage par les expéditions
+        // n'est pas un détour : c'est le critère exact du contrôle d'accès du BFF, donc
+        // la seule façon de ne prévenir que des vendeurs qui pourront ouvrir le litige.
         services.AddScoped<AdminNotificationTarget>();
+        services.AddScoped<DisputeSellerTargets>();
         services.AddScoped<IIntegrationEventHandler<DisputeOpenedIntegrationEvent>, DisputeOpenedNotificationHandler>();
         services.AddScoped<IIntegrationEventHandler<DisputeResolvedIntegrationEvent>, DisputeResolvedNotificationHandler>();
 
