@@ -1,6 +1,7 @@
 using MediatR;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Inventory.Contracts;
 using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Ordering.Contracts;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
@@ -33,7 +34,8 @@ public static class ClientCatalogEndpoints
 
     /// <summary>Fiche produit agrégée : prix/offres (+ nom boutique) + avis résumés (1 appel).</summary>
     private static async Task<IResult> ProductDetailAsync(
-        Guid id, ICatalogModuleApi catalog, IOfferModuleApi offers, ISellerModuleApi sellers, ISender sender, CancellationToken ct)
+        Guid id, ICatalogModuleApi catalog, IOfferModuleApi offers, ISellerModuleApi sellers,
+        IInventoryModuleApi inventory, ISender sender, CancellationToken ct)
     {
         // LECTURE PUBLIQUE : nul si le produit n'est pas en vente. Cette route est
         // anonyme, et elle servait jusqu'ici les brouillons jamais validés comme les
@@ -55,6 +57,43 @@ public static class ClientCatalogEndpoints
             sellerNames[sid] = s?.ShopName ?? "Vendeur";
         }
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LA DISPONIBILITÉ, ANNONCÉE AVANT LE PANIER ET NON APRÈS.
+        //
+        // Rien n'indiquait qu'un article était en rupture : l'acheteur le découvrait au
+        // moment d'ajouter au panier, c'est-à-dire APRÈS avoir décidé d'acheter. C'est
+        // la pire place pour une mauvaise nouvelle.
+        //
+        // ON N'EXPOSE PAS LE CHIFFRE EXACT, ET C'EST DÉLIBÉRÉ. Cette route est ANONYME :
+        // publier « 47 en stock » livre à quiconque l'état des stocks de chaque vendeur,
+        // renseigne la concurrence et permet de suivre les ventes par différence entre
+        // deux relevés. On publie donc un signal à trois états — disponible, bientôt
+        // épuisé, indisponible — et le compte exact UNIQUEMENT sous le seuil, là où il
+        // sert l'acheteur (« plus que 2 ») plutôt qu'un observateur.
+        //
+        // SÉQUENTIEL, comme les noms de boutique juste au-dessus : les DbContext sont
+        // « scoped » et ne supportent pas les accès concurrents. Une offre ne portant
+        // qu'un SKU, on interroge une fois par SKU DISTINCT — plusieurs offres du même
+        // article ne déclenchent pas plusieurs requêtes.
+        // ═══════════════════════════════════════════════════════════════════════════
+        const int seuilStockFaible = 5;
+        var disponibilites = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var sku in productOffers.Select(o => o.Sku).Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                disponibilites[sku] = (await inventory.GetAvailabilityAsync(sku, ct)).TotalAvailable;
+            }
+            catch (Exception)
+            {
+                // Le stock est un ORNEMENT de la fiche : s'il est indisponible, la fiche
+                // doit rester consultable et l'article restera achetable — c'est le Saga
+                // de commande qui refusera, avec son propre message. Faire échouer la
+                // page entière parce qu'un module annexe ne répond pas serait troquer
+                // une information manquante contre une vente perdue.
+            }
+        }
+
         var enrichedOffers = productOffers.Select(o => new
         {
             id = o.Id,
@@ -70,6 +109,14 @@ public static class ClientCatalogEndpoints
             // Promotion vendeur : prix d'origine barré + fin de remise (null si aucune).
             compareAtAmount = o.CompareAtAmount,
             discountEndsOnUtc = o.DiscountEndsOnUtc,
+            // `null` = stock inconnu (module injoignable) : la vitrine n'affiche alors
+            // RIEN plutôt qu'un « indisponible » qu'elle ne peut pas garantir.
+            inStock = disponibilites.TryGetValue(o.Sku, out var dispo) ? dispo > 0 : (bool?)null,
+            lowStock = disponibilites.TryGetValue(o.Sku, out var d2) && d2 > 0 && d2 <= seuilStockFaible,
+            // Le compte n'est envoyé QUE sous le seuil. Voir l'encadré ci-dessus.
+            availableQuantity = disponibilites.TryGetValue(o.Sku, out var d3) && d3 > 0 && d3 <= seuilStockFaible
+                ? d3
+                : (int?)null,
         });
 
         return Results.Ok(new

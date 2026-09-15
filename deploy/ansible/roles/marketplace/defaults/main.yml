@@ -39,6 +39,18 @@ registry_pull_required:
 registry_pull_optional:
   - console
   - seller-console
+  # `site` — LA VITRINE, OUBLIÉE ICI ALORS QUE SON SERVICE EXISTE.
+  #
+  # Le service `site` a été ajouté au compose sans être inscrit dans cette liste. Un
+  # déploiement du backend ne récupérait donc jamais sa nouvelle image : la vitrine
+  # restait sur celle du jour où son conteneur avait été créé, pendant que les deux
+  # consoles, elles, se mettaient à jour. Le symptôme — « je publie et rien ne
+  # change » — ne désignait rien, puisque le déploiement se terminait en vert.
+  #
+  # Dans la liste OPTIONNELLE et non la requise : son image vit dans le dépôt de la
+  # vitrine, qui a sa propre CI. Si elle n'a jamais été publiée, le déploiement du
+  # backend doit le SIGNALER et continuer, pas s'arrêter.
+  - site
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # VÉRIFICATION APRÈS DÉPLOIEMENT.
