@@ -218,7 +218,7 @@ public static class ClientMessagingEndpoints
         await file.CopyToAsync(ms, ct);
 
         var upload = await mediaStorage.UploadAsync(
-            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray()), ct);
+            new MediaUpload(file.FileName, check.ContentType!, ms.ToArray(), MediaUsage.ChatAttachment), ct);
 
         return upload.IsFailure
             ? Results.BadRequest(new { error = upload.Error.Message })

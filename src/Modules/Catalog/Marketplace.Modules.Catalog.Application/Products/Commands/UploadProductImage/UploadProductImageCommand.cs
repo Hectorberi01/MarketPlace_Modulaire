@@ -40,7 +40,7 @@ internal sealed class UploadProductImageCommandHandler : ICommandHandler<UploadP
         }
 
         var upload = await _mediaStorage.UploadAsync(
-            new MediaUpload(command.FileName, command.ContentType, command.Content, command.AltText), cancellationToken);
+            new MediaUpload(command.FileName, command.ContentType, command.Content, MediaUsage.ProductImage, command.AltText), cancellationToken);
         if (upload.IsFailure)
         {
             return Result.Failure<string>(upload.Error);

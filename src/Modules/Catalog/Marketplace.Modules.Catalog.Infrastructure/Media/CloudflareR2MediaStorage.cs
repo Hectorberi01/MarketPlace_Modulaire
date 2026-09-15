@@ -8,10 +8,21 @@ using Marketplace.Modules.Catalog.Application.Abstractions;
 namespace Marketplace.Modules.Catalog.Infrastructure.Media;
 
 /// <summary>
-/// Stockage RÉEL des images produit sur Cloudflare R2 (API compatible S3), signé
+/// Stockage RÉEL des médias publics sur Cloudflare R2 (API compatible S3), signé
 /// en AWS Signature V4 (sans SDK). Upload (PutObject) et suppression (DeleteObject)
 /// pour respecter la contrainte : retirer une image d'un produit ou supprimer un
 /// produit efface aussi le(s) fichier(s) sur R2. Les URLs renvoyées sont publiques.
+///
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// LE BUCKET N'EST PLUS UNIQUE : IL EST DÉDUIT DE L'USAGE.
+///
+/// Chaque <see cref="MediaUsage"/> résout vers un bucket, un domaine public et une
+/// racine de clé — la table vit dans <see cref="CloudflareR2MediaOptions"/>. Le
+/// bucket entre donc dans l'URI CANONIQUE de la signature : signer contre le mauvais
+/// bucket produit un « SignatureDoesNotMatch » et non un « NoSuchBucket », ce qui est
+/// la piste la plus trompeuse qui soit. C'est pourquoi `BuildSignedRequest` reçoit le
+/// bucket en paramètre au lieu de le lire sur les options.
+/// ═════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed class CloudflareR2MediaStorage : IMediaStorage
 {
@@ -30,10 +41,11 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
     {
         try
         {
-            var key = BuildObjectKey(file.FileName);
+            var destination = _options.Resoudre(file.Usage);
+            var key = BuildObjectKey(destination.KeyRoot, file.FileName);
             var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
 
-            using var request = BuildSignedRequest(HttpMethod.Put, key, file.Content, contentType);
+            using var request = BuildSignedRequest(HttpMethod.Put, destination.BucketName, key, file.Content, contentType);
             request.Content = new ByteArrayContent(file.Content);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
 
@@ -45,7 +57,7 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
                     Error.Failure("media.upload_failed", $"Cloudflare R2 — échec upload ({(int)response.StatusCode}) : {body}"));
             }
 
-            var url = $"{_options.PublicBaseUrl.TrimEnd('/')}/{EncodeKey(key)}";
+            var url = $"{destination.PublicBaseUrl}/{EncodeKey(key)}";
             return new StoredMedia(url, key, contentType);
         }
         catch (Exception ex)
@@ -97,9 +109,15 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
                 "Identifiant de média invalide : une clé de stockage est attendue."));
         }
 
+        // La clé porte son usage dans son premier segment : c'est ce qui permet de
+        // retrouver le bucket sans changer le format stocké en base, et sans faire
+        // confiance à quoi que ce soit venu de l'appelant.
+        var destination = _options.ResoudreParCle(key);
+
         try
         {
-            using var request = BuildSignedRequest(HttpMethod.Delete, key, Array.Empty<byte>(), contentType: null);
+            using var request = BuildSignedRequest(
+                HttpMethod.Delete, destination.BucketName, key, Array.Empty<byte>(), contentType: null);
 
             var response = await CreateClient().SendAsync(request, cancellationToken);
             // 204 = supprimé ; 404 = déjà absent → on considère l'objet supprimé (idempotent).
@@ -119,7 +137,13 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
 
     // ---- Signature AWS SigV4 (PUT/DELETE) ----
 
-    private HttpRequestMessage BuildSignedRequest(HttpMethod method, string key, byte[] payload, string? contentType)
+    /// <summary>
+    /// Signe une requête objet contre <paramref name="bucket"/>. Le bucket est un
+    /// paramètre et NON une lecture des options : il change d'un usage à l'autre, et
+    /// il entre dans l'URI canonique de la signature.
+    /// </summary>
+    private HttpRequestMessage BuildSignedRequest(
+        HttpMethod method, string bucket, string key, byte[] payload, string? contentType)
     {
         var now = DateTime.UtcNow;
         var amzDate = now.ToString("yyyyMMddTHHmmssZ");
@@ -131,7 +155,7 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
         // serait rejetée sans que rien n'indique pourquoi.
         var host = new Uri(_options.Endpoint).Authority;
         var payloadHash = Hex(SHA256.HashData(payload));
-        var canonicalUri = "/" + _options.BucketName + "/" + EncodeKey(key);
+        var canonicalUri = "/" + bucket + "/" + EncodeKey(key);
 
         // En-têtes canoniques triés : content-type (si présent), host, x-amz-content-sha256, x-amz-date.
         var headers = new SortedDictionary<string, string>(StringComparer.Ordinal)
@@ -159,7 +183,7 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
         var authorization =
             $"AWS4-HMAC-SHA256 Credential={_options.AccessKeyId}/{scope}, SignedHeaders={signedHeaders}, Signature={signature}";
 
-        var requestUri = $"{_options.Endpoint}/{_options.BucketName}/{EncodeKey(key)}";
+        var requestUri = $"{_options.Endpoint}/{bucket}/{EncodeKey(key)}";
         var request = new HttpRequestMessage(method, requestUri);
         request.Headers.TryAddWithoutValidation("x-amz-date", amzDate);
         request.Headers.TryAddWithoutValidation("x-amz-content-sha256", payloadHash);
@@ -172,7 +196,15 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
 
     private HttpClient CreateClient() => _httpClientFactory.CreateClient(ClientName);
 
-    private string BuildObjectKey(string fileName)
+    /// <summary>
+    /// Clé d'objet : « [préfixe global/]racine-d-usage/{guid}/{nom nettoyé} ».
+    ///
+    /// LE GUID N'EST PAS DÉCORATIF. Il rend la clé unique, donc l'objet immuable sous
+    /// sa clé : deux vendeurs qui téléversent « photo.jpg » ne s'écrasent pas, et le
+    /// contenu servi par une URL ne change jamais — ce qui autorise un cache public
+    /// de très longue durée en tête du bucket.
+    /// </summary>
+    private string BuildObjectKey(string keyRoot, string fileName)
     {
         var safe = new string((fileName ?? "image").Select(c =>
             char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '-').ToArray());
@@ -182,7 +214,7 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
         }
 
         var prefix = _options.KeyPrefix.Trim().Trim('/');
-        var baseKey = $"products/{Guid.NewGuid():N}/{safe}";
+        var baseKey = $"{keyRoot}/{Guid.NewGuid():N}/{safe}";
         return string.IsNullOrEmpty(prefix) ? baseKey : $"{prefix}/{baseKey}";
     }
 
@@ -201,7 +233,9 @@ public sealed class CloudflareR2MediaStorage : IMediaStorage
     /// que résolue en objet d'autrui.
     ///
     /// La remontée de chemin est refusée pour la même raison : `products/../kyb/…`
-    /// est une clé valide pour S3, qui ne normalise pas les segments.
+    /// est une clé valide pour S3, qui ne normalise pas les segments. Elle l'est
+    /// d'autant plus depuis qu'il existe PLUSIEURS buckets : une remontée permettrait
+    /// de viser une racine d'usage qui n'est pas la sienne.
     /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static string? NormalizeKey(string externalId)

@@ -29,8 +29,24 @@ internal sealed class ConfiguredMediaUrlPolicy : IMediaUrlPolicy
 
     public ConfiguredMediaUrlPolicy(CloudflareR2MediaOptions r2, MediaServiceOptions media)
     {
-        var hosts = new List<string>(2);
+        var hosts = new List<string>();
         AddHost(hosts, r2.PublicBaseUrl);
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // CHAQUE BUCKET DÉDIÉ APPORTE SON PROPRE DOMAINE PUBLIC.
+        //
+        // Depuis que les médias sont répartis par usage, il n'y a plus UN domaine
+        // d'images mais un par bucket exposé. Les oublier reviendrait à refuser
+        // l'attachement par URL d'un visuel que la plateforme vient elle-même de
+        // téléverser — un administrateur qui recopie l'adresse d'une image de rayon
+        // se verrait répondre que l'hôte n'est pas autorisé, alors que c'est le
+        // nôtre.
+        // ─────────────────────────────────────────────────────────────────────────
+        foreach (var bucket in r2.Buckets.Values)
+        {
+            AddHost(hosts, bucket.PublicBaseUrl);
+        }
+
         AddHost(hosts, media.BaseUrl);
         _hosts = hosts;
     }

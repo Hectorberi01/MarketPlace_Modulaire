@@ -139,6 +139,39 @@ entre les deux buckets.
 | `R2_MEDIA_KEY_PREFIX` | ⬜ | — | `Storage__CloudflareR2Media__KeyPrefix` | Préfixe des clés, ex. `MarketPlace`. |
 | `R2_MEDIA_PUBLIC_BASE_URL` | ⬜* | — | `Storage__CloudflareR2Media__PublicBaseUrl` | URL publique des images. En prod, préférer un **domaine personnalisé** connecté au bucket (pas la limite `r2.dev`). |
 
+### 4.1 Un bucket par usage de média
+
+Le bucket ci-dessus reste la destination PAR DÉFAUT. Chaque usage peut recevoir le sien.
+
+**Deux variables, deux effets distincts, à ne pas renseigner en même temps :**
+
+| Ce qu'on renseigne | Ce qui se passe |
+|---|---|
+| le NOM seul | le bucket est **créé** au démarrage s'il n'existe pas ; aucun trafic n'y va encore |
+| le nom **et** l'URL | les téléversements de cet usage partent vers ce bucket |
+
+La séquence est donc : nommer → déployer → rattacher un domaine au bucket dans le
+tableau de bord Cloudflare → renseigner l'URL → redéployer. Entre les deux, l'usage
+retombe sur le bucket par défaut et **les images continuent de s'afficher**.
+
+Un bucket créé par l'API S3 est **privé** : lui rattacher un domaine public
+(`r2.dev` ou personnalisé) n'existe pas dans l'API S3 et reste une étape manuelle.
+C'est toute la raison de ce fonctionnement en deux temps.
+
+| Variable | Oblig. | Secret | Clé .NET | Description |
+|---|:---:|:---:|---|---|
+| `R2_MEDIA_AUTO_CREATE_BUCKETS` | ⬜ | — | `Storage__CloudflareR2Media__AutoCreateBuckets` | `true` par défaut. Créer un bucket exige un jeton **Admin Read & Write** : avec un jeton « Object Read & Write », la tentative renvoie 403, l'échec est journalisé et l'API démarre normalement. Le mettre à `false` et créer les buckets à la main est le choix le plus strict. |
+| `R2_MEDIA_BUCKET_CATEGORIES` / `R2_MEDIA_URL_CATEGORIES` | ⬜ | — | `…__Buckets__CategoryImage__…` | Visuels de rayon, famille et catégorie. |
+| `R2_MEDIA_BUCKET_BANNERS` / `R2_MEDIA_URL_BANNERS` | ⬜ | — | `…__Buckets__ContentBanner__…` | Bannières de l'accueil et des pages éditoriales. |
+| `R2_MEDIA_BUCKET_SHOPS` / `R2_MEDIA_URL_SHOPS` | ⬜ | — | `…__Buckets__ShopLogo__…` et `…__Buckets__ShopBanner__…` | Logo **et** couverture des boutiques vendeur : même propriétaire, même visibilité, un seul bucket. Les racines de clé `boutiques-logo/` et `boutiques-couverture/` les séparent. |
+| `R2_MEDIA_BUCKET_AVATARS` / `R2_MEDIA_URL_AVATARS` | ⬜ | — | `…__Buckets__Avatar__…` | Photos de profil. Aucun écran ne les téléverse encore. |
+| `R2_MEDIA_BUCKET_CHAT` / `R2_MEDIA_URL_CHAT` | ⬜ | — | `…__Buckets__ChatAttachment__…` | Pièces jointes de conversation et de litige. **Ces contenus ne sont pas destinés au public.** Le bucket est séparé précisément pour qu'on puisse lui retirer tout domaine public et basculer la lecture en URL présignée sans retoucher un appelant. Tant qu'un domaine y est rattaché, l'URL reste lisible par quiconque la possède. |
+
+Racines de clé, identiques dans tous les buckets et **stables** — c'est le premier
+segment qui permet à la suppression de retrouver le bucket d'un objet :
+`products/` (historique), `categories/`, `bannieres/`, `boutiques-logo/`,
+`boutiques-couverture/`, `avatars/`, `messagerie/`.
+
 ---
 
 ## 5. Traitement d'image — Cloudinary (optionnel)

@@ -107,6 +107,14 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         {
             services.AddHttpClient(CloudflareR2MediaStorage.ClientName);
             services.AddScoped<IMediaStorage, CloudflareR2MediaStorage>();
+
+            // Création au démarrage des buckets déclarés qui manquent. Non bloquant :
+            // voir l'encadré de R2BucketProvisioner, notamment le fait qu'un bucket
+            // créé ainsi reste PRIVÉ tant qu'un domaine ne lui est pas rattaché.
+            if (r2Media.AutoCreateBuckets)
+            {
+                services.AddHostedService<R2BucketProvisioner>();
+            }
         }
         else if (mediaOptions.IsConfigured)
         {
@@ -223,6 +231,31 @@ public sealed class CatalogModuleInstaller : IModuleInstaller
         {
             options.Region = section["Region"]!;
         }
+
+        // Création automatique des buckets manquants. Vrai par défaut : le cas
+        // ordinaire est qu'on vient d'ajouter un usage et qu'on veut que ça marche.
+        // Le mettre à faux en production est un choix défendable — voir l'encadré de
+        // R2BucketProvisioner sur le jeton d'administration que cela exige.
+        if (bool.TryParse(section["AutoCreateBuckets"], out var autoCreation))
+        {
+            options.AutoCreateBuckets = autoCreation;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // UN BUCKET PAR USAGE : « Storage:CloudflareR2Media:Buckets:{Usage}:… ».
+        //
+        // Les noms d'usage sont ceux de l'énumération MediaUsage, à la lettre près.
+        // Un usage absent de la configuration, ou dont il manque l'un des deux
+        // champs, retombe sur le bucket par défaut — `DeclarerBucket` s'en charge et
+        // ignore silencieusement les déclarations incomplètes.
+        // ─────────────────────────────────────────────────────────────────────────
+        var buckets = section.GetSection("Buckets");
+        foreach (var usage in Enum.GetValues<MediaUsage>())
+        {
+            var sousSection = buckets.GetSection(usage.ToString());
+            options.DeclarerBucket(usage, sousSection["BucketName"], sousSection["PublicBaseUrl"]);
+        }
+
         return options;
     }
 

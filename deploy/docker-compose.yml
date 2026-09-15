@@ -50,6 +50,35 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
   Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+  # ── UN BUCKET PAR USAGE DE MÉDIA ───────────────────────────────────────────
+  #
+  # NOMMER un bucket suffit à le faire CRÉER au démarrage. Il ne reçoit des
+  # téléversements que le jour où son domaine public est renseigné LUI AUSSI :
+  # un bucket R2 fraîchement créé est PRIVÉ, et l'API S3 ne sait pas lui rattacher
+  # de domaine — c'est une étape manuelle du tableau de bord Cloudflare.
+  #
+  # Tant que l'URL manque, l'usage retombe sur le bucket par défaut ci-dessus, et
+  # les images continuent de s'afficher. C'est le point : la bascule se fait en
+  # renseignant une variable, pas en redéployant du code.
+  Storage__CloudflareR2Media__AutoCreateBuckets: "${R2_MEDIA_AUTO_CREATE_BUCKETS:-true}"
+  Storage__CloudflareR2Media__Buckets__CategoryImage__BucketName: "${R2_MEDIA_BUCKET_CATEGORIES:-}"
+  Storage__CloudflareR2Media__Buckets__CategoryImage__PublicBaseUrl: "${R2_MEDIA_URL_CATEGORIES:-}"
+  Storage__CloudflareR2Media__Buckets__ContentBanner__BucketName: "${R2_MEDIA_BUCKET_BANNERS:-}"
+  Storage__CloudflareR2Media__Buckets__ContentBanner__PublicBaseUrl: "${R2_MEDIA_URL_BANNERS:-}"
+  # Logo ET couverture d'une boutique partagent le même bucket : même propriétaire,
+  # même durée de vie, même visibilité. Seule la racine de clé les sépare.
+  Storage__CloudflareR2Media__Buckets__ShopLogo__BucketName: "${R2_MEDIA_BUCKET_SHOPS:-}"
+  Storage__CloudflareR2Media__Buckets__ShopLogo__PublicBaseUrl: "${R2_MEDIA_URL_SHOPS:-}"
+  Storage__CloudflareR2Media__Buckets__ShopBanner__BucketName: "${R2_MEDIA_BUCKET_SHOPS:-}"
+  Storage__CloudflareR2Media__Buckets__ShopBanner__PublicBaseUrl: "${R2_MEDIA_URL_SHOPS:-}"
+  Storage__CloudflareR2Media__Buckets__Avatar__BucketName: "${R2_MEDIA_BUCKET_AVATARS:-}"
+  Storage__CloudflareR2Media__Buckets__Avatar__PublicBaseUrl: "${R2_MEDIA_URL_AVATARS:-}"
+  # PIÈCES JOINTES DE CONVERSATION ET DE LITIGE. Le bucket est séparé pour qu'on
+  # PUISSE lui retirer son domaine public le jour où la lecture passera en URL
+  # présignée — sans retoucher un seul appelant. Tant qu'un domaine y est rattaché,
+  # ces images restent lisibles par quiconque possède l'URL.
+  Storage__CloudflareR2Media__Buckets__ChatAttachment__BucketName: "${R2_MEDIA_BUCKET_CHAT:-}"
+  Storage__CloudflareR2Media__Buckets__ChatAttachment__PublicBaseUrl: "${R2_MEDIA_URL_CHAT:-}"
   # ── Service de dispatch (livraison par coursier) ────────────────────────────
   # Adresse INTERNE : la marketplace parle au dispatch par le réseau Docker, jamais
   # par Traefik. Sans elle, « commande prête » part dans l'outbox, échoue, et finit

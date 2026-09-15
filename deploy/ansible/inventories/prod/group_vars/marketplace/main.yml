@@ -156,6 +156,35 @@ r2_bucket_name: hbaexpress-documents-pdf
 r2_public_base_url: ""
 r2_media_bucket_name: habexpress-images
 r2_media_key_prefix: products-images
+
+# ── UN BUCKET PAR USAGE DE MÉDIA ─────────────────────────────────────────────
+#
+# Le NOM fait créer le bucket au démarrage ; l'URL y aiguille le trafic. Les deux
+# ne se renseignent PAS en même temps : on nomme d'abord, on déploie, on rattache
+# le domaine dans le tableau de bord Cloudflare, puis on renseigne l'URL au
+# déploiement suivant. Entre les deux, l'usage retombe sur `r2_media_bucket_name`
+# et rien ne casse.
+#
+# Les quatre premiers buckets existent déjà ; les deux derniers seront créés au
+# premier démarrage après ce déploiement.
+r2_media_auto_create_buckets: "true"
+
+r2_media_bucket_categories: "categories"
+r2_media_url_categories: ""        # domaine public du bucket « categories »
+
+r2_media_bucket_banners: "hbaexpressbaniere"
+r2_media_url_banners: ""           # domaine public du bucket « hbaexpressbaniere »
+
+r2_media_bucket_shops: "hbaexpress-boutiques"
+r2_media_url_shops: ""             # logos ET couvertures de boutique
+
+r2_media_bucket_avatars: ""        # pas encore d'écran qui téléverse un avatar
+r2_media_url_avatars: ""
+
+# Pièces jointes de conversation et de litige. Séparées pour pouvoir, plus tard,
+# leur RETIRER tout domaine public et passer la lecture en URL présignée.
+r2_media_bucket_chat: "hbaexpress-messagerie"
+r2_media_url_chat: ""
 # En prod, préférer un domaine personnalisé connecté au bucket public.
 r2_media_public_base_url: "https://images.hbamediacore.fr"
 

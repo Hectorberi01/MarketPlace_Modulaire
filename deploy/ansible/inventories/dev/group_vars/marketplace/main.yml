@@ -23,4 +23,9 @@ r2_bucket_name: "documents-pdf"
 r2_public_base_url: ""
 r2_media_bucket_name: "images"
 r2_media_key_prefix: "MarketPlace-dev"
+
+# Creation automatique DESACTIVEE en developpement : un poste de dev ne doit pas
+# pouvoir creer d'objet durable dans le compte Cloudflare. Sans identifiants R2,
+# c'est de toute facon le stockage simule qui repond.
+r2_media_auto_create_buckets: "false"
 r2_media_public_base_url: ""

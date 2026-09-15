@@ -71,7 +71,7 @@ internal sealed class CreateProductWithImagesCommandHandler
         // 1) Upload des images vers le service média EN UNE SEULE requête « batch »
         //    (avant toute écriture en base : si l'upload échoue, rien n'est créé).
         var uploads = command.Images
-            .Select(i => new MediaUpload(i.FileName, i.ContentType, i.Content, i.AltText))
+            .Select(i => new MediaUpload(i.FileName, i.ContentType, i.Content, MediaUsage.ProductImage, i.AltText))
             .ToList();
 
         var uploadResult = await _mediaStorage.UploadManyAsync(uploads, cancellationToken);

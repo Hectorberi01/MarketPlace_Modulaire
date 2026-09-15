@@ -133,6 +133,21 @@ r2_bucket_name: documents-pdf
 r2_public_base_url: ""
 r2_media_bucket_name: images
 r2_media_key_prefix: MarketPlace-staging
+
+# Un bucket par usage. Noms SUFFIXES : staging ne doit jamais ecrire dans un
+# bucket de production, et la separation par prefixe de cle ne suffit pas —
+# une suppression mal ciblee traverse un prefixe, pas un bucket.
+r2_media_auto_create_buckets: "true"
+r2_media_bucket_categories: "hbaexpress-categories-staging"
+r2_media_url_categories: ""
+r2_media_bucket_banners: "hbaexpress-bannieres-staging"
+r2_media_url_banners: ""
+r2_media_bucket_shops: "hbaexpress-boutiques-staging"
+r2_media_url_shops: ""
+r2_media_bucket_avatars: ""
+r2_media_url_avatars: ""
+r2_media_bucket_chat: "hbaexpress-messagerie-staging"
+r2_media_url_chat: ""
 r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
