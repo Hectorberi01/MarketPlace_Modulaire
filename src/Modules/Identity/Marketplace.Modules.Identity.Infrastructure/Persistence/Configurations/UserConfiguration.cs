@@ -57,6 +57,11 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.AcceptedTermsVersion).HasMaxLength(40);
         builder.Property(u => u.AcceptedTermsOnUtc);
 
+        // Photo de profil : l'URL servie, et l'identifiant distant qui permet de
+        // supprimer le fichier précédent lors d'un remplacement. Voir User.SetAvatar.
+        builder.Property(u => u.AvatarUrl).HasMaxLength(500);
+        builder.Property(u => u.AvatarExternalId).HasMaxLength(200);
+
         // Nulle = l'e-mail n'a pas été vérifié, ou l'a été authentiquement par le
         // titulaire. Renseignée = un administrateur s'est porté garant.
         builder.Property(u => u.EmailVerifiedByAdminOnUtc);

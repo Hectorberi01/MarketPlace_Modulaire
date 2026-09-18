@@ -2,6 +2,7 @@ using MediatR;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
@@ -36,6 +37,11 @@ public static class SellerAccountEndpoints
         account.MapGet("/me", ProfileAsync);
         account.MapPut("/me", UpdateProfileAsync);
         account.MapPost("/me/accept-terms", AcceptTermsAsync);
+
+        // Photo de profil du VENDEUR, à ne pas confondre avec le logo de sa boutique :
+        // l'une est la personne, l'autre l'enseigne. Les deux coexistent sur cet écran.
+        account.MapPost("/me/avatar", UploadAvatarAsync).DisableAntiforgery();
+        account.MapDelete("/me/avatar", RemoveAvatarAsync);
         account.MapPost("/me/change-password", ChangePasswordAsync);
         account.MapPost("/me/mfa/setup", MfaSetupAsync);
         account.MapPost("/me/mfa/confirm", MfaConfirmAsync);
@@ -270,7 +276,8 @@ public static class SellerAccountEndpoints
             u.Id, u.FirstName, u.LastName, u.Email, u.PhoneNumber,
             u.Status, u.EmailVerified, u.MfaEnabled, u.RoleIds,
             shop?.ShopName, shop?.LogoUrl, shop?.KybStatus,
-            u.AcceptedTermsVersion, u.AcceptedTermsOnUtc));
+            u.AcceptedTermsVersion, u.AcceptedTermsOnUtc,
+            u.AvatarUrl));
     }
 
     /// <summary>Met à jour le profil du compte (nom, téléphone).</summary>
@@ -325,6 +332,20 @@ public static class SellerAccountEndpoints
     /// imbriquer dans un objet « shop » aurait cassé leur désérialisation pour le seul
     /// plaisir d'une hiérarchie plus jolie.
     /// </summary>
+    /// <summary>Téléverse ou remplace la photo de profil du vendeur.</summary>
+    private static async Task<IResult> UploadAvatarAsync(
+        ClaimsPrincipal user, IFormFile file, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => SellerBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.SetAsync(userId, file, sender, mediaStorage, ct);
+
+    /// <summary>Retire la photo de profil du vendeur.</summary>
+    private static async Task<IResult> RemoveAvatarAsync(
+        ClaimsPrincipal user, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => SellerBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.RemoveAsync(userId, sender, mediaStorage, ct);
+
     public sealed record SellerAccountMe(
         Guid Id,
         string FirstName,
@@ -342,7 +363,9 @@ public static class SellerAccountEndpoints
         // l'accord : elle afficherait l'écran de consentement à chaque lancement,
         // ou — pire — ne l'afficherait jamais.
         string? AcceptedTermsVersion,
-        DateTime? AcceptedTermsOnUtc);
+        DateTime? AcceptedTermsOnUtc,
+        // Photo du vendeur lui-même. LogoUrl, plus haut, est celle de sa boutique.
+        string? AvatarUrl);
     public sealed record ProfileRequest(string FirstName, string LastName, string PhoneNumber);
     public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
     public sealed record MfaCodeRequest(string Code);

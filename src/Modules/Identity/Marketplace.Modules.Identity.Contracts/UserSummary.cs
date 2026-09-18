@@ -20,4 +20,8 @@ public sealed record UserSummary(
     // Renseignée = l'e-mail a été marqué vérifié PAR UN ADMINISTRATEUR, sur attestation,
     // et non par le titulaire cliquant un lien. La console doit pouvoir le montrer :
     // « Oui » et « Oui, sur parole » ne valent pas la même chose.
-    DateTime? EmailVerifiedByAdminOnUtc = null);
+    DateTime? EmailVerifiedByAdminOnUtc = null,
+    // Photo de profil, telle que servie par le stockage média public. Null = aucune
+    // photo : c'est à la surface d'afficher des initiales, pas au serveur d'inventer
+    // une image par défaut dont l'adresse changerait un jour.
+    string? AvatarUrl = null);

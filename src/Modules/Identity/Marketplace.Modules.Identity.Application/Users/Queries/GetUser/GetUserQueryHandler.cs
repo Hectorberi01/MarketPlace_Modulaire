@@ -32,6 +32,7 @@ internal sealed class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserSumm
             user.RoleIds.ToList(),
             user.AcceptedTermsVersion,
             user.AcceptedTermsOnUtc,
-            user.EmailVerifiedByAdminOnUtc);
+            user.EmailVerifiedByAdminOnUtc,
+            user.AvatarUrl);
     }
 }

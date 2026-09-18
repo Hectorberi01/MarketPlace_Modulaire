@@ -4,7 +4,9 @@ using System.Security.Claims;
 // autres fichiers d'endpoints de ce BFF l'importent déjà. Sans elle, la compilation
 // échoue sur un message qui parle de `Result`, pas d'un using manquant.
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Delivery.Contracts;
+using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Modules.Notifications.Application.Devices;
 
 namespace Marketplace.Bff.Driver.Endpoints;
@@ -24,6 +26,12 @@ public static class DriverAccountEndpoints
         var me = app.MapDriverGroup("/driver", "Driveur · Compte");
 
         me.MapGet("/me", MeAsync).WithName("DriverMe");
+
+        // Photo de profil. Elle vit sur le COMPTE, pas sur le coursier : le même
+        // fichier sert à l'acheteur qui suit sa livraison et à la console admin, et un
+        // coursier qui est aussi acheteur ne la dépose qu'une fois.
+        me.MapPost("/me/avatar", UploadAvatarAsync).WithName("DriverUploadAvatar").DisableAntiforgery();
+        me.MapDelete("/me/avatar", RemoveAvatarAsync).WithName("DriverRemoveAvatar");
 
         // ═════════════════════════════════════════════════════════════════════════
         // L'APPAREIL DU COURSIER, POUR QUE L'OFFRE LE RÉVEILLE.
@@ -47,7 +55,7 @@ public static class DriverAccountEndpoints
 
     /// <summary>Statut du coursier et coordonnées de versement.</summary>
     private static async Task<IResult> MeAsync(
-        ClaimsPrincipal user, IDeliveryModuleApi couriers, CancellationToken ct)
+        ClaimsPrincipal user, IDeliveryModuleApi couriers, ISender sender, CancellationToken ct)
     {
         if (DriverBff.CurrentUserId(user) is not { } userId)
         {
@@ -55,8 +63,57 @@ public static class DriverAccountEndpoints
         }
 
         var courier = await couriers.GetCourierByUserAsync(userId, ct);
-        return courier is null ? Results.NotFound(new { error = "not_a_courier" }) : Results.Ok(courier);
+        if (courier is null)
+        {
+            return Results.NotFound(new { error = "not_a_courier" });
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // LA JOINTURE SE FAIT ICI, ET NULLE PART AILLEURS.
+        //
+        // La photo est sur le compte (module Identity), le coursier est dans Delivery,
+        // et les deux modules ne se lisent pas entre eux. Le BFF est le seul endroit
+        // qui a les deux sous la main : c'est donc lui qui assemble.
+        //
+        // La réponse garde EXACTEMENT les champs de CourierSummary, avec un champ de
+        // plus. Une application déjà publiée continue de la lire sans rien changer.
+        // ═════════════════════════════════════════════════════════════════════════
+        var compte = await sender.Send(new GetUserQuery(userId), ct);
+
+        return Results.Ok(new DriverMeView(
+            courier.Id, courier.UserId, courier.DisplayName, courier.Phone, courier.Status,
+            courier.CanBePaid, courier.ExternalRef, courier.Payout, courier.CreatedAtUtc,
+            compte.IsSuccess ? compte.Value.AvatarUrl : null));
     }
+
+    /// <summary>Téléverse ou remplace la photo de profil du coursier.</summary>
+    private static async Task<IResult> UploadAvatarAsync(
+        ClaimsPrincipal user, IFormFile file, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => DriverBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.SetAsync(userId, file, sender, mediaStorage, ct);
+
+    /// <summary>Retire la photo de profil du coursier.</summary>
+    private static async Task<IResult> RemoveAvatarAsync(
+        ClaimsPrincipal user, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => DriverBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.RemoveAsync(userId, sender, mediaStorage, ct);
+
+    /// <summary>
+    /// CourierSummary, plus la photo du compte. Voir la jointure dans MeAsync.
+    /// </summary>
+    public sealed record DriverMeView(
+        Guid Id,
+        Guid UserId,
+        string DisplayName,
+        string Phone,
+        string Status,
+        bool CanBePaid,
+        string? ExternalRef,
+        CourierPayoutSummary? Payout,
+        DateTime CreatedAtUtc,
+        string? AvatarUrl);
 
     /// <summary>
     /// Enregistre le jeton push de cet appareil.

@@ -33,7 +33,8 @@ internal sealed class ListUsersQueryHandler : IQueryHandler<ListUsersQuery, Page
             .Select(u => new UserSummary(
                 u.Id.Value, u.FirstName, u.LastName, u.Email.Value, u.PhoneNumber.Value,
                 u.Status.ToString(), u.EmailVerified, u.MfaEnabled, u.RoleIds.ToList(),
-                u.AcceptedTermsVersion, u.AcceptedTermsOnUtc, u.EmailVerifiedByAdminOnUtc))
+                u.AcceptedTermsVersion, u.AcceptedTermsOnUtc, u.EmailVerifiedByAdminOnUtc,
+                u.AvatarUrl))
             .ToList();
 
         return Result.Success(new PagedResult<UserSummary>(items, total, page, pageSize, statusCounts));

@@ -140,6 +140,26 @@ public sealed class User : AggregateRoot<UserId>
 
     public DateTime? AcceptedTermsOnUtc { get; private set; }
 
+    /// <summary>
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// PHOTO DE PROFIL — SUR LE COMPTE, PAS SUR LE RÔLE.
+    ///
+    /// Une personne, une photo. Le même compte peut être acheteur aujourd'hui et
+    /// coursier demain ; lui demander deux fois la même photo serait absurde, et
+    /// laisserait deux fichiers à supprimer le jour où il s'en va.
+    ///
+    /// DEUX COLONNES, ET C'EST VOULU. L'URL est ce qu'on sert ; l'identifiant
+    /// distant est ce qui permet de SUPPRIMER le fichier précédent quand la photo
+    /// est remplacée. Le logo de boutique, lui, ne garde que l'URL — et chaque
+    /// changement y abandonne donc un fichier orphelin. Acceptable pour un logo ;
+    /// pas pour le visage de quelqu'un, dans un bucket qui ne fait que grossir.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public string? AvatarUrl { get; private set; }
+
+    /// <summary>Identifiant du fichier côté service média. Voir <see cref="AvatarUrl"/>.</summary>
+    public string? AvatarExternalId { get; private set; }
+
     public IReadOnlyCollection<UserRoleAssignment> RoleAssignments => _roleAssignments.AsReadOnly();
     public IReadOnlyCollection<RefreshToken> RefreshTokens => _refreshTokens.AsReadOnly();
 
@@ -364,6 +384,39 @@ public sealed class User : AggregateRoot<UserId>
         ClearEmailVerificationCode();
 
         Raise(new UserEmailConfirmedDomainEvent(Id.Value, Email.Value));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Pose ou retire la photo de profil.
+    ///
+    /// Les deux valeurs bougent ENSEMBLE, toujours : une URL sans identifiant
+    /// distant est un fichier qu'on ne pourra plus supprimer, un identifiant sans
+    /// URL est un fichier que plus personne ne sert. Passer null aux deux retire la
+    /// photo.
+    ///
+    /// UN COMPTE SUPPRIMÉ NE REPREND PAS DE PHOTO. Anonymize a effacé la sienne ;
+    /// rien ne doit pouvoir en reposer une derrière.
+    /// </summary>
+    public Result SetAvatar(string? url, string? externalId)
+    {
+        if (Status == UserStatus.Deleted)
+        {
+            return Result.Failure(Error.Validation(
+                "identity.user.deleted", "Ce compte est supprimé."));
+        }
+
+        var adresse = string.IsNullOrWhiteSpace(url) ? null : url.Trim();
+        var identifiant = string.IsNullOrWhiteSpace(externalId) ? null : externalId.Trim();
+
+        if (adresse is not null && adresse.Length > 500)
+        {
+            return Result.Failure(Error.Validation(
+                "identity.user.avatar_url_too_long", "L'adresse de la photo est trop longue."));
+        }
+
+        AvatarUrl = adresse;
+        AvatarExternalId = identifiant;
         return Result.Success();
     }
 
@@ -659,6 +712,13 @@ public sealed class User : AggregateRoot<UserId>
 
         MfaEnabled = false;
         MfaSecret = null;
+
+        // La photo part avec le reste. Le FICHIER, lui, reste sur le stockage média :
+        // le domaine ne fait pas d'entrée-sortie. C'est à la commande de suppression
+        // de compte de le retirer, en se servant de AvatarExternalId AVANT d'appeler
+        // cette méthode — après, l'identifiant n'existe plus.
+        AvatarUrl = null;
+        AvatarExternalId = null;
 
         EmailVerified = false;
         ClearEmailVerificationCode();

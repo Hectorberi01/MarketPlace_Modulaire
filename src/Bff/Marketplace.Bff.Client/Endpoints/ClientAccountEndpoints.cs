@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
+using Marketplace.Modules.Catalog.Application.Abstractions;
 using Marketplace.Modules.Identity.Application.PaymentMethods;
 using Marketplace.Modules.Identity.Application.Users.Commands.AcceptTerms;
 using Marketplace.Modules.Sellers.Contracts;
@@ -46,6 +47,11 @@ public static class ClientAccountEndpoints
 
         mobile.MapGet("/account/profile", ProfileAsync);
         mobile.MapPut("/account/profile", UpdateProfileAsync);
+
+        // Photo de profil (multipart, champ « file »). L'URL remonte dans le profil,
+        // sur UserSummary.AvatarUrl — il n'y a donc pas de route de lecture dédiée.
+        mobile.MapPost("/account/avatar", UploadAvatarAsync).DisableAntiforgery();
+        mobile.MapDelete("/account/avatar", RemoveAvatarAsync);
 
         // Consentement aux conditions générales. La version acceptée remonte déjà
         // dans le profil (UserSummary) : l'app compare, et n'affiche l'écran que
@@ -253,6 +259,20 @@ public static class ClientAccountEndpoints
         => ClientBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new UpdateUserProfileCommand(userId, request.FirstName, request.LastName, request.PhoneNumber), ct)).Match(() => Results.NoContent());
+
+    /// <summary>Téléverse ou remplace la photo de profil de l'acheteur.</summary>
+    private static async Task<IResult> UploadAvatarAsync(
+        ClaimsPrincipal user, IFormFile file, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => ClientBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.SetAsync(userId, file, sender, mediaStorage, ct);
+
+    /// <summary>Retire la photo de profil de l'acheteur.</summary>
+    private static async Task<IResult> RemoveAvatarAsync(
+        ClaimsPrincipal user, ISender sender, IMediaStorage mediaStorage, CancellationToken ct)
+        => ClientBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : await AvatarUpload.RemoveAsync(userId, sender, mediaStorage, ct);
 
     /// <summary>Liste d'envies.</summary>
     private static async Task<IResult> WishlistAsync(ClaimsPrincipal user, ISender sender, CancellationToken ct)

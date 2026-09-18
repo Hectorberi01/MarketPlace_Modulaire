@@ -1,4 +1,5 @@
 using MediatR;
+using Marketplace.Modules.Identity.Application.Users.Queries.GetUser;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Delivery.Application.Couriers;
 using Marketplace.Modules.Delivery.Contracts;
@@ -84,7 +85,38 @@ public static class AdminCourierEndpoints
         => (await sender.Send(new ListCouriersQuery(status), ct)).Match(list => Results.Ok(list));
 
     private static async Task<IResult> GetAsync(Guid id, ISender sender, CancellationToken ct)
-        => (await sender.Send(new GetCourierQuery(id), ct)).Match(c => Results.Ok(c));
+    {
+        var coursier = await sender.Send(new GetCourierQuery(id), ct);
+        if (coursier.IsFailure)
+        {
+            return coursier.Match(c => Results.Ok(c));
+        }
+
+        // La photo est sur le COMPTE, pas sur le coursier : la jointure se fait ici,
+        // comme sur /driver/me. Un échec de lecture du compte ne fait pas échouer la
+        // fiche — l'administration a besoin du statut et du compte de versement bien
+        // plus que d'une photo.
+        var compte = await sender.Send(new GetUserQuery(coursier.Value.UserId), ct);
+        var c = coursier.Value;
+
+        return Results.Ok(new AdminCourierView(
+            c.Id, c.UserId, c.DisplayName, c.Phone, c.Status, c.CanBePaid,
+            c.ExternalRef, c.Payout, c.CreatedAtUtc,
+            compte.IsSuccess ? compte.Value.AvatarUrl : null));
+    }
+
+    /// <summary>CourierSummary, plus la photo du compte. Voir la jointure ci-dessus.</summary>
+    public sealed record AdminCourierView(
+        Guid Id,
+        Guid UserId,
+        string DisplayName,
+        string Phone,
+        string Status,
+        bool CanBePaid,
+        string? ExternalRef,
+        CourierPayoutSummary? Payout,
+        DateTime CreatedAtUtc,
+        string? AvatarUrl);
 
     /// <summary>Enregistre un coursier. Il naît NON payable : la vérification reste à faire.</summary>
     private static async Task<IResult> RegisterAsync(RegisterCourierRequest request, ISender sender, CancellationToken ct)
