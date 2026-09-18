@@ -66,7 +66,7 @@ public static class IdentityDataSeeder
     /// <summary>
     /// Issue de l'amorçage du compte administrateur.
     ///
-    /// ⚠️ Ce type existe parce que la méthode renvoyait auparavant `void` et sortait
+    /// Ce type existe parce que la méthode renvoyait auparavant `void` et sortait
     /// silencieusement dans QUATRE cas d'échec. L'appelant journalisait « compte
     /// vérifié/créé » sans condition — un message rassurant et faux. Sur une base
     /// neuve, l'échec ne se manifestait qu'au moment où personne ne parvenait à se

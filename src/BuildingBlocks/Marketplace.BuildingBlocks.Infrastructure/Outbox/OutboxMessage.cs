@@ -60,7 +60,7 @@ public sealed class OutboxMessage
     /// Instant de mise en lettre morte. Non null = le message a épuisé ses tentatives et ne
     /// sera PLUS JAMAIS rejoué automatiquement.
     ///
-    /// ⚠️ Une lettre morte est une perte métier réelle : un e-mail jamais envoyé, un gain
+    /// Une lettre morte est une perte métier réelle : un e-mail jamais envoyé, un gain
     /// vendeur jamais crédité, un stock jamais libéré. Elle DOIT être vue par un humain —
     /// d'où le log Critical et l'endpoint <c>GET /admin/outbox/dead-letters</c>. Enterrer un
     /// message en silence serait pire que de le rejouer sans fin : au moins, la boucle

@@ -162,7 +162,7 @@ public partial class BeninLocationAddress : Migration
         // conservée dans « address_line » pour que la correction reste possible sans
         // deviner : on préfixe plutôt que d'écraser.
         //
-        // ⚠️ `left(..., 500)` N'EST PAS DÉCORATIF. `address_city` fait 150 caractères et
+        // `left(..., 500)` N'EST PAS DÉCORATIF. `address_city` fait 150 caractères et
         // `address_line` 500 : concaténées, elles peuvent en produire 651, qu'aucune
         // colonne varchar(500) n'accepte. PostgreSQL rejette l'UPDATE, la migration
         // avorte — et comme elles s'appliquent au démarrage, ni l'API ni les BFF ne

@@ -3,6 +3,9 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Marketplace.Api.Extensions;
 using Marketplace.BuildingBlocks.Infrastructure.Security;
+using Marketplace.Modules.Delivery.Contracts;
+using Marketplace.Modules.Notifications.Application.Abstractions;
+using Marketplace.Modules.Notifications.Domain.Devices;
 using Marketplace.Modules.Settlement.Application.Wallets;
 using Marketplace.Modules.Shipping.Application.Shipments.Commands;
 
@@ -126,6 +129,25 @@ public static class DeliveryEndpoints
             .WithName("DeliveryCourseFailed")
             .AllowAnonymous();
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // RÉVEILLER LE COURSIER, TÉLÉPHONE RANGÉ.
+        //
+        // Le dispatch tient le hub SignalR : il couvre l'application OUVERTE. Une offre
+        // vit vingt-cinq secondes ; un coursier qui a remis son téléphone dans sa poche
+        // ne la voyait donc jamais, et la course partait à celui qui regardait son
+        // écran au bon moment.
+        //
+        // POURQUOI CETTE ROUTE PLUTÔT QU'UN ENVOI DEPUIS LE DISPATCH. Les jetons
+        // d'appareil, les préférences et le compte de service FCM vivent ICI. Le
+        // compose du dispatch va jusqu'à ANNULER le montage du compte de service —
+        // « ce service n'envoie aucune notification push » est une décision écrite, pas
+        // un oubli. On la respecte : le dispatch annonce le fait, la marketplace le
+        // pousse.
+        // ═════════════════════════════════════════════════════════════════════════
+        delivery.MapPost("/couriers/offer", CourierOfferAsync)
+            .WithName("DeliveryCourierOffer")
+            .AllowAnonymous();
+
         return app;
     }
 
@@ -197,6 +219,89 @@ public static class DeliveryEndpoints
         return request is null
             ? (Results.BadRequest(new { error = "invalid_payload" }), null)
             : (null, request);
+    }
+
+    /// <summary>
+    /// Une offre de course vient d'être proposée : réveille le téléphone du coursier.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// PUSH SEUL, SANS NOTIFICATION IN-APP — ET C'EST LE POINT DÉLICAT.
+    ///
+    /// `NotificationDispatcher.NotifyAsync` aurait été le chemin le plus court, mais il
+    /// PERSISTE une notification à chaque appel. Une offre est éphémère et nombreuse :
+    /// un coursier peut en recevoir des dizaines par jour, dont la plupart expirent en
+    /// vingt-cinq secondes. On aurait rempli sa liste de notifications de courses qui
+    /// n'existent plus — et l'application livreur n'a d'ailleurs aucun écran pour la
+    /// lire. On pousse donc directement, sans trace persistante.
+    ///
+    /// BEST-EFFORT, COMME LE HUB. L'offre existe en base dès sa création : elle reste
+    /// acceptable par `GET /api/courier/offers`. Un échec d'envoi ne doit donc jamais
+    /// faire échouer l'annonce — on répond 204 même sans jeton d'appareil, sans quoi le
+    /// dispatch journaliserait une erreur pour un coursier qui n'a tout simplement pas
+    /// installé l'application.
+    ///
+    /// AUCUN DÉTAIL DE COURSE DANS LA CHARGE UTILE. Le titre et le corps sont écrits
+    /// ici, et la donnée transportée se limite au `jobId` : une notification s'affiche
+    /// sur un écran verrouillé, et l'adresse du client n'a rien à y faire. L'application
+    /// va chercher le détail avec son jeton, quand le coursier ouvre.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    private static async Task<IResult> CourierOfferAsync(
+        HttpRequest http,
+        IConfiguration configuration,
+        IDeliveryModuleApi couriers,
+        IDeviceTokenRepository devices,
+        IPushSender push,
+        CancellationToken ct)
+    {
+        var (rejection, request) = await ReadSignedAsync<CourierOfferRequest>(http, configuration, ct);
+        if (rejection is not null)
+        {
+            return rejection;
+        }
+
+        if (request is null)
+        {
+            return Results.BadRequest(new { error = "invalid_payload" });
+        }
+
+        // Du COURSIER au COMPTE : les jetons d'appareil sont rangés par utilisateur,
+        // et le dispatch ne connaît que l'identifiant coursier.
+        var courier = await couriers.GetCourierAsync(request.CourierId, ct);
+        if (courier is null)
+        {
+            // 204 et non 404 : un coursier inconnu ici signale une désynchronisation
+            // entre les deux services, pas un appel malformé. Le dispatch n'a rien à
+            // rejouer — l'offre, elle, est déjà valable de son côté.
+            return Results.NoContent();
+        }
+
+        var tokens = await devices.ListByUserAsync(courier.UserId, ct);
+        if (tokens.Count == 0)
+        {
+            return Results.NoContent();
+        }
+
+        var resultat = await push.SendAsync(
+            tokens.Select(t => t.Token).ToList(),
+            new PushMessage(
+                "Nouvelle course proposée",
+                "Ouvrez l'application pour l'accepter avant qu'elle n'expire.",
+                new Dictionary<string, string>
+                {
+                    ["type"] = "courier_offer",
+                    ["jobId"] = request.DeliveryJobId.ToString(),
+                }),
+            ct);
+
+        // Purge des jetons que FCM déclare morts : sans elle, un téléphone réinstallé
+        // laisse derrière lui un jeton qu'on réessaie à chaque offre, indéfiniment.
+        if (resultat.InvalidTokens.Count > 0)
+        {
+            await devices.RemoveByTokensAsync(resultat.InvalidTokens, ct);
+        }
+
+        return Results.NoContent();
     }
 
     /// <summary>
@@ -318,6 +423,17 @@ public static class DeliveryEndpoints
 
         return result.Match(() => Results.NoContent());
     }
+
+    /// <summary>
+    /// Annonce d'une offre proposée. Miroir du `CourierOfferPayload` du service de
+    /// dispatch — CONTRAT ENTRE DEUX DÉPLOIEMENTS, à changer des deux côtés à la fois.
+    /// </summary>
+    /// <param name="CourierId">À qui l'offre est faite. Résolu ici en compte utilisateur.</param>
+    /// <param name="DeliveryJobId">
+    /// La course proposée. Transportée dans la notification pour que l'ouverture mène
+    /// directement à elle — et c'est la SEULE donnée de course qui voyage.
+    /// </param>
+    public sealed record CourierOfferRequest(Guid CourierId, Guid DeliveryJobId);
 
     /// <summary>
     /// Annonce d'une course livrée.

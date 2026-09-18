@@ -21,7 +21,7 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
         // et prend le type de la clé principale (UserId, mappé en uuid).
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
-        // ⚠️ Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
+        // Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
         // ne sévrait PAS pour autant. Le `OnDelete(DeleteBehavior.Cascade)` ci-dessous
         // gouverne aussi le sort des ORPHELINS — avec Cascade, un enfant retiré de la
         // collection est SUPPRIMÉ, pas mis à NULL. Les données de production l'ont confirmé.

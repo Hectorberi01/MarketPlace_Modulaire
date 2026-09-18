@@ -19,7 +19,7 @@ internal sealed class ConversationRepository : IConversationRepository
             // la projection verrait zéro réaction, zéro pièce jointe et aucun masquage
             // (« supprimer pour moi » n'aurait plus aucun effet visible).
             //
-            // ⚠️ AsSplitQuery : avec PLUSIEURS collections `.Include` (attachments +
+            // AsSplitQuery : avec PLUSIEURS collections `.Include` (attachments +
             // reactions + hiddenFor), une requête unique produit un cartésien qu'EF Core 8
             // bufferise mal — certaines collections reviennent VIDES. On charge donc chaque
             // collection dans sa propre requête. C'était la vraie cause du bug des pièces

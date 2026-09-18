@@ -21,7 +21,7 @@ internal sealed class KybDocumentConfiguration : IEntityTypeConfiguration<KybDoc
         // l'index) et prend le type de la clé principale (SellerId -> uuid).
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
-        // ⚠️ CORRECTION D'UNE AFFIRMATION ANTÉRIEURE (voir doc 22). Ce commentaire disait
+        // CORRECTION D'UNE AFFIRMATION ANTÉRIEURE (voir doc 22). Ce commentaire disait
         // que, sans IsRequired(), EF « sèvrerait » les enfants retirés d'une collection
         // (UPDATE enfant SET FK = NULL) et produirait des orphelins. C'est FAUX ici : le
         // `OnDelete(DeleteBehavior.Cascade)` ci-dessous gouverne aussi le sort des orphelins,

@@ -36,7 +36,7 @@ public static class ConcurrencyTokenExtensions
     /// </para>
     ///
     /// <para>
-    /// ⚠️ <b>UN JETON N'EST ÉVALUÉ QUE DANS UN `UPDATE`.</b> Si une opération ne modifie
+    /// <b>UN JETON N'EST ÉVALUÉ QUE DANS UN `UPDATE`.</b> Si une opération ne modifie
     /// aucune colonne de la table parente — parce qu'elle n'insère ou ne supprime que des
     /// lignes ENFANTS — EF n'émet aucun UPDATE, et ce verrou est <b>totalement inerte</b>
     /// sur ce chemin. C'était le cas d'<c>InventoryItem.Reserve()</c> : voir la colonne
@@ -46,7 +46,7 @@ public static class ConcurrencyTokenExtensions
     /// </para>
     ///
     /// <para>
-    /// ⚠️ <b>AUCUN REJEU AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.</b> <c>ModuleDbContext</c>
+    /// <b>AUCUN REJEU AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.</b> <c>ModuleDbContext</c>
     /// dispatche les événements de domaine et draine l'outbox <b>avant</b>
     /// <c>base.SaveChangesAsync</c>. Rejouer la commande dans le même scope
     /// re-dispatcherait ces événements et dupliquerait les messages d'outbox : on

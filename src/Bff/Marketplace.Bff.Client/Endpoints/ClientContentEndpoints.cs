@@ -19,8 +19,131 @@ public static class ClientContentEndpoints
 
         content.MapGet("/{slot}", GetBySlotAsync);
 
+        // ═════════════════════════════════════════════════════════════════════════
+        // LES TEXTES LÉGAUX ONT LEUR PROPRE ROUTE, ET CE N'EST PAS UN DOUBLON.
+        //
+        // `/content/{slot}` normalise TOUT en paires { question, réponse } et
+        // fabrique une FAQ par défaut quand le slot est vide. Servir des CGV par ce
+        // chemin les découperait en questions-réponses et — le point décisif — ne
+        // transporterait AUCUNE version.
+        //
+        // Or la version est ce que le serveur enregistre à l'acceptation. Un texte
+        // servi sans elle donnerait un consentement qui ne désigne rien.
+        // ═════════════════════════════════════════════════════════════════════════
+        var legal = app.MapGroup("/client/legal").WithTags("Client · Légal").AllowAnonymous();
+
+        legal.MapGet("/{document}", GetLegalDocumentAsync);
+
         return app;
     }
+
+    /// <summary>
+    /// Les documents servis, et la correspondance avec leur emplacement CMS.
+    ///
+    /// LISTE FERMÉE. Sans elle, `/client/legal/help_faq` rendrait la FAQ sous une
+    /// forme légale, et n'importe quel slot du CMS deviendrait lisible sous un nom
+    /// qui promet un document contractuel.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> LegalSlots =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["terms"] = "legal_terms_customer",
+            ["privacy"] = "legal_privacy_customer",
+        };
+
+    /// <summary>
+    /// Un document légal AVEC SA VERSION, tel que l'application doit l'afficher et
+    /// le faire accepter.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA VERSION ET LE TEXTE VOYAGENT DANS LE MÊME BLOC, ET C'EST TOUT L'INTÉRÊT.
+    ///
+    /// Avant cette route, chaque application embarquait le texte ET décidait de la
+    /// version qu'elle faisait enregistrer. Le serveur notait « a accepté
+    /// 2026-07-12 » sans savoir quelle rédaction avait été affichée : deux binaires
+    /// portant des textes différents pouvaient produire le même enregistrement, et
+    /// une application ancienne ne redemandait JAMAIS l'accord, puisqu'elle ignorait
+    /// que le texte avait changé.
+    ///
+    /// Ici, la version est un champ du document. Elle ne peut pas désigner un autre
+    /// texte que celui qui l'accompagne, parce qu'ils sont le même enregistrement.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    ///
+    /// 404 QUAND LE CMS N'A RIEN. Pas un document vide, pas un texte par défaut :
+    /// l'application retombe alors sur la copie qu'elle embarque, et fait accepter
+    /// LA VERSION DE CETTE COPIE — l'utilisateur accepte le texte qu'il a lu.
+    /// Rendre un document vide lui ferait accepter une page blanche.
+    private static async Task<IResult> GetLegalDocumentAsync(
+        string document, ISender sender, CancellationToken ct)
+    {
+        if (!LegalSlots.TryGetValue(document ?? string.Empty, out var slot))
+        {
+            return Results.NotFound(new { error = "unknown_document" });
+        }
+
+        var result = await sender.Send(new ListContentBySlotQuery(slot), ct);
+        if (result.IsFailure)
+        {
+            return Results.NotFound(new { error = "document_unavailable" });
+        }
+
+        // UN SEUL BLOC PAR DOCUMENT, et le premier par position fait foi. Un document
+        // légal n'est pas une liste de fragments qu'on assemble : le découper en
+        // blocs rendrait possible d'en publier la moitié.
+        var bloc = result.Value.OrderBy(b => b.Position).FirstOrDefault();
+        if (bloc is null || string.IsNullOrWhiteSpace(bloc.Content))
+        {
+            return Results.NotFound(new { error = "document_unavailable" });
+        }
+
+        LegalDocumentPayload? charge;
+        try
+        {
+            charge = JsonSerializer.Deserialize<LegalDocumentPayload>(
+                bloc.Content, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (JsonException)
+        {
+            // Bloc mal formé : on ne sert PAS un document partiel. L'application
+            // retombe sur sa copie embarquée, qui est au moins cohérente.
+            return Results.NotFound(new { error = "document_malformed" });
+        }
+
+        if (charge is null
+            || string.IsNullOrWhiteSpace(charge.Version)
+            || charge.Sections is not { Count: > 0 })
+        {
+            return Results.NotFound(new { error = "document_malformed" });
+        }
+
+        return Results.Ok(new
+        {
+            document,
+            version = charge.Version,
+            lastUpdated = charge.LastUpdated,
+            company = charge.Company,
+            sections = charge.Sections.Select(s => new
+            {
+                title = s.Title,
+                body = s.Body ?? new List<string>(),
+            }),
+        });
+    }
+
+    /// <summary>
+    /// La forme attendue dans <c>ContentBlock.Content</c> pour un document légal.
+    ///
+    /// C'est du JSON saisi dans le CMS, donc NON VÉRIFIÉ par un schéma : le handler
+    /// refuse ce qui n'a ni version ni sections, et l'application retombe sur sa
+    /// copie plutôt que d'afficher un document tronqué.
+    /// </summary>
+    private sealed record LegalDocumentPayload(
+        string? Version,
+        string? LastUpdated,
+        string? Company,
+        List<LegalSectionPayload>? Sections);
+
+    private sealed record LegalSectionPayload(string? Title, List<string>? Body);
 
     /// <summary>
     /// Renvoie les entrées d'un slot sous forme normalisée { question, answer }.

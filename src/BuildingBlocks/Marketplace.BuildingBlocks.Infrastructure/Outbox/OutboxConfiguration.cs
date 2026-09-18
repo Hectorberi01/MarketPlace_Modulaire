@@ -42,7 +42,7 @@ public sealed class OutboxConfiguration : IEntityTypeConfiguration<OutboxMessage
         // jamais. C'est ce qui garde cette requête à coût constant quelle que soit l'histoire
         // de la table.
         //
-        // ⚠️ Noms de colonnes en PascalCase entre guillemets doubles : ce projet n'applique
+        // Noms de colonnes en PascalCase entre guillemets doubles : ce projet n'applique
         // AUCUNE convention snake_case sur les colonnes (vérifié dans le ModelSnapshot).
         // ─────────────────────────────────────────────────────────────────────────
         builder.HasIndex(m => new { m.NextAttemptAtUtc, m.OccurredOnUtc })

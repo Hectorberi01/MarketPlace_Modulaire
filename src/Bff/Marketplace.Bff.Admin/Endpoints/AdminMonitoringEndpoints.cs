@@ -137,7 +137,7 @@ public static class AdminMonitoringEndpoints
 
     /// <summary>
     /// Vue LECTURE SEULE des conteneurs, alimentée par Prometheus / cAdvisor.
-    /// ⚠️ Aucun accès au socket Docker : on se contente de LIRE des métriques déjà
+    /// Aucun accès au socket Docker : on se contente de LIRE des métriques déjà
     /// collectées. La console ne peut donc ni démarrer, ni arrêter, ni supprimer un
     /// conteneur — c'est volontaire (le socket Docker = équivalent root sur l'hôte).
     ///

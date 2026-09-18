@@ -9,7 +9,7 @@ namespace Marketplace.Bff.Admin.Endpoints;
 /// <summary>
 /// Une lettre morte, telle qu'affichée à l'administrateur.
 ///
-/// ⚠️ Le CONTENU du message est volontairement absent. Certains événements portent des
+/// Le CONTENU du message est volontairement absent. Certains événements portent des
 /// secrets — <c>PasswordResetRequestedIntegrationEvent</c> transporte le jeton de
 /// réinitialisation EN CLAIR. L'exposer dans une console d'administration recréerait, en
 /// plus discret, la fuite qu'on vient de fermer. Le type et l'erreur suffisent à
@@ -119,7 +119,7 @@ public static class AdminOutboxEndpoints
     /// <summary>
     /// Remet une lettre morte dans la file, après correction de la cause.
     ///
-    /// ⚠️ REJOUER SANS AVOIR CORRIGÉ LA CAUSE NE SERT À RIEN : le message ré-échouera
+    /// REJOUER SANS AVOIR CORRIGÉ LA CAUSE NE SERT À RIEN : le message ré-échouera
     /// MaxAttempts fois, puis retombera en lettre morte. Le compteur repart de zéro, ce qui
     /// est voulu — c'est une nouvelle chance, pas une rallonge.
     /// </summary>
@@ -140,7 +140,7 @@ public static class AdminOutboxEndpoints
     /// <summary>
     /// Abandonne définitivement une lettre morte : elle est marquée traitée, sans l'avoir été.
     ///
-    /// ⚠️ C'EST UNE DÉCISION MÉTIER, PAS UNE OPÉRATION DE MÉNAGE. On déclare ici qu'un fait
+    /// C'EST UNE DÉCISION MÉTIER, PAS UNE OPÉRATION DE MÉNAGE. On déclare ici qu'un fait
     /// ne sera jamais propagé : un vendeur ne sera pas crédité, un client ne recevra pas son
     /// e-mail. À n'utiliser que pour un événement devenu SANS OBJET (commande annulée depuis,
     /// utilisateur supprimé). En cas de doute, rejouer — jamais enterrer.

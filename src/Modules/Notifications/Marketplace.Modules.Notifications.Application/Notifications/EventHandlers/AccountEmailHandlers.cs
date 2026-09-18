@@ -91,7 +91,7 @@ public sealed class SendPasswordResetEmailHandler : IIntegrationEventHandler<Pas
 
         await _email.SendAsync(message, cancellationToken);
 
-        // ⚠️ NI le jeton, NI l'URL (qui le contient), NI l'e-mail ne sont journalisés ici.
+        // NI le jeton, NI l'URL (qui le contient), NI l'e-mail ne sont journalisés ici.
         // Un jeton dans les logs est un jeton lisible par quiconque a accès aux logs — et
         // ce serait recréer, en plus discret, la fuite qu'on vient de fermer.
         _logger.LogInformation(

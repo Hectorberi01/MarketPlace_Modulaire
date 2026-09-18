@@ -5,7 +5,7 @@ namespace Marketplace.Modules.Notifications.Infrastructure.Email;
 /// <summary>
 /// Construit les liens des e-mails de compte à partir de <see cref="EmailOptions.AppBaseUrl"/>.
 ///
-/// ⚠️ Les liens pointent vers le FRONT WEB, pas vers l'API — et ce n'est pas un détail.
+/// Les liens pointent vers le FRONT WEB, pas vers l'API — et ce n'est pas un détail.
 ///
 /// Un lien de réinitialisation ne doit JAMAIS être une URL qui réinitialise. Les clients de
 /// messagerie et les passerelles antivirus PRÉ-CHARGENT les liens des e-mails pour les

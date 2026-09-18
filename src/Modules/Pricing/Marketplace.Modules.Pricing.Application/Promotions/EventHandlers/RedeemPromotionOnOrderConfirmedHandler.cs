@@ -48,7 +48,7 @@ namespace Marketplace.Modules.Pricing.Application.Promotions.EventHandlers;
 /// </para>
 ///
 /// <para>
-/// ⚠️ <b>Ce handler ne s'exécute PAS dans une requête HTTP</b> mais dans l'OutboxProcessor.
+/// <b>Ce handler ne s'exécute PAS dans une requête HTTP</b> mais dans l'OutboxProcessor.
 /// Un conflit de concurrence n'y devient donc pas un 409 : il fait échouer le message, qui
 /// sera rejoué après temporisation (backoff exponentiel). Au bout de 10 tentatives, il part
 /// en LETTRE MORTE — journalisée en Critical, comptée par `outbox_dead_letters_total`, et
@@ -115,7 +115,7 @@ public sealed class RedeemPromotionOnOrderConfirmedHandler : IIntegrationEventHa
             // Le plafond a été atteint entre le moment où l'acheteur a appliqué le code et
             // celui où sa commande a été confirmée (une autre commande est passée avant).
             //
-            // ⚠️ ON NE REJETTE PAS L'ÉVÉNEMENT. La vente est encaissée, la remise a déjà été
+            // ON NE REJETTE PAS L'ÉVÉNEMENT. La vente est encaissée, la remise a déjà été
             // accordée sur le montant payé. Lever ici ferait rejouer le message toutes les
             // 5 secondes, indéfiniment, pour une erreur qui ne se résoudra jamais — un
             // message empoisonné, exactement ce qui sature les logs.

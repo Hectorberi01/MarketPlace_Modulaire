@@ -10,7 +10,7 @@ namespace Marketplace.Api.Extensions;
 /// Limitation de débit.
 ///
 /// ═════════════════════════════════════════════════════════════════════════════
-/// ⚠️ CE FICHIER SUPPOSE QUE `UseProxyForwardedHeaders()` A ÉTÉ APPELÉ EN PREMIER.
+/// CE FICHIER SUPPOSE QUE `UseProxyForwardedHeaders()` A ÉTÉ APPELÉ EN PREMIER.
 ///
 /// Sans lui, `RemoteIpAddress` vaut l'IP de Traefik pour TOUS les utilisateurs : les
 /// partitions se confondent en une seule, la protection disparaît, et le quota devient
@@ -38,7 +38,7 @@ namespace Marketplace.Api.Extensions;
 /// </para>
 ///
 /// <para>
-/// ⚠️ CE QUE CECI NE FAIT PAS. Un plafond par IP, même bien réglé, ne protège pas un
+/// CE QUE CECI NE FAIT PAS. Un plafond par IP, même bien réglé, ne protège pas un
 /// COMPTE précis d'une attaque lente et distribuée (dix mots de passe par heure, depuis
 /// mille adresses). La vraie parade est un verrouillage PAR COMPTE après N échecs — à
 /// implémenter dans le handler de connexion, avec un compteur Redis. Ce n'est pas fait,

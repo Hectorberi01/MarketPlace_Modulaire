@@ -48,6 +48,14 @@ public sealed class MarketplaceClient : IMarketplaceClient
     /// </summary>
     private const string CourseFailedPath = "/api/delivery/courses/failed";
 
+    /// <summary>
+    /// Le réveil du coursier. MÊME SECRET, MÊME SIGNATURE, MÊME CONVENTION D'ADRESSE que
+    /// les deux autres — un seul dispositif d'authentification entre les deux services.
+    ///
+    /// Ce qu'elle ne partage PAS avec elles : la file. Voir SendCourierOfferAsync.
+    /// </summary>
+    private const string CourierOfferPath = "/api/delivery/couriers/offer";
+
     private readonly HttpClient _http;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MarketplaceClient> _logger;
@@ -66,6 +74,10 @@ public sealed class MarketplaceClient : IMarketplaceClient
     public Task SendCourierDeliveryFailedAsync(
         string payloadJson, CancellationToken cancellationToken = default)
         => PostAsync(CourseFailedPath, payloadJson, cancellationToken);
+
+    public Task SendCourierOfferAsync(
+        string payloadJson, CancellationToken cancellationToken = default)
+        => PostAsync(CourierOfferPath, payloadJson, cancellationToken);
 
     private async Task PostAsync(string path, string body, CancellationToken cancellationToken)
     {

@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 
-// ⚠️ ALIAS OBLIGATOIRE — deux types portent le nom `IPNetwork`.
+// ALIAS OBLIGATOIRE — deux types portent le nom `IPNetwork`.
 //
 // .NET 8 a introduit `System.Net.IPNetwork`, qui entre en collision avec le
 // `Microsoft.AspNetCore.HttpOverrides.IPNetwork` attendu par ForwardedHeadersOptions.
@@ -48,7 +48,7 @@ namespace Marketplace.Api.Extensions;
 /// </para>
 ///
 /// <para>
-/// ⚠️ Ce raisonnement ne tient QUE si l'en-tête vient d'un proxy de confiance. D'où
+/// Ce raisonnement ne tient QUE si l'en-tête vient d'un proxy de confiance. D'où
 /// <see cref="ForwardedHeadersOptions.KnownNetworks"/>, restreint aux plages privées du
 /// réseau Docker. Un `KnownNetworks.Clear()` — que l'on croise partout sur Internet —
 /// ferait confiance à N'IMPORTE QUI : l'attaquant n'aurait plus qu'à changer d'IP
@@ -78,7 +78,7 @@ public static class ForwardedHeadersSetup
     }
 
     /// <summary>
-    /// ⚠️ À APPELER EN TOUT PREMIER dans le pipeline HTTP.
+    /// À APPELER EN TOUT PREMIER dans le pipeline HTTP.
     ///
     /// Tout ce qui vient ensuite — journalisation, authentification, limitation de
     /// débit — lit <c>RemoteIpAddress</c>. Placer ce middleware après l'un d'eux, c'est

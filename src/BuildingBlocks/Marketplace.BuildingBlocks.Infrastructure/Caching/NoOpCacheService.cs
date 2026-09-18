@@ -14,7 +14,7 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Caching;
 /// Il n'y a d'ailleurs rien à invalider au design-time : le DbContext n'y sert qu'à
 /// produire du DDL, sans jamais écrire une ligne de données.
 ///
-/// ⚠️ À ne JAMAIS enregistrer dans le conteneur d'une application. Ce n'est pas un
+/// À ne JAMAIS enregistrer dans le conteneur d'une application. Ce n'est pas un
 /// mode « cache désactivé » : c'est un bouchon pour outillage. Pour désactiver le
 /// cache à l'exécution, on garde ICacheService et on laisse l'IDistributedCache en
 /// mémoire — le comportement reste correct, seul le partage entre instances est perdu.

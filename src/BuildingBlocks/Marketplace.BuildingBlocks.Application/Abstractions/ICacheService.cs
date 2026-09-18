@@ -19,7 +19,7 @@ public interface ICacheService
     /// </summary>
     ///
     /// <remarks>
-    /// ⚠️ CETTE MÉTHODE MÉMORISE AUSSI LES ABSENCES (« cache négatif »), et ce n'est
+    /// CETTE MÉTHODE MÉMORISE AUSSI LES ABSENCES (« cache négatif »), et ce n'est
     /// pas un détail.
     ///
     /// Les fiches produit sont ANONYMES. Sans cache négatif, il suffit de demander

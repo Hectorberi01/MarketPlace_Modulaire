@@ -57,7 +57,7 @@ public sealed class ReturnRequest : AggregateRoot<ReturnRequestId>
     /// foi. Une remise appliquée depuis ne doit ni augmenter ni réduire ce à quoi
     /// l'acheteur a droit.
     ///
-    /// ⚠️ Vaut 0 pour les retours créés AVANT l'introduction de ce champ.
+    /// Vaut 0 pour les retours créés AVANT l'introduction de ce champ.
     /// `ApproveRefund` traite donc 0 comme « plafond inconnu » et n'applique aucune
     /// borne, plutôt que de bloquer tous les remboursements en cours.
     /// ─────────────────────────────────────────────────────────────────────────────

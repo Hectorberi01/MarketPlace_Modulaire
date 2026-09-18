@@ -16,7 +16,7 @@ namespace Marketplace.BuildingBlocks.Infrastructure.Files;
 /// ═════════════════════════════════════════════════════════════════════════════
 ///
 /// <para>
-/// ⚠️ <b>CE N'EST PAS UN ANTIVIRUS, ET IL NE FAUT PAS LE PRENDRE POUR TEL.</b> Un fichier
+/// <b>CE N'EST PAS UN ANTIVIRUS, ET IL NE FAUT PAS LE PRENDRE POUR TEL.</b> Un fichier
 /// peut parfaitement commencer par FF D8 FF <i>et</i> contenir une charge malveillante plus
 /// loin (polyglotte JPEG/PHP, JPEG portant un exploit de décodeur). Ce contrôle établit une
 /// chose, et une seule : <b>le serveur décide de la nature du fichier, pas le client</b>.

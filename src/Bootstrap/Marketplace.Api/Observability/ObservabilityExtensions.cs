@@ -60,7 +60,7 @@ public static class ObservabilityExtensions
 
         // 3. Métriques custom (System.Diagnostics.Metrics via IMeterFactory).
         //
-        // ⚠️ LES QUATRE JEUX DE MÉTRIQUES SONT ENREGISTRÉS SUR TOUS LES HÔTES.
+        // LES QUATRE JEUX DE MÉTRIQUES SONT ENREGISTRÉS SUR TOUS LES HÔTES.
         //
         // Il y avait ici un drapeau `businessMetrics`, faux par défaut, qui n'activait
         // Payments et Business que sur l'API. Son commentaire disait :
@@ -167,7 +167,7 @@ public static class ObservabilityExtensions
         app.Services.GetService<PaymentMetrics>();
         app.Services.GetService<MarketplaceBusinessMetrics>();
 
-        // ⚠️ `AllowAnonymous()` EST INDISPENSABLE ICI.
+        // `AllowAnonymous()` EST INDISPENSABLE ICI.
         //
         // Les hôtes appliquent désormais une FallbackPolicy qui exige un utilisateur
         // authentifié sur toute route ne déclarant pas d'autorisation. Sans cette

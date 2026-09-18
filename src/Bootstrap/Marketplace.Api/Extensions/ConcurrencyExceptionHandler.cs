@@ -26,7 +26,7 @@ namespace Marketplace.Api.Extensions;
 /// ═════════════════════════════════════════════════════════════════════════════
 ///
 /// <para>
-/// ⚠️ CE HANDLER NE REJOUE RIEN, ET C'EST VOULU.
+/// CE HANDLER NE REJOUE RIEN, ET C'EST VOULU.
 ///
 /// Un retry automatique côté serveur serait un piège : `ModuleDbContext` dispatche les
 /// événements de domaine et draine l'outbox <b>avant</b> `base.SaveChangesAsync`.
@@ -80,7 +80,7 @@ public sealed class ConcurrencyExceptionHandler : IExceptionHandler
 public static class ConcurrencyExceptionHandlerExtensions
 {
     /// <summary>
-    /// ⚠️ À enregistrer AVANT `AddProblemDetails()` / le gestionnaire par défaut : les
+    /// À enregistrer AVANT `AddProblemDetails()` / le gestionnaire par défaut : les
     /// IExceptionHandler sont essayés dans l'ordre d'enregistrement, et le premier qui
     /// renvoie `true` gagne.
     /// </summary>

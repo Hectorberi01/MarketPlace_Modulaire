@@ -26,7 +26,7 @@ public enum UserStatus
     /// passe est détruit, la connexion devient impossible. Il reste une coquille
     /// comptable, qui ne désigne plus personne.
     ///
-    /// ⚠️ IRRÉVERSIBLE. Aucune méthode ne fait sortir de cet état — c'est délibéré :
+    /// IRRÉVERSIBLE. Aucune méthode ne fait sortir de cet état — c'est délibéré :
     /// les données d'origine n'existent plus, il n'y a rien à restaurer.
     /// ─────────────────────────────────────────────────────────────────────────────
     /// </summary>

@@ -7,7 +7,7 @@ namespace Marketplace.Modules.Notifications.Infrastructure.Email;
 /// Adaptateur de DÉVELOPPEMENT : n'envoie rien, écrit l'e-mail dans la console.
 ///
 /// ═════════════════════════════════════════════════════════════════════════════
-/// ⚠️ CET ADAPTATEUR ÉCRIT DES JETONS EN CLAIR DANS LES LOGS. C'EST ASSUMÉ — ET
+/// CET ADAPTATEUR ÉCRIT DES JETONS EN CLAIR DANS LES LOGS. C'EST ASSUMÉ — ET
 ///     STRICTEMENT RÉSERVÉ AU DÉVELOPPEMENT.
 ///
 /// Sans lui, un développeur local ne pourrait ni vérifier un compte ni réinitialiser un

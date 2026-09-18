@@ -4,7 +4,7 @@ namespace Marketplace.Modules.Offers.Application;
 /// Clés de cache du module Offers.
 ///
 /// ─────────────────────────────────────────────────────────────────────────────
-/// ⚠️ CE MODULE PORTE LES PRIX. IL NE SE CACHE PAS COMME LES AUTRES.
+/// CE MODULE PORTE LES PRIX. IL NE SE CACHE PAS COMME LES AUTRES.
 ///
 /// Un nom de produit périmé de cinq minutes n'ennuie personne. Un PRIX périmé de
 /// cinq minutes est une promesse commerciale que l'on ne tient pas : l'acheteur voit
@@ -18,7 +18,7 @@ namespace Marketplace.Modules.Offers.Application;
 /// L'invalidation à l'écriture reste la vraie garantie ; le TTL n'est que le filet
 /// tendu dessous.
 ///
-/// ⚠️ NE PAS ALLONGER CE TTL pour « gagner un peu de base de données ». Le gain
+/// NE PAS ALLONGER CE TTL pour « gagner un peu de base de données ». Le gain
 /// serait marginal — les offres changent rarement, donc le cache est déjà chaud —
 /// et le prix à payer serait un affichage de prix faux. Si la base souffre, c'est
 /// ailleurs qu'il faut chercher.

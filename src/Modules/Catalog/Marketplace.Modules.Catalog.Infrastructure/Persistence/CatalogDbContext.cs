@@ -60,7 +60,7 @@ public sealed class CatalogDbContext : ModuleDbContext, ICatalogUnitOfWork
     /// Le ChangeTracker, lui, SAIT exactement ce qui a changé, et toute écriture
     /// passe forcément par ici. Rien ne peut être oublié.
     ///
-    /// ⚠️ L'ORDRE COMPTE : on évince APRÈS le commit.
+    /// L'ORDRE COMPTE : on évince APRÈS le commit.
     ///
     /// Évincer avant, ce serait offrir à une lecture concurrente l'occasion de
     /// recharger l'ANCIENNE valeur en cache juste avant que la nouvelle ne soit

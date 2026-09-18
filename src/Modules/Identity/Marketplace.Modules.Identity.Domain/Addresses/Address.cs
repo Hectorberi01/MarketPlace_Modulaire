@@ -237,7 +237,7 @@ public sealed class Address : AggregateRoot<AddressId>
     /// <summary>
     /// Borne une valeur DÉJÀ connue non nulle.
     ///
-    /// ⚠️ Ne pas ajouter de surcharge <c>Cap(string?, int)</c> : en C#, deux méthodes qui
+    /// Ne pas ajouter de surcharge <c>Cap(string?, int)</c> : en C#, deux méthodes qui
     /// ne diffèrent que par l'annotation de nullabilité ont la MÊME signature (CS0111).
     /// C'est l'erreur que cette paire de noms distincts évite.
     /// </summary>

@@ -146,7 +146,7 @@ public sealed class Cart : AggregateRoot<CartId>
     /// à la création d'une promotion — sans quoi « bienvenue10 » ne trouverait jamais
     /// « BIENVENUE10 ».
     ///
-    /// ⚠️ Cette méthode n'ATTESTE de rien : elle ne dit pas que le code existe, qu'il est
+    /// Cette méthode n'ATTESTE de rien : elle ne dit pas que le code existe, qu'il est
     /// actif, ni qu'il est applicable. La validation est faite par le module Pricing, seul
     /// détenteur des promotions — le panier ne doit pas savoir ce qu'est une promotion.
     /// L'appelant (ApplyCouponCommandHandler) valide AVANT d'appeler.

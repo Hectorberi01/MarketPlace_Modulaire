@@ -53,3 +53,38 @@ public sealed record CourierDeliveryFailedPayload(
     Guid DeliveryJobId,
     string Reason,
     DateTime FailedAtUtc);
+
+/// <summary>
+/// Ce que la marketplace attend sur <c>POST /api/delivery/couriers/offer</c> pour
+/// RÉVEILLER un coursier dont le téléphone est rangé.
+///
+/// ═════════════════════════════════════════════════════════════════════════════
+/// CE MESSAGE NE PASSE PAS PAR LA FILE SORTANTE, ET C'EST VOULU.
+///
+/// Les deux autres charges de ce fichier annoncent des faits ACQUIS — une course
+/// livrée, une course échouée — qu'il faut finir par transmettre même après une
+/// panne de dix minutes. Celle-ci annonce une PROPOSITION qui vit vingt-cinq
+/// secondes. Rejouée trois minutes plus tard par le drain, elle sonnerait le
+/// téléphone d'un coursier pour une course déjà prise par un autre.
+///
+/// Elle part donc en direct, une fois, sans réessai, et son échec ne laisse aucune
+/// trace ailleurs qu'au journal : le coursier verra l'offre en ouvrant l'application,
+/// exactement comme avant que ce chemin existe.
+///
+/// AUCUN DÉTAIL DE COURSE. Ni adresse, ni client, ni montant : la marketplace écrit
+/// elle-même le titre et le corps de la notification, et seul l'identifiant voyage.
+/// Une notification s'affiche sur un écran verrouillé.
+/// ═════════════════════════════════════════════════════════════════════════════
+/// </summary>
+/// <param name="CourierId">
+/// L'identifiant coursier, qui est LE MÊME des deux côtés : la marketplace l'impose à
+/// l'enregistrement et ce service le reçoit tel quel par la synchronisation. C'est lui
+/// que la marketplace résout en compte utilisateur pour retrouver les jetons d'appareil.
+/// </param>
+/// <param name="DeliveryJobId">
+/// La course proposée, transportée pour que l'ouverture de la notification mène
+/// directement à elle.
+/// </param>
+public sealed record CourierOfferPayload(
+    Guid CourierId,
+    Guid DeliveryJobId);

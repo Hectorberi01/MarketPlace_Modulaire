@@ -44,7 +44,7 @@ public sealed class PricingModuleInstaller : IModuleInstaller
 
         services.AddScoped<IDomainEventHandler<PromotionCreatedDomainEvent>, PromotionCreatedDomainEventHandler>();
 
-        // ⚠️ SANS CETTE LIGNE, AUCUN COUPON N'EST JAMAIS DÉCOMPTÉ.
+        // SANS CETTE LIGNE, AUCUN COUPON N'EST JAMAIS DÉCOMPTÉ.
         //
         // MediatR et le dispatcher d'événements d'intégration résolvent LAZILY : un
         // handler non enregistré ne provoque aucune erreur au démarrage. Il n'est

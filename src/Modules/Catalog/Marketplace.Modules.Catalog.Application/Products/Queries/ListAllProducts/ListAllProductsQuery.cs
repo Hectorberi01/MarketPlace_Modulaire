@@ -53,7 +53,7 @@ internal sealed class ListAllProductsQueryHandler : IQueryHandler<ListAllProduct
     public ListAllProductsQueryHandler(IProductRepository productRepository) => _productRepository = productRepository;
 
     /// <summary>
-    /// ⚠️ VOLONTAIREMENT NON MISE EN CACHE.
+    /// VOLONTAIREMENT NON MISE EN CACHE.
     ///
     /// C'est la vue de gouvernance admin : une poignée de personnes, qui viennent
     /// précisément vérifier l'état RÉEL du catalogue — souvent juste après avoir

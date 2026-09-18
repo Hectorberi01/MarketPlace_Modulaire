@@ -8,7 +8,7 @@ namespace Marketplace.Modules.Identity.Application.Users.Commands.PasswordReset;
 /// d'intégration — que le module Notifications transforme en e-mail.
 ///
 /// ═════════════════════════════════════════════════════════════════════════════
-/// ⚠️ CETTE COMMANDE NE RENVOIE RIEN. C'EST UN CORRECTIF DE SÉCURITÉ, PAS UN DÉTAIL
+/// CETTE COMMANDE NE RENVOIE RIEN. C'EST UN CORRECTIF DE SÉCURITÉ, PAS UN DÉTAIL
 ///     DE SIGNATURE. NE PAS LUI REDONNER DE VALEUR DE RETOUR.
 ///
 /// Elle renvoyait autrefois `ICommand&lt;string?&gt;` : le jeton EN CLAIR. Et

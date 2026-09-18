@@ -17,7 +17,7 @@ namespace Marketplace.Bff.Admin.Endpoints;
 /// vers le navigateur, puisqu'il n'a plus de champ où loger. Il part exclusivement en
 /// cookie HttpOnly (voir RefreshTokenCookie).
 ///
-/// ⚠️ N'AJOUTEZ PAS de propriété RefreshToken ici. Ce serait annuler tout le correctif,
+/// N'AJOUTEZ PAS de propriété RefreshToken ici. Ce serait annuler tout le correctif,
 /// et le faire silencieusement.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
@@ -44,7 +44,7 @@ public sealed class AdminAuthCookieOptions
     /// même domaine racine : c'est le MÊME SITE au sens SameSite (même eTLD+1), donc le
     /// cookie part normalement, et aucune requête venue d'un autre site ne l'emporte.
     ///
-    /// ⚠️ SI VOUS HÉBERGEZ UN JOUR LA CONSOLE SUR UN AUTRE DOMAINE RACINE (Netlify,
+    /// SI VOUS HÉBERGEZ UN JOUR LA CONSOLE SUR UN AUTRE DOMAINE RACINE (Netlify,
     /// Vercel, un domaine de secours…), `Strict` empêchera le cookie de partir : les
     /// administrateurs seront déconnectés à chaque rechargement de page, sans erreur
     /// visible. Il faudra alors passer à `None` — ET c'est précisément pour ce cas que

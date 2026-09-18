@@ -51,7 +51,7 @@ public enum ReturnStatus
     /// <summary>
     /// Argent RÉELLEMENT versé, référence FedaPay à l'appui.
     ///
-    /// ⚠️ Cet état ne doit JAMAIS être atteint sans preuve d'exécution. C'est la
+    /// Cet état ne doit JAMAIS être atteint sans preuve d'exécution. C'est la
     /// seule garantie que la base dise la vérité sur l'argent.
     /// </summary>
     Refunded = 4

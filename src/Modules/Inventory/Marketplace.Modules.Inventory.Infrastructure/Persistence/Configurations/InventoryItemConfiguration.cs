@@ -18,7 +18,7 @@ internal sealed class InventoryItemConfiguration : IEntityTypeConfiguration<Inve
         // simultanées sur le dernier article passent toutes deux le contrôle : on vend
         // deux fois un stock unique, et un client attend un colis qui n'existe pas.
         //
-        // ⚠️ ICI, LE JETON SEUL NE SUFFISAIT PAS — ET C'EST LE PIÈGE DE CET AGRÉGAT.
+        // ICI, LE JETON SEUL NE SUFFISAIT PAS — ET C'EST LE PIÈGE DE CET AGRÉGAT.
         //
         // `Reserve()` et `ReleaseReservation()` ne modifient aucune colonne de CETTE
         // table : ils insèrent ou suppriment des lignes ENFANTS (stock_reservations).
@@ -44,7 +44,7 @@ internal sealed class InventoryItemConfiguration : IEntityTypeConfiguration<Inve
         // lève `DbUpdateConcurrencyException` — traduite en 409 (voir
         // ConcurrencyExceptionHandler).
         //
-        // ⚠️ AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
+        // AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
         //
         // ModuleDbContext dispatche les événements de domaine AVANT
         // base.SaveChangesAsync, et draine les événements d'intégration vers l'outbox.
@@ -83,7 +83,7 @@ internal sealed class InventoryItemConfiguration : IEntityTypeConfiguration<Inve
 
         // IsRequired() — LA CONTRAINTE DOIT VIVRE DANS LA BASE, PAS DANS UN RÉGLAGE EF.
         //
-        // ⚠️ Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
+        // Correction d'une affirmation antérieure (voir doc 22) : SANS IsRequired(), EF
         // ne sévrait PAS pour autant. Le `OnDelete(DeleteBehavior.Cascade)` ci-dessous
         // gouverne aussi le sort des ORPHELINS — avec Cascade, un enfant retiré de la
         // collection est SUPPRIMÉ, pas mis à NULL. Les données de production l'ont confirmé.

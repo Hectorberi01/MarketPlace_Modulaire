@@ -44,7 +44,7 @@ public sealed record UserEmailConfirmedIntegrationEvent : IntegrationEvent
 /// qui l'envoie par e-mail à son destinataire — et à personne d'autre.
 /// ═════════════════════════════════════════════════════════════════════════════
 ///
-/// ⚠️ CET ÉVÉNEMENT PORTE UN SECRET. Il transite par la table d'outbox, donc le jeton en
+/// CET ÉVÉNEMENT PORTE UN SECRET. Il transite par la table d'outbox, donc le jeton en
 /// clair est écrit en base le temps de la livraison. C'est acceptable — il expire en 1 h,
 /// il est à usage unique, et il ne vaut rien sans l'accès à la boîte mail — mais cela
 /// signifie que <b>ce record ne doit JAMAIS être journalisé</b>, et qu'aucun handler ne

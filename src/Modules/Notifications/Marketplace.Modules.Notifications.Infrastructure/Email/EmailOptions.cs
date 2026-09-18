@@ -16,7 +16,7 @@ public sealed class EmailOptions
     /// <summary>
     /// Expéditeur, ex. « HBA Express &lt;no-reply@hbaexpress.com&gt; ».
     ///
-    /// ⚠️ Le domaine doit être VÉRIFIÉ chez Resend (SPF + DKIM). Avec un domaine non
+    /// Le domaine doit être VÉRIFIÉ chez Resend (SPF + DKIM). Avec un domaine non
     /// vérifié, Resend refuse l'envoi (403) — et comme l'échec se produit dans l'outbox, il
     /// serait rejoué toutes les 5 secondes sans jamais aboutir. Voir la garde de démarrage
     /// dans NotificationsModuleInstaller.

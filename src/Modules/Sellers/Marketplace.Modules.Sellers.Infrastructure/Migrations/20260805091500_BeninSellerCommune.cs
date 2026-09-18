@@ -12,7 +12,7 @@ namespace Marketplace.Modules.Sellers.Infrastructure.Migrations;
 /// une CLÉ du document change. C'est pour cela que le snapshot EF est identique à celui
 /// de la migration précédente : rien à comparer, rien à diffuser.
 ///
-/// ⚠️ LES CLÉS SONT EN camelCase. Le converter sérialise avec
+/// LES CLÉS SONT EN camelCase. Le converter sérialise avec
 /// « JsonSerializerDefaults.Web », donc la clé est « city », pas « City ». Chercher
 /// « City » ici ne trouverait rien, la migration passerait au vert, et les vendeurs
 /// perdraient silencieusement leur commune — le champ étant facultatif, personne ne

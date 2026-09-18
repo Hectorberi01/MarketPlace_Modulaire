@@ -36,7 +36,7 @@ public interface IEmailSender
     /// <summary>
     /// Envoie l'e-mail. Lève en cas d'échec (réseau, 4xx/5xx du fournisseur).
     ///
-    /// ⚠️ <b>Lever est le comportement voulu.</b> Ces envois se font depuis
+    /// <b>Lever est le comportement voulu.</b> Ces envois se font depuis
     /// l'OutboxProcessor : une exception laisse le message non traité, donc il sera REJOUÉ
     /// après temporisation (backoff exponentiel, 10 tentatives sur ~2 h). Passé ce délai, le
     /// message part en LETTRE MORTE — visible, alertée, rejouable à la main. Avaler l'erreur

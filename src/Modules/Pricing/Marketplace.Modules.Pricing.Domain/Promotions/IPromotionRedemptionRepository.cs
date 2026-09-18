@@ -7,7 +7,7 @@ public interface IPromotionRedemptionRepository
     /// <summary>
     /// Cette commande a-t-elle DÉJÀ consommé cette promotion ?
     ///
-    /// ⚠️ Garde de confort, pas de sécurité. Elle évite le coût d'une violation de
+    /// Garde de confort, pas de sécurité. Elle évite le coût d'une violation de
     /// contrainte sur le chemin normal (rejeu d'outbox), mais elle ne ferme PAS la
     /// fenêtre entre le SELECT et l'INSERT. C'est l'index unique
     /// (PromotionId, OrderId) qui garantit réellement l'unicité — voir

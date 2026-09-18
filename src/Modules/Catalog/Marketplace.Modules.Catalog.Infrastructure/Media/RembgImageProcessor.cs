@@ -38,7 +38,7 @@ public sealed class RembgImageProcessor : IImageProcessor, IImageProcessingAvail
     /// <summary>
     /// Côté maximal du rendu, en pixels.
     ///
-    /// ⚠️ CE PLAFOND EST UN GARDE-FOU MÉMOIRE, PAS UN RÉGLAGE ESTHÉTIQUE.
+    /// CE PLAFOND EST UN GARDE-FOU MÉMOIRE, PAS UN RÉGLAGE ESTHÉTIQUE.
     ///
     /// `UploadValidation` ne borne que le POIDS (5 Mo) ; un JPEG de 5 Mo peut faire
     /// 8000 × 6000. Le décodage réclame alors largeur × hauteur × 4 octets — environ

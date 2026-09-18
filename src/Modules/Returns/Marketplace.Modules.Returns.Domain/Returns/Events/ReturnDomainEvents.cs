@@ -12,7 +12,7 @@ public sealed record ReturnRequestedDomainEvent(Guid ReturnRequestId, Guid Order
 /// et à faire apparaître l'opération dans la file des remboursements à exécuter du
 /// back-office.
 ///
-/// ⚠️ Ne contre-passe RIEN. Débiter le vendeur ici, ce serait le sanctionner pour un
+/// Ne contre-passe RIEN. Débiter le vendeur ici, ce serait le sanctionner pour un
 /// versement qui peut encore échouer.
 /// </summary>
 public sealed record ReturnRefundApprovedDomainEvent(

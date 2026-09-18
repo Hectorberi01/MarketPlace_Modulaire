@@ -13,7 +13,7 @@ public sealed record RegisterDeviceTokenCommand(Guid UserId, string Token, strin
 /// Retire un jeton d'appareil. <paramref name="UserId"/> BORNE l'opération à son
 /// propriétaire.
 ///
-/// ⚠️ Ce paramètre manquait. La commande ne prenait que le jeton, et le BFF vendeur
+/// Ce paramètre manquait. La commande ne prenait que le jeton, et le BFF vendeur
 /// vérifiait l'identité de l'appelant… pour la jeter aussitôt. N'importe quel vendeur
 /// authentifié connaissant le jeton FCM d'un concurrent coupait ses notifications
 /// push — y compris les alertes de nouvelle commande. Un déni de service silencieux

@@ -20,7 +20,7 @@ namespace Marketplace.Modules.Catalog.Application;
 /// ─────────────────────────────────────────────────────────────────────────────
 ///
 /// <para>
-/// ⚠️ Les DURÉES ci-dessous ne sont pas arbitraires ; elles répondent à la question
+/// Les DURÉES ci-dessous ne sont pas arbitraires ; elles répondent à la question
 /// « combien de temps un utilisateur peut-il voir une donnée périmée sans que ce
 /// soit un problème ? » — et la réponse n'est pas la même pour un nom de catégorie
 /// et pour un prix.

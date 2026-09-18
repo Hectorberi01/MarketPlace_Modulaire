@@ -31,7 +31,7 @@ internal sealed class CartConfiguration : IEntityTypeConfiguration<CartAggregate
         // IsRequired(), EF supprime l'orphelin (DELETE), ce qui est le comportement
         // attendu. Aligné sur le snapshot/migration (pas de nouvelle migration).
         //
-        // ⚠️ NOTE DE 2026-07-14 (voir doc 22) : ce commentaire est ANTÉRIEUR et je n'ai pas
+        // NOTE DE 2026-07-14 (voir doc 22) : ce commentaire est ANTÉRIEUR et je n'ai pas
         // pu le vérifier. En EF Core, le `OnDelete(DeleteBehavior.Cascade)` ci-dessous
         // gouverne AUSSI le sort des orphelins — avec Cascade, un enfant retiré d'une
         // collection est SUPPRIMÉ, pas mis à NULL. Les données de production le confirment

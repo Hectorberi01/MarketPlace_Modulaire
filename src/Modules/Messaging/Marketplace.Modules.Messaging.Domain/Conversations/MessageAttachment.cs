@@ -6,7 +6,7 @@ namespace Marketplace.Modules.Messaging.Domain.Conversations;
 /// Pièce jointe d'un message (URL object storage + type). Entité ENFANT de Message,
 /// exactement comme <see cref="MessageReaction"/>.
 ///
-/// ⚠️ Pourquoi une table enfant plutôt qu'une colonne tableau/JSON : EF Core 8 traite
+/// Pourquoi une table enfant plutôt qu'une colonne tableau/JSON : EF Core 8 traite
 /// un <c>List&lt;string&gt;</c> mappé comme une « collection primitive » qu'il persiste
 /// mais relit VIDE (bug observé ici). Le pattern « entité enfant » est, lui, éprouvé —
 /// c'est celui des réactions, qui fonctionnent.

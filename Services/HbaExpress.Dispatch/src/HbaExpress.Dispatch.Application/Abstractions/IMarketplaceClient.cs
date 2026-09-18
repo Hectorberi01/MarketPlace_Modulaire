@@ -26,4 +26,21 @@ public interface IMarketplaceClient
     /// de l'abandon.
     /// </summary>
     Task SendCourierDeliveryFailedAsync(string payloadJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Annonce une offre proposée : la marketplace envoie la notification push.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA SEULE MÉTHODE DE CE CANAL QUI NE PASSE PAS PAR LA FILE.
+    ///
+    /// Les deux autres portent un fait acquis et doivent finir par arriver ; le drain
+    /// les réessaie. Celle-ci porte une proposition qui vit vingt-cinq secondes :
+    /// rejouée plus tard, elle sonnerait pour une course déjà prise. Elle part donc en
+    /// direct, une fois.
+    ///
+    /// LÈVE comme les autres — mais ici personne ne réessaie : l'appelant journalise et
+    /// passe. C'est du BEST-EFFORT au sens strict, et l'offre reste valable en base.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Task SendCourierOfferAsync(string payloadJson, CancellationToken cancellationToken = default);
 }

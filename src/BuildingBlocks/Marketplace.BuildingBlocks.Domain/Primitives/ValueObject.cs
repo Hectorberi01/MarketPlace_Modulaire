@@ -9,7 +9,7 @@ public abstract class ValueObject : IEquatable<ValueObject>
     protected abstract IEnumerable<object?> GetAtomicValues();
 
     /// <summary>
-    /// ⚠️ SANS CES DEUX OPÉRATEURS, `==` COMPARAIT LES RÉFÉRENCES.
+    /// SANS CES DEUX OPÉRATEURS, `==` COMPARAIT LES RÉFÉRENCES.
     ///
     /// Surcharger `Equals` ne suffit pas : en C#, `a == b` sur un type référence
     /// n'appelle PAS `Equals` — il appelle `operator ==`, et à défaut, la comparaison

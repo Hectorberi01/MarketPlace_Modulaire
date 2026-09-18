@@ -2,6 +2,7 @@ using System.Text;
 using HbaExpress.Dispatch.Api.BackgroundJobs;
 using HbaExpress.Dispatch.Api.Endpoints;
 using HbaExpress.Dispatch.Api.Extensions;
+using HbaExpress.Dispatch.Api.Notifications;
 using HbaExpress.Dispatch.Api.Observability;
 using HbaExpress.Dispatch.Api.Outbound;
 using HbaExpress.Dispatch.Api.Realtime;
@@ -51,10 +52,23 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     signalr.AddStackExchangeRedis(redisConnection);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMMENT UNE OFFRE ATTEINT UN COURSIER : DEUX CANAUX, UN SEUL PORT.
+//
+// Le hub couvre l'application ouverte, le push couvre le téléphone rangé. Une offre vit
+// vingt-cinq secondes : avec le seul hub, le coursier qui avait rangé son téléphone ne
+// voyait jamais passer les courses, et elles partaient à celui qui regardait son écran
+// au bon moment.
+//
 // AVANT AddDispatchInfrastructure, et l'ordre est significatif : celle-ci enregistre
 // LoggingOfferNotifier en TryAdd, donc seulement si le port est encore libre. Enregistré
 // après, il serait ignoré — et le hub existerait sans que rien ne pousse dedans.
-builder.Services.AddScoped<IOfferNotifier, SignalROfferNotifier>();
+//
+// Les deux implémentations sont enregistrées SOUS LEUR PROPRE TYPE : elles ne sont plus
+// le port, elles sont ses deux moitiés. Seul le composite répond à IOfferNotifier.
+builder.Services.AddScoped<SignalROfferNotifier>();
+builder.Services.AddSingleton<PushOfferNotifier>();
+builder.Services.AddScoped<IOfferNotifier, CompositeOfferNotifier>();
 
 builder.Services.AddDispatchInfrastructure(builder.Configuration);
 

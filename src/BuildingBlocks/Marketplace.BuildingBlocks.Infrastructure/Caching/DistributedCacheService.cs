@@ -154,7 +154,7 @@ public sealed class DistributedCacheService : ICacheService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // ⚠️ Ici, l'échec ouvert a un COÛT : la clé survit et servira une valeur
+            // Ici, l'échec ouvert a un COÛT : la clé survit et servira une valeur
             // périmée jusqu'à son TTL. C'est le compromis retenu — les TTL sont
             // courts, et refuser l'écriture métier parce que le cache est en panne
             // serait pire. On journalise en Error : ce n'est pas anodin.

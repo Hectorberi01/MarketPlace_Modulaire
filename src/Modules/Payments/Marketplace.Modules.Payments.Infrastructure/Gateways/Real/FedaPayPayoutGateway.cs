@@ -13,7 +13,7 @@ namespace Marketplace.Modules.Payments.Infrastructure.Gateways.Real;
 ///  1. POST /payouts       → crée le dépôt (statut « pending »).
 ///  2. PUT  /payouts/start → déclenche l'envoi (statut « started »).
 ///
-/// ⚠️ Un « start » accepté ne prouve PAS que l'argent est arrivé. Le cycle de vie
+/// Un « start » accepté ne prouve PAS que l'argent est arrivé. Le cycle de vie
 /// FedaPay est pending → started → processing → sent | failed. Seul « sent » est une
 /// preuve de versement. D'où <see cref="GetStatusAsync"/>, utilisé par la
 /// réconciliation pour clore (ou rembourser) le retrait.

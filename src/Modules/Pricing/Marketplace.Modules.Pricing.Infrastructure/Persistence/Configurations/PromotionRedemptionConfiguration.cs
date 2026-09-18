@@ -35,7 +35,7 @@ internal sealed class PromotionRedemptionConfiguration : IEntityTypeConfiguratio
         // lève une violation de contrainte, la transaction est annulée, et le coupon
         // n'est pas décompté deux fois pour une seule vente.
         //
-        // ⚠️ Nom de colonne en PascalCase entre guillemets doubles : ce projet
+        // Nom de colonne en PascalCase entre guillemets doubles : ce projet
         // n'applique AUCUNE convention snake_case sur les propriétés (les noms de
         // TABLES le sont, pas les colonnes). Vérifié dans le ModelSnapshot.
         // ─────────────────────────────────────────────────────────────────────────

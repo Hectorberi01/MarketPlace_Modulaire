@@ -54,7 +54,7 @@ internal sealed class ListFulfillmentLocationsQueryHandler
     {
         var locations = await _repository.ListByOwnerAsync(query.OwnerId, cancellationToken);
         IReadOnlyList<FulfillmentLocationSummary> summaries = locations
-            // ⚠️ Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
+            // Latitude/Longitude sont RELUES, plus écrasées par « null, null ».
             // Le value object les validait, le BFF les acceptait, et cette projection les
             // jetait : une saisie GPS ne survivait pas à sa propre relecture.
             .Select(l => new FulfillmentLocationSummary(

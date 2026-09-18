@@ -15,7 +15,7 @@ namespace Marketplace.Modules.Identity.Application.Users.Commands.Login;
 /// acheteur ne passe rien — elle est ouverte à tous, et doit le rester : un
 /// vendeur est aussi quelqu'un qui achète.
 ///
-/// ⚠️ Ce contrôle est du CONFORT et de la défense en profondeur, PAS la barrière.
+/// Ce contrôle est du CONFORT et de la défense en profondeur, PAS la barrière.
 /// Les quatre BFF partagent la même clé de signature : un jeton pris sur l'app
 /// acheteur reste techniquement présentable au BFF vendeur sans repasser par ce
 /// login. La vraie barrière, c'est le RequireRole sur les groupes d'endpoints.

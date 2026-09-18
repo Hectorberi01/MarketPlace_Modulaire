@@ -47,7 +47,7 @@ public sealed class ResendEmailSender : IEmailSender
             },
             cancellationToken);
 
-        // ⚠️ PostAsJsonAsync NE LÈVE PAS sur 4xx/5xx. Sans ce contrôle explicite, un 403
+        // PostAsJsonAsync NE LÈVE PAS sur 4xx/5xx. Sans ce contrôle explicite, un 403
         // « domaine non vérifié » ou un 401 « clé invalide » passerait pour un succès :
         // l'outbox marquerait le message traité, et l'e-mail serait perdu SANS TRACE.
         // L'utilisateur, lui, attendrait indéfiniment un lien qui n'est jamais parti.

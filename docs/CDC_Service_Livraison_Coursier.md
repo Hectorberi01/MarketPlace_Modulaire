@@ -50,6 +50,26 @@ est refusé — sans lui, un corps signé capturé une fois restait payable ind�
 Corps : `{ courierId, orderId, deliveryJobId, amount, currency }`. `deliveryJobId` est la
 clé d'idempotence — un rejeu ne paie pas deux fois.
 
+*Entrant (service → marketplace), deux autres routes sur le MÊME dispositif de
+signature* — `POST /api/delivery/courses/failed` annonce une course non aboutie et
+débloque l'expédition restée « en préparation » ; corps
+`{ courierId, orderId, deliveryJobId, reason, failedAtUtc }`, sans montant, parce qu'un
+dédommagement est une décision et non une conséquence mécanique. `POST
+/api/delivery/couriers/offer` demande à la marketplace de POUSSER une offre sur le
+téléphone du coursier ; corps `{ courierId, deliveryJobId }`, et rien d'autre : la
+marketplace écrit elle-même le titre et le corps de la notification, qui s'affiche sur un
+écran verrouillé.
+
+Cette dernière est la seule des trois à **ne pas passer par la file sortante** du service.
+Les deux autres portent un fait acquis et sont réessayées jusqu'à l'abandon ; une offre
+vit vingt-cinq secondes, et rejouée trois minutes plus tard elle sonnerait pour une course
+déjà prise. Elle part donc en direct, une fois, en envoi détaché — son échec ne laisse
+qu'une ligne de journal, et le coursier voit l'offre en ouvrant l'application.
+
+La répartition est délibérée : **le dispatch annonce, la marketplace pousse**. Les jetons
+d'appareil, les préférences et le compte de service FCM vivent dans le monolithe, et le
+compose de production annule le montage de ce compte pour le conteneur de dispatch.
+
 *Sortant (marketplace → service)* — `CourierActivatedIntegrationEvent`,
 `CourierSuspendedIntegrationEvent` (module Delivery) et
 `CourierEarningCreditedIntegrationEvent` (module Settlement). Ils sont publiés dans

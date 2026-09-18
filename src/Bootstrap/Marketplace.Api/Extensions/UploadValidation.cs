@@ -10,7 +10,7 @@ namespace Marketplace.Api.Extensions;
 /// <param name="ContentType">
 /// Le type MIME <b>RÉEL</b>, déduit des octets du fichier — <b>PAS</b> celui déclaré par le client.
 ///
-/// ⚠️ <b>C'est CELUI-CI qu'il faut transmettre au stockage.</b> Continuer à passer
+/// <b>C'est CELUI-CI qu'il faut transmettre au stockage.</b> Continuer à passer
 /// <c>file.ContentType</c> après avoir validé les magic bytes reviendrait à vérifier une
 /// identité puis à recopier le faux nom : le fichier serait servi depuis R2, et remis aux
 /// processeurs d'image, avec le type que le client a choisi.

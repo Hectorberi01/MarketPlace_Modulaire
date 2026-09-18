@@ -13,7 +13,7 @@ namespace Marketplace.Modules.Catalog.Infrastructure.Media;
 /// sans quota, sans facture à l'usage, et sans que les photos des vendeurs quittent
 /// le serveur.
 ///
-/// ⚠️ LE MODÈLE ENGAGE JURIDIQUEMENT, PAS LA BIBLIOTHÈQUE.
+/// LE MODÈLE ENGAGE JURIDIQUEMENT, PAS LA BIBLIOTHÈQUE.
 ///
 /// rembg est sous licence MIT, mais il embarque des modèles aux licences
 /// hétérogènes. Ceux de la famille BRIA (« bria-rmbg ») sont en CC BY-NC 4.0 :
@@ -30,7 +30,7 @@ public sealed class RembgOptions
     /// <summary>
     /// URL de base du service, réseau interne uniquement (ex. « http://rembg:7000 »).
     ///
-    /// ⚠️ Le serveur rembg n'a NI authentification NI limitation de débit. Il ne doit
+    /// Le serveur rembg n'a NI authentification NI limitation de débit. Il ne doit
     /// jamais être publié : pas de port exposé, pas de route Traefik.
     /// </summary>
     public string BaseUrl { get; set; } = string.Empty;

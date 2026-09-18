@@ -39,7 +39,7 @@ internal sealed class RequestPasswordResetCommandHandler : ICommandHandler<Reque
             // Pas d'énumération de comptes : succès silencieux. Le BFF répond exactement
             // la même chose que pour un compte existant.
             //
-            // ⚠️ Ne PAS ajouter de délai artificiel « pour égaliser les temps de réponse » :
+            // Ne PAS ajouter de délai artificiel « pour égaliser les temps de réponse » :
             // ici le chemin « inconnu » est même plus court que le chemin « connu » (pas de
             // génération de jeton, pas d'écriture). Un attaquant pourrait en théorie
             // mesurer l'écart. La vraie parade est le limiteur de débit posé sur le groupe

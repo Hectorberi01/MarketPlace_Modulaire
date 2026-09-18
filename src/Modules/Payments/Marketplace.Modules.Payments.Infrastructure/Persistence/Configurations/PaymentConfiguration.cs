@@ -31,7 +31,7 @@ internal sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         // lève `DbUpdateConcurrencyException` — traduite en 409 (voir
         // ConcurrencyExceptionHandler).
         //
-        // ⚠️ AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
+        // AUCUN RETRY AUTOMATIQUE, ET C'EST DÉLIBÉRÉ.
         //
         // ModuleDbContext dispatche les événements de domaine AVANT
         // base.SaveChangesAsync, et draine les événements d'intégration vers l'outbox.

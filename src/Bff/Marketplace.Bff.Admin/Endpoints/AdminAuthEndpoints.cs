@@ -134,7 +134,7 @@ public static class AdminAuthEndpoints
         ISender sender,
         CancellationToken ct)
     {
-        // ⚠️ GARDE ANTI-CSRF, ET ELLE N'EST PAS FACULTATIVE.
+        // GARDE ANTI-CSRF, ET ELLE N'EST PAS FACULTATIVE.
         //
         // Un cookie part TOUT SEUL avec la requête. Sans cette vérification, un site
         // malveillant pourrait faire soumettre au navigateur de l'administrateur un

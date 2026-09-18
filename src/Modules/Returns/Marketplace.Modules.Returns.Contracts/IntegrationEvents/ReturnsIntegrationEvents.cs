@@ -9,7 +9,7 @@ namespace Marketplace.Modules.Returns.Contracts.IntegrationEvents;
 /// accepté, le versement est en cours »). C'est ce message qui évite qu'il ouvre un
 /// litige pendant les quelques heures où l'opération attend d'être exécutée.
 ///
-/// ⚠️ N'engage AUCUNE écriture comptable.
+/// N'engage AUCUNE écriture comptable.
 /// </summary>
 public sealed record ReturnRefundApprovedIntegrationEvent : IntegrationEvent
 {
@@ -27,7 +27,7 @@ public sealed record ReturnRefundApprovedIntegrationEvent : IntegrationEvent
 /// Consommé par Settlement (contre-passation du gain vendeur + restitution de la
 /// commission) et Notifications (acheteur et vendeur).
 ///
-/// ⚠️ Cet événement était déjà publié — et PERSONNE ne l'écoutait. C'est ce silence
+/// Cet événement était déjà publié — et PERSONNE ne l'écoutait. C'est ce silence
 /// qui faisait qu'un remboursement ne remboursait rien, ne débitait personne, et
 /// n'informait qui que ce soit.
 /// </summary>

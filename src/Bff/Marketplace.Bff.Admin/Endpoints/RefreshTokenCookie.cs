@@ -23,7 +23,7 @@ namespace Marketplace.Bff.Admin.Endpoints;
 /// ═════════════════════════════════════════════════════════════════════════════
 ///
 /// <para>
-/// ⚠️ <b>CE QUE CE CORRECTIF NE FAIT PAS — ET IL FAUT LE DIRE.</b> HttpOnly n'immunise pas
+/// <b>CE QUE CE CORRECTIF NE FAIT PAS — ET IL FAUT LE DIRE.</b> HttpOnly n'immunise pas
 /// contre le XSS. Un script injecté peut toujours appeler <c>/admin/auth/refresh</c> depuis
 /// le navigateur de la victime : le cookie part tout seul, et le script récupère un jeton
 /// d'accès. Ce qu'il ne peut plus faire, c'est <b>EXFILTRER</b> une clé de longue durée.
