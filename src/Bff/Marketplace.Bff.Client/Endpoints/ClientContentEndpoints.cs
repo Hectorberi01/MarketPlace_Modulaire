@@ -52,27 +52,24 @@ public static class ClientContentEndpoints
         };
 
     /// <summary>
-    /// Un document légal AVEC SA VERSION, tel que l'application doit l'afficher et
-    /// le faire accepter.
+    /// Un document légal AVEC SA VERSION, tel que l'application doit l'afficher et le
+    /// faire accepter.
     ///
     /// ═════════════════════════════════════════════════════════════════════════════
-    /// LA VERSION ET LE TEXTE VOYAGENT DANS LE MÊME BLOC, ET C'EST TOUT L'INTÉRÊT.
+    /// L'ANALYSE DU BLOC A QUITTÉ CE FICHIER.
     ///
-    /// Avant cette route, chaque application embarquait le texte ET décidait de la
-    /// version qu'elle faisait enregistrer. Le serveur notait « a accepté
-    /// 2026-07-12 » sans savoir quelle rédaction avait été affichée : deux binaires
-    /// portant des textes différents pouvaient produire le même enregistrement, et
-    /// une application ancienne ne redemandait JAMAIS l'accord, puisqu'elle ignorait
-    /// que le texte avait changé.
-    ///
-    /// Ici, la version est un champ du document. Elle ne peut pas désigner un autre
-    /// texte que celui qui l'accompagne, parce qu'ils sont le même enregistrement.
+    /// Elle était écrite ici, et le vendeur a eu besoin du même service. La recopier
+    /// dans son BFF aurait créé deux lectures d'un même format, qui auraient divergé.
+    /// Elle vit maintenant dans le module Contenu (`GetLegalDocumentQuery`), dont c'est
+    /// le métier ; ce fichier ne décide plus que d'une chose : quels documents la
+    /// surface ACHETEUR expose, et sous quel nom.
     /// ═════════════════════════════════════════════════════════════════════════════
     ///
     /// 404 QUAND LE CMS N'A RIEN. Pas un document vide, pas un texte par défaut :
-    /// l'application retombe alors sur la copie qu'elle embarque, et fait accepter
-    /// LA VERSION DE CETTE COPIE — l'utilisateur accepte le texte qu'il a lu.
-    /// Rendre un document vide lui ferait accepter une page blanche.
+    /// l'application retombe alors sur la copie qu'elle embarque, et fait accepter LA
+    /// VERSION DE CETTE COPIE — l'utilisateur accepte le texte qu'il a lu. Rendre un
+    /// document vide lui ferait accepter une page blanche.
+    /// </summary>
     private static async Task<IResult> GetLegalDocumentAsync(
         string document, ISender sender, CancellationToken ct)
     {
@@ -81,69 +78,25 @@ public static class ClientContentEndpoints
             return Results.NotFound(new { error = "unknown_document" });
         }
 
-        var result = await sender.Send(new ListContentBySlotQuery(slot), ct);
-        if (result.IsFailure)
+        var resultat = await sender.Send(new GetLegalDocumentQuery(slot), ct);
+        if (resultat.IsFailure)
         {
+            // Non publié ou illisible : dans les deux cas l'appelant doit se rabattre
+            // sur sa copie. Un 404 le dit sans l'obliger à distinguer deux pannes sur
+            // lesquelles il ne peut rien.
             return Results.NotFound(new { error = "document_unavailable" });
         }
 
-        // UN SEUL BLOC PAR DOCUMENT, et le premier par position fait foi. Un document
-        // légal n'est pas une liste de fragments qu'on assemble : le découper en
-        // blocs rendrait possible d'en publier la moitié.
-        var bloc = result.Value.OrderBy(b => b.Position).FirstOrDefault();
-        if (bloc is null || string.IsNullOrWhiteSpace(bloc.Content))
-        {
-            return Results.NotFound(new { error = "document_unavailable" });
-        }
-
-        LegalDocumentPayload? charge;
-        try
-        {
-            charge = JsonSerializer.Deserialize<LegalDocumentPayload>(
-                bloc.Content, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        }
-        catch (JsonException)
-        {
-            // Bloc mal formé : on ne sert PAS un document partiel. L'application
-            // retombe sur sa copie embarquée, qui est au moins cohérente.
-            return Results.NotFound(new { error = "document_malformed" });
-        }
-
-        if (charge is null
-            || string.IsNullOrWhiteSpace(charge.Version)
-            || charge.Sections is not { Count: > 0 })
-        {
-            return Results.NotFound(new { error = "document_malformed" });
-        }
-
+        var doc = resultat.Value;
         return Results.Ok(new
         {
             document,
-            version = charge.Version,
-            lastUpdated = charge.LastUpdated,
-            company = charge.Company,
-            sections = charge.Sections.Select(s => new
-            {
-                title = s.Title,
-                body = s.Body ?? new List<string>(),
-            }),
+            version = doc.Version,
+            lastUpdated = doc.LastUpdated,
+            company = doc.Company,
+            sections = doc.Sections.Select(s => new { title = s.Title, body = s.Body }),
         });
     }
-
-    /// <summary>
-    /// La forme attendue dans <c>ContentBlock.Content</c> pour un document légal.
-    ///
-    /// C'est du JSON saisi dans le CMS, donc NON VÉRIFIÉ par un schéma : le handler
-    /// refuse ce qui n'a ni version ni sections, et l'application retombe sur sa
-    /// copie plutôt que d'afficher un document tronqué.
-    /// </summary>
-    private sealed record LegalDocumentPayload(
-        string? Version,
-        string? LastUpdated,
-        string? Company,
-        List<LegalSectionPayload>? Sections);
-
-    private sealed record LegalSectionPayload(string? Title, List<string>? Body);
 
     /// <summary>
     /// Renvoie les entrées d'un slot sous forme normalisée { question, answer }.

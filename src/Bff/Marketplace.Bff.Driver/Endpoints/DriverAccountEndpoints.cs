@@ -1,5 +1,9 @@
 using MediatR;
 using System.Security.Claims;
+// `Match` sur un `Result` est une extension de l'API, pas une méthode du type : les deux
+// autres fichiers d'endpoints de ce BFF l'importent déjà. Sans elle, la compilation
+// échoue sur un message qui parle de `Result`, pas d'un using manquant.
+using Marketplace.Api.Extensions;
 using Marketplace.Modules.Delivery.Contracts;
 using Marketplace.Modules.Notifications.Application.Devices;
 

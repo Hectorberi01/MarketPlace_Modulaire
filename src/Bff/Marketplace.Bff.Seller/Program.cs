@@ -275,6 +275,7 @@ app.MapSellerDisputeEndpoints();
 app.MapSellerMessagingEndpoints();
 app.MapSellerNotificationEndpoints();
 app.MapSellerAppEndpoints();
+app.MapSellerLegalEndpoints();
 
 // Hub temps réel (messagerie). Sous /seller pour être routé par Traefik + CORS navigateur.
 
