@@ -452,9 +452,69 @@ public sealed class Product : AggregateRoot<ProductId>
     }
 
     /// <summary>
+    /// Range le produit dans une autre catégorie — et LE RETIRE DE LA VENTE s'il était actif.
+    ///
+    /// ══════════════════════════════════════════════════════════════════════════
+    /// POURQUOI LA DÉPUBLICATION N'EST PAS UNE PRÉCAUTION EXCESSIVE.
+    ///
+    /// Un vendeur ne publie pas lui-même : `SellerCatalogEndpoints` lui refuse le statut
+    /// « Active », et c'est l'administration qui valide. Or elle valide une fiche DANS SON
+    /// RAYON — c'est même l'essentiel de ce qu'elle regarde.
+    ///
+    /// Laisser déplacer un produit actif rendrait ce contrôle contournable en deux gestes :
+    /// faire valider dans un rayon anodin, puis ranger ailleurs. La fiche resterait en
+    /// vente, sous une classification que personne n'a vue.
+    ///
+    /// Le coût est réel et assumé : corriger une erreur de rayon coûte une remise en
+    /// validation. C'est le prix d'un catalogue dont le classement veut dire quelque chose.
+    /// ══════════════════════════════════════════════════════════════════════════
+    ///
+    /// N'ÉMET AUCUN ÉVÉNEMENT DE MISE À JOUR. `Update`, appelé juste après par le même
+    /// gestionnaire, lève `ProductUpdatedDomainEvent` avec la catégorie DÉJÀ changée :
+    /// l'index de recherche reçoit donc la bonne, et un second événement ferait deux
+    /// réindexations pour une seule modification.
+    ///
+    /// L'ORDRE DES DEUX ÉVÉNEMENTS EST SANS CONSÉQUENCE, et ça mérite d'être dit :
+    /// `SearchIndexer.UpsertProductAsync` ne touche PAS à la visibilité d'un document
+    /// existant. La dépublication ne peut donc pas être défaite par la réindexation qui
+    /// la suit.
+    /// </summary>
+    /// <remarks>
+    /// L'EXISTENCE de la catégorie, son schéma d'attributs et le fait qu'elle soit une
+    /// FEUILLE sont vérifiés en amont par `ProductAttributeGuard` : ils demandent le
+    /// dépôt des catégories, que le domaine n'a pas.
+    /// </remarks>
+    public Result ChangeCategory(Guid newCategoryId)
+    {
+        if (newCategoryId == Guid.Empty)
+        {
+            return Result.Failure(Error.Validation(
+                "catalog.product.category_required", "La catégorie est obligatoire."));
+        }
+
+        // MÊME CATÉGORIE : ON NE TOUCHE À RIEN. Sans ce retour, chaque enregistrement du
+        // formulaire — qui renvoie toujours la catégorie courante — dépublierait le
+        // produit. Corriger une faute de frappe dans un nom le retirerait de la vente.
+        if (newCategoryId == CategoryId)
+        {
+            return Result.Success();
+        }
+
+        CategoryId = newCategoryId;
+
+        // Sans effet sur un brouillon ou un archivé, et émet l'événement de statut quand
+        // il agit — c'est lui qui retire la fiche de la vitrine.
+        return Unpublish();
+    }
+
+    /// <summary>
     /// Met à jour les champs descriptifs du produit. Le slug est recalculé à
     /// partir du nouveau nom ; l'unicité éventuelle est vérifiée par l'Application.
     /// Ne touche ni aux variantes ni aux médias (gérés par leurs propres opérations).
+    ///
+    /// LA CATÉGORIE NE PASSE PAS PAR ICI : voir <see cref="ChangeCategory"/>, qui porte
+    /// une conséquence — la dépublication — que « mettre à jour les champs descriptifs »
+    /// ne laisse pas attendre.
     /// </summary>
     public Result Update(
         string name,

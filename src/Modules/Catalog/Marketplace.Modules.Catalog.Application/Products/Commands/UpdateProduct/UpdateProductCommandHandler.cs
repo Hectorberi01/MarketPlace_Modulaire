@@ -46,17 +46,51 @@ internal sealed class UpdateProductCommandHandler : ICommandHandler<UpdateProduc
             return Result.Failure(Error.Conflict("catalog.product.slug_taken", $"Le slug « {newSlug} » existe déjà."));
         }
 
-        // LA MODIFICATION EST CONTRÔLÉE COMME LA CRÉATION.
+        // ════════════════════════════════════════════════════════════════════════
+        // LA CATÉGORIE PEUT CHANGER, ET LES ATTRIBUTS SONT ALORS VALIDÉS CONTRE LA NOUVELLE.
         //
-        // La catégorie lue est celle du produit : cette commande ne permet pas d'en
-        // changer. Un produit conforme à son schéma à la création pouvait sinon
-        // devenir non conforme à la première modification, ce qui aurait fait du
-        // contrôle une formalité de premier passage.
+        // Elle était figée à la création, sans aucun moyen de la corriger — ni pour le
+        // vendeur, ni pour l'administration. Une veste rangée dans « Informatique » y
+        // restait, introuvable pour qui parcourt le bon rayon.
+        //
+        // `ProductAttributeGuard` prenait DÉJÀ un identifiant de catégorie en paramètre :
+        // lui passer la nouvelle suffit à ce que les caractéristiques obligatoires soient
+        // celles du rayon d'arrivée. Un produit déplacé sans ses attributs est refusé,
+        // pas accepté à moitié.
+        // ════════════════════════════════════════════════════════════════════════
+        var categorieCible = command.CategoryId is { } demandee && demandee != Guid.Empty
+            ? demandee
+            : product.CategoryId;
+
+        var deplacement = categorieCible != product.CategoryId;
+
+        // `forCreation` SUIT LE DÉPLACEMENT, et c'est le seul point délicat ici.
+        //
+        // Ce drapeau commande l'exigence de FEUILLE. Le garde l'a mise à faux en
+        // modification pour une bonne raison : un produit peut se retrouver dans une
+        // catégorie intermédiaire parce que l'administration a ajouté une sous-catégorie
+        // sous lui, et l'enfermer punirait le vendeur d'une décision qui n'est pas la
+        // sienne.
+        //
+        // Ce raisonnement ne vaut PAS pour un déplacement : là, le vendeur choisit, et
+        // choisir une catégorie qui a des enfants revient à se priver des attributs par
+        // lesquels les acheteurs filtrent — sans le savoir.
         var attributes = await _attributeGuard.ResolveAsync(
-            product.CategoryId, command.Attributes, cancellationToken);
+            categorieCible, command.Attributes, cancellationToken, forCreation: deplacement);
         if (attributes.IsFailure)
         {
             return Result.Failure(attributes.Error);
+        }
+
+        // AVANT `Update`, et l'ordre compte : `Update` lève l'événement de mise à jour
+        // avec la catégorie courante. Appelé après, il réindexerait l'ancienne.
+        if (deplacement)
+        {
+            var deplace = product.ChangeCategory(categorieCible);
+            if (deplace.IsFailure)
+            {
+                return deplace;
+            }
         }
 
         var updateResult = product.Update(

@@ -297,7 +297,8 @@ public static class SellerCatalogEndpoints
         => await GuardAsync(user, catalog, sellers, id, ct,
             () => sender.Send(new UpdateProductCommand(
                 id, request.Name, request.Description, request.BrandId, request.Gtin,
-                request.Ean, request.ProductGroupId, request.Attributes, request.Tags), ct));
+                request.Ean, request.ProductGroupId, request.Attributes, request.Tags,
+                request.CategoryId), ct));
 
     private static async Task<IResult> ChangeStatusAsync(ClaimsPrincipal user, Guid id, StatusRequest request, ISender sender, ICatalogModuleApi catalog, ISellerModuleApi sellers, CancellationToken ct)
     {
@@ -682,9 +683,17 @@ public static class SellerCatalogEndpoints
         return (await action()).Match(() => Results.NoContent());
     }
 
+    /// <param name="CategoryId">
+    /// Où ranger le produit. NULLE = inchangée, ce qui garde compatibles les clients qui
+    /// ne l'envoient pas encore — l'application mobile, notamment.
+    ///
+    /// CHANGER DE CATÉGORIE RETIRE DE LA VENTE un produit actif, le temps que
+    /// l'administration revalide son classement. Voir `Product.ChangeCategory`.
+    /// </param>
     public sealed record UpdateProductRequest(
         string Name, string Description, Guid? BrandId, string? Gtin, string? Ean,
-        Guid? ProductGroupId, IReadOnlyDictionary<string, string>? Attributes, IReadOnlyList<string>? Tags);
+        Guid? ProductGroupId, IReadOnlyDictionary<string, string>? Attributes, IReadOnlyList<string>? Tags,
+        Guid? CategoryId = null);
 
     public sealed record StatusRequest(string Status);
     /// <summary>
