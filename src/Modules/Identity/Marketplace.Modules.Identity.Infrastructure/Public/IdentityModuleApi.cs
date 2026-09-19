@@ -78,6 +78,29 @@ internal sealed class IdentityModuleApi : IIdentityModuleApi
             string.IsNullOrWhiteSpace(holder) ? "Client" : holder);
     }
 
+    /// <summary>
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// CETTE PROJECTION S'ARRÊTAIT AUX RÔLES, ET LE RESTE PARTAIT À NULL EN SILENCE.
+    ///
+    /// `UserSummary` a gagné quatre champs optionnels au fil du temps — version des
+    /// conditions acceptées, sa date, la vérification par un administrateur, et la photo
+    /// de profil. Comme ils sont OPTIONNELS, ne pas les passer compile parfaitement :
+    /// le compilateur remplit les valeurs par défaut, et personne n'est averti.
+    ///
+    /// C'est la projection que les BFF appellent réellement (`IIdentityModuleApi`), pas
+    /// celle de `GetUserQueryHandler` qui, elle, les passait tous. Les deux construisaient
+    /// donc le même type à partir du même agrégat, avec un résultat différent.
+    ///
+    /// CE QUE ÇA COÛTAIT : la photo de l'interlocuteur dans les listes de conversations
+    /// valait toujours null. Les deux applications affichaient des initiales pour des
+    /// comptes qui ont une photo, et rien — ni erreur, ni journal — ne le signalait.
+    /// ════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    /// <remarks>
+    /// LES PARAMÈTRES SONT NOMMÉS, et ce n'est pas une préférence de style : quatre
+    /// valeurs optionnelles de suite dont deux `string?` et deux `DateTime?` se décalent
+    /// sans que le compilateur bronche. C'est ainsi que ce défaut est né.
+    /// </remarks>
     private static UserSummary Map(User user) => new(
         user.Id.Value,
         user.FirstName,
@@ -87,5 +110,9 @@ internal sealed class IdentityModuleApi : IIdentityModuleApi
         user.Status.ToString(),
         user.EmailVerified,
         user.MfaEnabled,
-        user.RoleIds.ToList());
+        user.RoleIds.ToList(),
+        AcceptedTermsVersion: user.AcceptedTermsVersion,
+        AcceptedTermsOnUtc: user.AcceptedTermsOnUtc,
+        EmailVerifiedByAdminOnUtc: user.EmailVerifiedByAdminOnUtc,
+        AvatarUrl: user.AvatarUrl);
 }

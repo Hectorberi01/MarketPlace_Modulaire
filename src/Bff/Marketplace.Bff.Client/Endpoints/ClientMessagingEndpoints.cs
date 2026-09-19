@@ -99,11 +99,23 @@ public static class ClientMessagingEndpoints
         {
             var otherId = c.ParticipantIds.FirstOrDefault(p => p != userId);
             var title = "Vendeur";
+
+            // ════════════════════════════════════════════════════════════════
+            // LA PHOTO NE COÛTE RIEN ICI : LA FICHE EST DÉJÀ CHARGÉE.
+            //
+            // Cette boucle appelle `GetUserAsync` pour le NOM, et jetait le reste. Depuis
+            // que `UserSummary` porte l'avatar, le rendre ne demande aucun appel de plus —
+            // alors que le récupérer plus tard, depuis l'application, en coûterait un par
+            // conversation affichée.
+            // ════════════════════════════════════════════════════════════════
+            string? avatarUrl = null;
+
             if (otherId != Guid.Empty)
             {
                 var u = await identity.GetUserAsync(otherId, ct);
                 if (u is not null)
                 {
+                    avatarUrl = u.AvatarUrl;
                     var name = $"{u.FirstName} {u.LastName}".Trim();
                     if (!string.IsNullOrWhiteSpace(name))
                     {
@@ -117,6 +129,7 @@ public static class ClientMessagingEndpoints
             {
                 id = c.Id,
                 title,
+                avatarUrl,
                 lastMessage = last?.Body ?? string.Empty,
                 updatedAtUtc = c.LastMessageAtUtc,
                 unreadCount = c.Messages.Count(m => m.SenderId != userId && m.ReadAtUtc is null),

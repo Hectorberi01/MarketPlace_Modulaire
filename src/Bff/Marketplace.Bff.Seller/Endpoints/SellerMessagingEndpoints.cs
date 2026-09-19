@@ -55,11 +55,17 @@ public static class SellerMessagingEndpoints
         {
             var otherId = c.ParticipantIds.FirstOrDefault(p => p != userId);
             var customer = "Client";
+
+            // La photo de l'acheteur, sans appel supplémentaire : la fiche est déjà
+            // chargée pour son nom. Même raisonnement que côté acheteur.
+            string? avatarUrl = null;
+
             if (otherId != Guid.Empty)
             {
                 var u = await identity.GetUserAsync(otherId, ct);
                 if (u is not null)
                 {
+                    avatarUrl = u.AvatarUrl;
                     customer = $"{u.FirstName} {u.LastName}".Trim();
                 }
             }
@@ -69,6 +75,7 @@ public static class SellerMessagingEndpoints
             {
                 id = c.Id,
                 customer = string.IsNullOrWhiteSpace(customer) ? "Client" : customer,
+                avatarUrl,
                 // ─────────────────────────────────────────────────────────────────
                 // L'IDENTIFIANT DE L'AUTRE PARTICIPANT, ET LA RAISON EST AILLEURS.
                 //

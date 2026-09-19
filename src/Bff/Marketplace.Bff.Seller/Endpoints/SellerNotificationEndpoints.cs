@@ -33,6 +33,19 @@ public static class SellerNotificationEndpoints
         notifications.MapGet("/unread-count", UnreadCountAsync);
         notifications.MapPost("/{id:guid}/read", MarkReadAsync);
         notifications.MapPost("/read-all", MarkAllReadAsync);
+
+        // ═════════════════════════════════════════════════════════════════
+        // LA MÊME ROUTE QUE CÔTÉ ACHETEUR, QUI L'AVAIT DÉJÀ — ET LA MÊME COMMANDE.
+        //
+        // `DeleteOwnNotificationCommand` existe depuis que l'acheteur peut balayer une
+        // notification ; elle vérifie elle-même que la notification appartient bien au
+        // demandeur, et répond « introuvable » sinon, sans dire qu'elle existe.
+        //
+        // Le vendeur, lui, n'avait rien : ses notifications s'empilaient sans qu'il
+        // puisse en retirer une seule. Sur une messagerie active, la liste devient
+        // illisible en quelques jours.
+        // ═════════════════════════════════════════════════════════════════
+        notifications.MapDelete("/{id:guid}", DeleteNotificationAsync);
         // Push : enregistrement/retrait du jeton d'appareil (FCM).
         notifications.MapPost("/devices", RegisterDeviceAsync);
         notifications.MapPost("/devices/unregister", UnregisterDeviceAsync);
@@ -114,4 +127,15 @@ public static class SellerNotificationEndpoints
         => SellerBff.CurrentUserId(user) is not { } userId
             ? Results.Unauthorized()
             : (await sender.Send(new MarkAllNotificationsReadCommand(userId), ct)).Match(() => Results.NoContent());
+
+    /// <summary>
+    /// Supprime UNE notification du vendeur (balayage vers la gauche).
+    ///
+    /// IDEMPOTENTE : une notification déjà supprimée rend un succès. C'est ce qui permet
+    /// de balayer deux fois, ou de rejouer après une coupure réseau, sans échec.
+    /// </summary>
+    private static async Task<IResult> DeleteNotificationAsync(ClaimsPrincipal user, Guid id, ISender sender, CancellationToken ct)
+        => SellerBff.CurrentUserId(user) is not { } userId
+            ? Results.Unauthorized()
+            : (await sender.Send(new DeleteOwnNotificationCommand(id, userId), ct)).Match(() => Results.NoContent());
 }
