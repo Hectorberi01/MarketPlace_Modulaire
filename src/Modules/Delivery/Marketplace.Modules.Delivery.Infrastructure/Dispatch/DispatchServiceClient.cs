@@ -153,6 +153,86 @@ public sealed class DispatchServiceClient : IDispatchServiceClient
         return flotte;
     }
 
+    /// <summary>
+    /// Le suivi d'une commande, ou <c>null</c> quand le service dit qu'il n'y a rien.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE 404 EST TRADUIT ICI, ET NULLE PART AILLEURS.
+    ///
+    /// C'est la SEULE méthode de ce client où un code d'échec HTTP est une réponse
+    /// normale. Le service répond 404 pour une commande sans course — cas majoritaire,
+    /// puisqu'une commande partie par transporteur n'en a jamais — et le laisser remonter
+    /// en `HttpRequestException` ferait journaliser un incident à chaque consultation
+    /// d'une commande ordinaire.
+    ///
+    /// TOUS LES AUTRES CODES LÈVENT, y compris 401. Une signature refusée ressemblerait à
+    /// « rien à suivre » si on l'avalait aussi, et la carte resterait vide sans que
+    /// personne n'apprenne jamais que le secret a divergé entre les deux déploiements.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public async Task<DispatchOrderTracking?> GetOrderTrackingAsync(
+        Guid orderId, Guid buyerId, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+
+        const string path = "/internal/orders/tracking";
+
+        // Même budget que la flotte, et pour la même raison : cette lecture alimente un
+        // écran qui redemande toutes les quinze secondes. Les dix secondes du client HTTP
+        // sont taillées pour le drain d'outbox, que personne ne regarde.
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(ReadBudget);
+
+        // Sérialisé UNE fois, signé, envoyé tel quel — voir PostAsync : laisser le
+        // sérialiseur du client HTTP refaire le travail donnerait une signature portant
+        // sur d'autres octets que ceux transmis.
+        var body = JsonSerializer.Serialize(
+            new DispatchOrderTrackingRequest(orderId, buyerId), JsonOptions);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
+
+        var secret = _configuration[SecretKey];
+        if (!string.IsNullOrWhiteSpace(secret))
+        {
+            var (timestamp, signature) = PartnerServiceSignature.Sign(body, secret);
+            request.Headers.Add(PartnerServiceSignature.TimestampHeader, timestamp);
+            request.Headers.Add(SignatureHeader, signature);
+        }
+
+        using var response = await _http.SendAsync(request, budget.Token);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await ReadShortAsync(response, budget.Token);
+
+            throw new HttpRequestException(
+                $"Service de dispatch : {path} a répondu {(int)response.StatusCode} " +
+                $"({response.ReasonPhrase}). {detail}");
+        }
+
+        var suivi = await response.Content.ReadFromJsonAsync<DispatchOrderTracking>(
+            JsonOptions, budget.Token);
+
+        // Un corps « null » est un JSON valide et donnerait ici une référence nulle, qui
+        // se lirait comme « rien à suivre » — c'est-à-dire comme un 404 que le service
+        // n'a pas envoyé. Une réponse amputée doit se voir.
+        if (suivi is null)
+        {
+            throw new JsonException(
+                "Service de dispatch : suivi de commande vide là où un 404 était attendu.");
+        }
+
+        return suivi;
+    }
+
     private async Task PostAsync<TPayload>(
         string path, TPayload payload, string subject, CancellationToken cancellationToken)
     {

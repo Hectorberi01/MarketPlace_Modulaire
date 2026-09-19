@@ -3,6 +3,7 @@ using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
+using Marketplace.Modules.Delivery.Contracts;
 using Marketplace.Modules.Ordering.Application.Orders.Commands;
 using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Ordering.Contracts;
@@ -26,6 +27,25 @@ public static class ClientOrderEndpoints
         orders.MapPost("/{id:guid}/cancel", CancelAsync);
         orders.MapPost("/{id:guid}/return", ReturnAsync);
         orders.MapGet("/{id:guid}/tracking", TrackingAsync);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LE SUIVI VIVANT, À CÔTÉ DU SUIVI D'EXPÉDITION — ET NON DEDANS.
+        //
+        // `/tracking` rend les expéditions : leur statut, leur transporteur, leur numéro.
+        // Ce sont des faits ENREGISTRÉS, qui bougent quelques fois par commande, et
+        // l'écran les demande une fois.
+        //
+        // Celle-ci rend une position, qui bouge toutes les quinze secondes et que l'écran
+        // redemande au même rythme tant que la livraison dure. Les fondre en une route
+        // ferait repasser par la base la commande, ses expéditions et leurs lignes à
+        // chaque sondage — pour un couple de coordonnées.
+        //
+        // ET SURTOUT : L'UNE DÉPEND D'UN AUTRE SERVICE, PAS L'AUTRE. Un dispatch
+        // injoignable rendrait le détail de commande indisponible s'il était dans le
+        // même appel. Séparées, la page s'affiche entière et seule la carte dit qu'elle
+        // ne sait pas.
+        // ═══════════════════════════════════════════════════════════════════════════
+        orders.MapGet("/{id:guid}/delivery", DeliveryTrackingAsync);
         orders.MapGet("/{id:guid}/invoice", InvoiceAsync);
 
         return app;
@@ -189,6 +209,44 @@ public static class ClientOrderEndpoints
             return Results.NotFound();
         }
         return Results.Ok(await shipping.GetShipmentsByOrderAsync(id, ct));
+    }
+
+    /// <summary>
+    /// Où en est la livraison par coursier, et où est le coursier. Réservé au propriétaire.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// DEUX SERRURES, ET LA PREMIÈRE EST ICI.
+    ///
+    /// `LoadOwnedOrderAsync` garantit que la commande est bien celle du porteur du jeton —
+    /// c'est le même geste que les quatre autres routes par identifiant de ce fichier.
+    /// L'identifiant d'acheteur est ENSUITE transmis au module, qui le fait voyager dans
+    /// un corps signé jusqu'au service de dispatch, lequel le recompare à l'acheteur de
+    /// la course.
+    ///
+    /// La seconde serrure ne rattrape pas l'oubli de la première : elle protège contre un
+    /// tout autre scénario, celui d'un appel interne rejoué avec un autre identifiant de
+    /// commande. Les deux sont nécessaires et ne couvrent pas le même risque.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    ///
+    /// RÉPOND TOUJOURS 200 QUAND LA COMMANDE EXISTE, même dispatch injoignable : c'est la
+    /// charge qui porte `reachable` et `byCourier`. Un 503 obligerait chaque application à
+    /// distinguer « pas de coursier sur cette commande » d'un incident, à partir d'un code
+    /// HTTP qui ne dit ni l'un ni l'autre.
+    /// </summary>
+    private static async Task<IResult> DeliveryTrackingAsync(
+        ClaimsPrincipal user, Guid id, ISender sender, IDeliveryModuleApi delivery, CancellationToken ct)
+    {
+        if (ClientBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(await delivery.GetOrderTrackingAsync(id, buyerId, ct));
     }
 
     /// <summary>

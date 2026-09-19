@@ -47,6 +47,29 @@ public interface IDispatchServiceClient
     /// parce que c'est elle qui connaît son appelant.
     /// </summary>
     Task<DispatchFleet> GetCourierPositionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Où en est la livraison d'UNE commande, et où est le coursier qui la porte.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// NULL N'EST PAS UNE ERREUR ICI, ET C'EST LE CAS LE PLUS FRÉQUENT.
+    ///
+    /// Une commande partie par transporteur n'a pas de course. Une commande encore en
+    /// préparation non plus. Le service répond 404, et ce 404 se traduit en `null` —
+    /// jamais en exception. Confondre « rien à suivre » et « le service est en panne »
+    /// afficherait à l'acheteur un message d'incident pour un colis qui voyage très bien.
+    ///
+    /// Les VRAIS échecs — service injoignable, signature refusée, réponse illisible —
+    /// lèvent, comme pour les autres méthodes de ce port.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    ///
+    /// L'ACHETEUR PART DANS LE CORPS, ET C'EST POUR ÇA QUE C'EST UN POST. La signature
+    /// porte « horodatage.corps », jamais le chemin : en GET, l'identifiant de commande
+    /// et celui de l'acheteur seraient hors de ce qu'elle atteste. Voir le commentaire de
+    /// la route côté dispatch, qui développe.
+    /// </summary>
+    Task<DispatchOrderTracking?> GetOrderTrackingAsync(
+        Guid orderId, Guid buyerId, CancellationToken cancellationToken = default);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,6 +162,43 @@ public sealed record DispatchCourierPosition(
     string DisplayName,
     string Vehicle,
     string Availability,
+    double Latitude,
+    double Longitude,
+    DateTime PositionAtUtc);
+
+/// <summary>Ce que la route de suivi reçoit : quelle commande, pour quel acheteur.</summary>
+public sealed record DispatchOrderTrackingRequest(Guid OrderId, Guid BuyerId);
+
+/// <summary>
+/// Le suivi tel que le service de dispatch le rend.
+///
+/// Type SÉPARÉ du contrat public, pour la raison donnée en tête de ce fichier. Les points
+/// de ramassage n'y figurent que par leur COMPTE : le service ne rend pas leurs
+/// coordonnées, et ce module n'a donc rien à décider à ce sujet.
+/// </summary>
+/// <param name="Leg">« ToPickup », « ToBuyer » ou « None ». Déduit là-bas, jamais ici.</param>
+/// <param name="PositionMaxAgeSeconds">
+/// Âge au-delà duquel le dispatch lui-même ne croit plus le coursier là où il dit être.
+/// Il vient de là-bas parce que c'est là-bas qu'il s'applique.
+/// </param>
+public sealed record DispatchOrderTracking(
+    Guid OrderId,
+    Guid JobId,
+    string Status,
+    string Leg,
+    int PickupsDone,
+    int PickupsTotal,
+    double? DropoffLatitude,
+    double? DropoffLongitude,
+    DateTime? AcceptedAtUtc,
+    DateTime? CompletedAtUtc,
+    int PositionMaxAgeSeconds,
+    DispatchTrackedCourier? Courier);
+
+/// <summary>Le coursier tel que le suivi le rend — sans son identifiant ni sa disponibilité.</summary>
+public sealed record DispatchTrackedCourier(
+    string DisplayName,
+    string Vehicle,
     double Latitude,
     double Longitude,
     DateTime PositionAtUtc);

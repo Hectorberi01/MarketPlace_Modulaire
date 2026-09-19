@@ -154,6 +154,34 @@ public static class InternalEndpoints
         internals.MapGet("/couriers/positions", CourierPositionsAsync)
             .WithName("InternalCourierPositions");
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LE SUIVI D'UNE COMMANDE, POUR L'ACHETEUR QUI L'ATTEND.
+        //
+        // UN POST POUR UNE LECTURE, ET C'EST LE SEUL POINT QUI MÉRITE DÉBAT ICI.
+        //
+        // La chaîne signée vaut « horodatage.corps » : elle ne porte NI LA MÉTHODE NI LE
+        // CHEMIN. Le commentaire de la route juste au-dessus le dit déjà, et en tire la
+        // conséquence qui compte : le couple (horodatage, signature) qu'elle produit sur
+        // un corps vide vaut pour TOUT appel `/internal` à corps vide.
+        //
+        // Cette route-ci prend deux paramètres — quelle commande, et pour quel acheteur.
+        // En GET, ils vivraient dans le chemin ou la requête, c'est-à-dire HORS de ce que
+        // la signature atteste : un couple d'en-têtes capté une fois suffirait alors à
+        // demander n'importe quelle commande au nom de n'importe qui, et la réponse porte
+        // la position d'un coursier et les coordonnées d'un domicile.
+        //
+        // En POST, les deux paramètres SONT le corps signé. Le rejeu reste possible dans
+        // sa fenêtre de cinq minutes, mais il ne peut rejouer que CETTE demande-là —
+        // celle que l'appelant légitime a formulée. C'est exactement la garantie qui
+        // manque à un GET, et elle ne coûte que le verbe.
+        //
+        // La bonne correction de fond reste de signer « horodatage.méthode chemin.corps »
+        // des deux côtés. Elle touche aux deux dépôts et à toutes les routes existantes ;
+        // elle n'est pas le prix d'entrée d'un écran de suivi.
+        // ═══════════════════════════════════════════════════════════════════════════
+        internals.MapPost("/orders/tracking", OrderTrackingAsync)
+            .WithName("InternalOrderTracking");
+
         return app;
     }
 
@@ -225,6 +253,43 @@ public static class InternalEndpoints
         }
 
         return Results.Ok(await fleet.ListOnFieldAsync(ct));
+    }
+
+    /// <summary>
+    /// Où en est la livraison d'une commande, et où est le coursier qui la porte.
+    ///
+    /// 404 QUAND IL N'Y A RIEN À SUIVRE, et sans dire lequel des deux cas s'applique —
+    /// commande sans course, ou commande qui n'est pas à cet acheteur. <see
+    /// cref="OrderTrackingQuery.GetAsync"/> explique pourquoi les distinguer ferait de
+    /// cette route un oracle d'existence de commandes.
+    ///
+    /// L'ACHETEUR EST DANS LE CORPS SIGNÉ, donc attesté. C'est ce qui sépare ce contrôle
+    /// d'une simple politesse : le BFF a déjà vérifié la possession de son côté, et ce
+    /// service revérifie sur une valeur que l'appelant ne peut pas avoir changée après
+    /// coup.
+    /// </summary>
+    private static async Task<IResult> OrderTrackingAsync(
+        HttpRequest http, OrderTrackingQuery tracking, IConfiguration configuration, CancellationToken ct)
+    {
+        var (failure, payload) = await ReadSignedAsync<OrderTrackingRequest>(http, configuration, ct);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var request = payload!;
+
+        // Guid vide REFUSÉ explicitement. Un corps `{}` désérialise en deux Guid vides,
+        // qui ne correspondent à aucune course — la requête rendrait donc null et la
+        // route un 404 correct. Mais compter sur ce hasard laisserait le jour où une
+        // course serait créée avec un acheteur inconnu rendre son suivi à tout le monde.
+        if (request.OrderId == Guid.Empty || request.BuyerId == Guid.Empty)
+        {
+            return Results.BadRequest(new { error = "order_and_buyer_required" });
+        }
+
+        var vue = await tracking.GetAsync(request.OrderId, request.BuyerId, ct);
+        return vue is null ? Results.NotFound() : Results.Ok(vue);
     }
 
     /// <summary>
@@ -426,6 +491,25 @@ public static class InternalEndpoints
         public string? Line { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
+    }
+
+    /// <summary>
+    /// De qui, pour quelle commande. Les deux champs du corps SIGNÉ de la route de suivi.
+    ///
+    /// Mutables et sans `required`, comme les autres charges entrantes de ce fichier :
+    /// un `required` lèverait au milieu de la désérialisation, là où l'on ne peut plus
+    /// répondre un 400 propre. Deux Guid par défaut valent Guid.Empty, que le
+    /// gestionnaire refuse explicitement.
+    /// </summary>
+    public sealed class OrderTrackingRequest
+    {
+        public Guid OrderId { get; set; }
+
+        /// <summary>
+        /// L'acheteur au nom de qui on demande. DANS LE CORPS, donc signé : c'est tout
+        /// l'intérêt du POST, expliqué à l'enregistrement de la route.
+        /// </summary>
+        public Guid BuyerId { get; set; }
     }
 
     public sealed class OrderCancelledRequest

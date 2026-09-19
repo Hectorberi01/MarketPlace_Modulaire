@@ -125,6 +125,144 @@ internal sealed class DeliveryModuleApi : IDeliveryModuleApi
         }
     }
 
+    /// <summary>
+    /// Relaie le suivi d'une commande, ou dit pourquoi il n'a pas pu être demandé.
+    ///
+    /// LES MÊMES QUATRE PANNES QUE <see cref="GetFleetAsync"/>, distinguées pour les
+    /// mêmes raisons — voir le commentaire là-haut, qui vaut mot pour mot ici.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LA CINQUIÈME RÉPONSE N'EST PAS UNE PANNE : « CETTE COMMANDE N'A PAS DE COURSE ».
+    ///
+    /// Le client rend `null` sur le 404 du dispatch, et ce cas ressort ici en
+    /// <c>ByCourier: false</c> avec <c>Reachable: true</c>. C'est la réponse la plus
+    /// fréquente de cette méthode — toute commande partie par transporteur, et toute
+    /// commande pas encore prête. La confondre avec une panne afficherait un message
+    /// d'incident sur des colis qui voyagent très bien.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public async Task<OrderDeliveryTracking> GetOrderTrackingAsync(
+        Guid orderId, Guid buyerId, CancellationToken cancellationToken = default)
+    {
+        // Posé AVANT l'appel, comme pour la flotte : c'est l'instant auquel on a demandé,
+        // et c'est le plus ancien des deux.
+        var observedAt = DateTime.UtcNow;
+
+        try
+        {
+            var suivi = await _dispatch.GetOrderTrackingAsync(orderId, buyerId, cancellationToken);
+
+            if (suivi is null)
+            {
+                return SansCourse(observedAt);
+            }
+
+            return new OrderDeliveryTracking(
+                Reachable: true,
+                Failure: null,
+                ObservedAtUtc: observedAt,
+                ByCourier: true,
+                Status: suivi.Status,
+                Leg: suivi.Leg,
+                PickupsDone: suivi.PickupsDone,
+                PickupsTotal: suivi.PickupsTotal,
+                DropoffLatitude: suivi.DropoffLatitude,
+                DropoffLongitude: suivi.DropoffLongitude,
+                AcceptedAtUtc: suivi.AcceptedAtUtc,
+                CompletedAtUtc: suivi.CompletedAtUtc,
+                PositionMaxAgeSeconds: suivi.PositionMaxAgeSeconds,
+                // L'identifiant du coursier et sa disponibilité s'arrêtent ici : le type
+                // du dispatch ne les porte pas, et le contrat public non plus.
+                Courier: suivi.Courier is null
+                    ? null
+                    : new TrackedCourierPosition(
+                        suivi.Courier.DisplayName,
+                        suivi.Courier.Vehicle,
+                        suivi.Courier.Latitude,
+                        suivi.Courier.Longitude,
+                        suivi.Courier.PositionAtUtc));
+        }
+        catch (DispatchNotConfiguredException ex)
+        {
+            return SuiviInjoignable(
+                observedAt,
+                "Le service de livraison n'est pas configuré sur cette instance.",
+                ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // La condition est essentielle, pour la raison donnée dans GetFleetAsync :
+            // sans elle, un acheteur qui ferme sa page produirait un « délai dépassé »
+            // mensonger, et son annulation serait avalée au lieu de remonter.
+            return SuiviInjoignable(
+                observedAt,
+                "Le suivi de livraison n'a pas répondu dans le délai imparti.",
+                ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            return SuiviInjoignable(
+                observedAt,
+                "Le suivi de livraison est momentanément indisponible.",
+                ex);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            return SuiviInjoignable(
+                observedAt,
+                "Le suivi de livraison a répondu dans une forme inattendue.",
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// Pas de course pour cette commande. Joignable, rien à montrer, aucune erreur.
+    /// </summary>
+    private static OrderDeliveryTracking SansCourse(DateTime observedAt)
+        => new(
+            Reachable: true,
+            Failure: null,
+            ObservedAtUtc: observedAt,
+            ByCourier: false,
+            Status: null,
+            Leg: null,
+            PickupsDone: 0,
+            PickupsTotal: 0,
+            DropoffLatitude: null,
+            DropoffLongitude: null,
+            AcceptedAtUtc: null,
+            CompletedAtUtc: null,
+            PositionMaxAgeSeconds: 0,
+            Courier: null);
+
+    private OrderDeliveryTracking SuiviInjoignable(DateTime observedAt, string message, Exception cause)
+    {
+        _logger.LogWarning(cause, "Suivi de livraison impossible : {Message}", message);
+
+        // `ByCourier` à VRAI, et c'est le point délicat de cette méthode : on ne sait pas
+        // si cette commande a une course — c'est précisément ce qu'on n'a pas pu
+        // demander. Le dire à faux ferait afficher « pas de livraison par coursier », une
+        // affirmation tranquille et fausse. À vrai, avec `Reachable` à faux, l'écran sait
+        // qu'il ne sait pas, et le dit.
+        return new OrderDeliveryTracking(
+            Reachable: false,
+            Failure: message,
+            ObservedAtUtc: observedAt,
+            ByCourier: true,
+            Status: null,
+            Leg: null,
+            PickupsDone: 0,
+            PickupsTotal: 0,
+            DropoffLatitude: null,
+            DropoffLongitude: null,
+            AcceptedAtUtc: null,
+            CompletedAtUtc: null,
+            // Zéro, et non une valeur plausible : on ne le connaît pas, et une valeur
+            // inventée serait indiscernable d'une valeur reçue.
+            PositionMaxAgeSeconds: 0,
+            Courier: null);
+    }
+
     private CourierFleetSnapshot Injoignable(DateTime observedAt, string message, Exception cause)
     {
         _logger.LogWarning(cause, "Relevé de la flotte impossible : {Message}", message);

@@ -31,6 +31,13 @@ public static class DispatchApplicationServices
         // doit pouvoir en déplacer un.
         services.AddScoped<FleetQuery>();
 
+        // Le suivi d'UNE commande, pour l'acheteur. Séparé de FleetQuery et non ajouté
+        // dedans : l'un répond à la supervision et rend tout ce qu'il sait, l'autre répond
+        // à un client et rend le strict nécessaire. Les fondre ferait vivre les deux
+        // jugements dans la même classe, et le jour où l'un gagne un champ, l'autre
+        // l'hérite sans qu'on l'ait voulu.
+        services.AddScoped<OrderTrackingQuery>();
+
         return services;
     }
 }
