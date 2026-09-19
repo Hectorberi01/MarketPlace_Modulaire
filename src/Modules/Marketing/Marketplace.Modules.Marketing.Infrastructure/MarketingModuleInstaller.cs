@@ -9,6 +9,7 @@ using Marketplace.Modules.Marketing.Application.Abstractions;
 using Marketplace.Modules.Marketing.Application.Campaigns;
 using Marketplace.Modules.Marketing.Domain.Campaigns;
 using Marketplace.Modules.Marketing.Domain.Content;
+using Marketplace.Modules.Marketing.Domain.Legal;
 using Marketplace.Modules.Marketing.Infrastructure.Persistence;
 
 namespace Marketplace.Modules.Marketing.Infrastructure;
@@ -33,6 +34,8 @@ public sealed class MarketingModuleInstaller : IModuleInstaller
 
         services.AddScoped<ICampaignRepository, CampaignRepository>();
         services.AddScoped<IContentBlockRepository, ContentBlockRepository>();
+        services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
+        services.AddScoped<ILegalAcceptanceRepository, LegalAcceptanceRepository>();
 
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 

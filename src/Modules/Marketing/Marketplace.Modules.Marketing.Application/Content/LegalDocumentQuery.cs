@@ -1,13 +1,15 @@
 using System.Text.Json;
 using Marketplace.BuildingBlocks.Application.Messaging;
 using Marketplace.BuildingBlocks.Domain.Results;
+using Marketplace.Modules.Marketing.Application.Legal;
 using Marketplace.Modules.Marketing.Contracts;
 using Marketplace.Modules.Marketing.Domain.Content;
+using Marketplace.Modules.Marketing.Domain.Legal;
 
 namespace Marketplace.Modules.Marketing.Application.Content;
 
 /// <summary>
-/// Le document légal publié dans un emplacement, analysé et typé.
+/// Le document légal en vigueur à une adresse, analysé et typé.
 ///
 /// ═════════════════════════════════════════════════════════════════════════════════════
 /// POURQUOI CETTE LECTURE VIT ICI ET NON DANS UN BFF.
@@ -19,6 +21,23 @@ namespace Marketplace.Modules.Marketing.Application.Content;
 /// lecture d'aucun des deux fichiers ne le révèle.
 ///
 /// Le format d'un document légal est une affaire du module Contenu, pas d'une surface.
+/// ═════════════════════════════════════════════════════════════════════════════════════
+///
+/// ═════════════════════════════════════════════════════════════════════════════════════
+/// DEUX SOURCES, LE TEMPS DE LA BASCULE — ET UN ORDRE QUI N'EST PAS ARBITRAIRE.
+///
+/// 1. LE MODÈLE VERSIONNÉ (`LegalDocument`), s'il connaît cette adresse. Il sert la
+///    version EN VIGUEUR à l'instant présent : publiée, et dont la date d'effet est
+///    passée. Le numéro de version vient de sa colonne, où il est ordonné et vérifié.
+///
+/// 2. À DÉFAUT, l'ancien bloc de contenu, dont la version était une chaîne saisie à la
+///    main À L'INTÉRIEUR du JSON. C'est exactement ce qu'on quitte ; le repli existe
+///    pour que rien ne casse tant que les documents n'ont pas été repris, et il a
+///    vocation à disparaître.
+///
+/// L'ordre compte : dès qu'un document versionné existe pour une adresse, c'est LUI qui
+/// fait foi. Sinon un ancien bloc oublié continuerait de servir un texte abrogé,
+/// silencieusement.
 /// ═════════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public sealed record GetLegalDocumentQuery(string Slot) : IQuery<LegalDocumentView>;
@@ -32,15 +51,67 @@ internal sealed class GetLegalDocumentQueryHandler
     /// </summary>
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IContentBlockRepository _repository;
+    private readonly ILegalDocumentRepository _legalDocuments;
+    private readonly IContentBlockRepository _contentBlocks;
 
-    public GetLegalDocumentQueryHandler(IContentBlockRepository repository)
-        => _repository = repository;
+    public GetLegalDocumentQueryHandler(
+        ILegalDocumentRepository legalDocuments,
+        IContentBlockRepository contentBlocks)
+    {
+        _legalDocuments = legalDocuments;
+        _contentBlocks = contentBlocks;
+    }
 
     public async Task<Result<LegalDocumentView>> Handle(
         GetLegalDocumentQuery query, CancellationToken cancellationToken)
     {
-        var blocs = await _repository.ListPublishedBySlotAsync(query.Slot, cancellationToken);
+        var adresse = (query.Slot ?? string.Empty).Trim();
+
+        var document = await _legalDocuments.GetBySlugAsync(adresse, cancellationToken);
+        if (document is not null)
+        {
+            return LireDocumentVersionne(document);
+        }
+
+        return await LireAncienBlocAsync(adresse, cancellationToken);
+    }
+
+    private static Result<LegalDocumentView> LireDocumentVersionne(LegalDocument document)
+    {
+        if (document.Status == LegalDocumentStatus.Archived)
+        {
+            return Result.Failure<LegalDocumentView>(Error.NotFound(
+                "marketing.legal.not_published",
+                "Ce document a été retiré."));
+        }
+
+        var version = document.EffectiveVersion(DateTime.UtcNow);
+        if (version is null)
+        {
+            // Créé mais jamais publié, ou publié pour une date d'effet encore à venir.
+            // Dans les deux cas l'appelant doit se rabattre sur sa copie embarquée.
+            return Result.Failure<LegalDocumentView>(Error.NotFound(
+                "marketing.legal.not_published",
+                "Aucune version en vigueur pour ce document."));
+        }
+
+        var charge = LegalContent.Analyser(version.Content);
+        if (charge.IsFailure)
+        {
+            return Result.Failure<LegalDocumentView>(charge.Error);
+        }
+
+        return Result.Success(new LegalDocumentView(
+            version.Number.ToString(),
+            charge.Value.LastUpdated,
+            charge.Value.Company,
+            LegalContent.EnSections(charge.Value)));
+    }
+
+    private async Task<Result<LegalDocumentView>> LireAncienBlocAsync(
+        string slot, CancellationToken cancellationToken)
+    {
+        var blocs = await _contentBlocks.ListPublishedBySlotAsync(slot, cancellationToken);
 
         // UN SEUL BLOC PAR DOCUMENT, le premier par position. Un texte contractuel n'est
         // pas une liste de fragments qu'on assemble : le découper en blocs rendrait
@@ -89,7 +160,7 @@ internal sealed class GetLegalDocumentQueryHandler
     }
 
     /// <summary>
-    /// La forme attendue dans <c>ContentBlock.Content</c>.
+    /// La forme attendue dans <c>ContentBlock.Content</c> — L'ANCIEN MODÈLE.
     ///
     /// C'est du JSON saisi dans le back-office, donc NON VALIDÉ par un schéma : le
     /// handler refuse ce qui n'a ni version ni sections plutôt que de faire confiance.

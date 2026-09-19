@@ -282,6 +282,7 @@ app.MapAdminCourierEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapAdminProductEndpoints();
 app.MapAdminPlatformEndpoints();
+app.MapAdminLegalEndpoints();
 app.MapAdminShippingEndpoints();
 app.MapAdminMonitoringEndpoints();
 app.MapAdminRefundEndpoints();

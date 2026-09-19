@@ -1,4 +1,5 @@
 using MediatR;
+using Marketplace.Modules.Marketing.Application.Legal;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
@@ -248,11 +249,49 @@ public static class ClientAccountEndpoints
     /// La version vient du CLIENT : c'est le texte qu'il avait sous les yeux. Faire
     /// consigner par le serveur « la version courante » sans savoir laquelle a été
     /// affichée reviendrait à faire signer un document qu'on n'a pas montré.
+    ///
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// DEUX ÉCRITURES, ET LA RÉPONSE DIT LAQUELLE A PRIS.
+    ///
+    /// 1. L'ANCIENNE : deux colonnes sur le compte. Une seule case pour toute la
+    ///    plateforme — accepter un second document écrasait la trace du premier. Elle
+    ///    reste écrite parce que les portillons de consentement déjà déployés la
+    ///    lisent ; la retirer maintenant les ferait tous redemander l'accord.
+    ///
+    /// 2. LA NOUVELLE : une ligne par couple (personne, version), dans le module
+    ///    Contenu. C'est elle qui répond à « qu'avait cette personne sous les yeux ».
+    ///
+    /// `recorded` dit si la seconde a pu s'écrire. FAUX signifie que la version
+    /// présentée ne correspond à aucune version publiée — le cas normal tant que le
+    /// document n'est pas dans le CMS : l'application affiche alors sa copie
+    /// embarquée. On ne fabrique PAS de version fantôme pour faire réussir l'appel :
+    /// une preuve qui pointe vers un texte que personne ne peut relire est pire
+    /// qu'une absence de preuve, parce qu'elle en a l'apparence.
+    ///
+    /// Un `false` ne bloque JAMAIS la personne. C'est un signal pour la plateforme,
+    /// pas une sanction pour l'utilisateur.
+    /// ═════════════════════════════════════════════════════════════════════════════
     /// </summary>
     private static async Task<IResult> AcceptTermsAsync(ClaimsPrincipal user, AcceptTermsRequest request, ISender sender, CancellationToken ct)
-        => ClientBff.CurrentUserId(user) is not { } userId
-            ? Results.Unauthorized()
-            : (await sender.Send(new AcceptTermsCommand(userId, request.Version), ct)).Match(() => Results.NoContent());
+    {
+        if (ClientBff.CurrentUserId(user) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var legacy = await sender.Send(new AcceptTermsCommand(userId, request.Version), ct);
+        if (legacy.IsFailure)
+        {
+            return legacy.Match(() => Results.NoContent());
+        }
+
+        var trace = await sender.Send(
+            new RecordLegalAcceptanceCommand(userId, "legal_terms_customer", request.Version, "consent_gate_client"), ct);
+
+        // L'échec de la trace n'annule pas le consentement : il est déjà consigné sur le
+        // compte. On le rend visible plutôt que de le taire.
+        return Results.Ok(new { version = request.Version, recorded = trace.IsSuccess && trace.Value });
+    }
 
     /// <summary>Met à jour le profil.</summary>
     private static async Task<IResult> UpdateProfileAsync(ClaimsPrincipal user, ProfileRequest request, ISender sender, CancellationToken ct)

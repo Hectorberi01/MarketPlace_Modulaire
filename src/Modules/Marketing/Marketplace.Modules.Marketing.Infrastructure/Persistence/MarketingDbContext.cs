@@ -5,6 +5,7 @@ using Marketplace.BuildingBlocks.Infrastructure.Persistence;
 using Marketplace.Modules.Marketing.Application.Abstractions;
 using Marketplace.Modules.Marketing.Domain.Campaigns;
 using Marketplace.Modules.Marketing.Domain.Content;
+using Marketplace.Modules.Marketing.Domain.Legal;
 
 namespace Marketplace.Modules.Marketing.Infrastructure.Persistence;
 
@@ -23,6 +24,8 @@ public sealed class MarketingDbContext : ModuleDbContext, IMarketingUnitOfWork
 
     public DbSet<Campaign> Campaigns => Set<Campaign>();
     public DbSet<ContentBlock> ContentBlocks => Set<ContentBlock>();
+    public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
+    public DbSet<LegalAcceptance> LegalAcceptances => Set<LegalAcceptance>();
 
     protected override string Schema => SchemaName;
 

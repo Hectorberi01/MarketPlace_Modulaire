@@ -152,6 +152,133 @@ namespace Marketplace.Modules.Marketing.Infrastructure.Migrations
 
                     b.ToTable("content_blocks", "marketing");
                 });
+
+            modelBuilder.Entity("Marketplace.Modules.Marketing.Domain.Legal.LegalAcceptance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AcceptedOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Context")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VersionId");
+
+                    b.HasIndex("UserId", "VersionId")
+                        .IsUnique();
+
+                    b.ToTable("legal_acceptances", "marketing");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Marketing.Domain.Legal.LegalDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CurrentVersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("legal_documents", "marketing");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Marketing.Domain.Legal.LegalDocumentVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("Version");
+
+                    b.Property<Guid?>("PublishedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("PublishedOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("DocumentId", "Status");
+
+                    b.ToTable("legal_document_versions", "marketing");
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Marketing.Domain.Legal.LegalDocumentVersion", b =>
+                {
+                    b.HasOne("Marketplace.Modules.Marketing.Domain.Legal.LegalDocument", null)
+                        .WithMany("Versions")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Marketplace.Modules.Marketing.Domain.Legal.LegalDocument", b =>
+                {
+                    b.Navigation("Versions");
+                });
 #pragma warning restore 612, 618
         }
     }
