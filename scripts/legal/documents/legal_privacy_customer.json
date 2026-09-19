@@ -1,0 +1,69 @@
+{
+  "version": "2026-07-12",
+  "lastUpdated": "12 juillet 2026",
+  "company": "HBA TECH ET TRADE",
+  "sections": [
+    {
+      "title": "1. Responsable du traitement",
+      "body": [
+        "HBA TECH ET TRADE est responsable des traitements de données réalisés au moyen de l'application. Ils relèvent du Livre V du Code du numérique et du contrôle de l'Autorité de protection des données à caractère personnel (APDP) du Bénin.",
+        "Pour toute question : support@hba-express.com."
+      ]
+    },
+    {
+      "title": "2. Ce que nous collectons",
+      "body": [
+        "Votre compte : nom, prénom, e-mail, téléphone, mot de passe (conservé sous forme d'empreinte, jamais en clair).",
+        "Vos achats : adresses de livraison, commandes, paiements, avis publiés, favoris.",
+        "Vos échanges avec les vendeurs via la messagerie, et — si vous les avez acceptées — un identifiant d'appareil pour les notifications."
+      ]
+    },
+    {
+      "title": "3. Pourquoi",
+      "body": [
+        "Exécution du contrat : traiter et livrer vos commandes, encaisser le paiement, vous permettre de dialoguer avec le vendeur, gérer les retours et arbitrer les litiges.",
+        "Obligation légale : conserver les pièces comptables et fiscales.",
+        "Intérêt légitime : prévenir la fraude et sécuriser la plateforme.",
+        "Consentement : notifications, et toute prospection commerciale — retirable à tout moment.",
+        "Nous ne vendons pas vos données et ne faisons pas de publicité ciblée."
+      ]
+    },
+    {
+      "title": "4. Ce que voit le vendeur",
+      "body": [
+        "Uniquement ce qui lui est nécessaire pour livrer : le nom du destinataire, l'adresse et le téléphone de livraison de la commande concernée.",
+        "Il ne voit ni votre historique d'achats chez d'autres vendeurs, ni vos moyens de paiement."
+      ]
+    },
+    {
+      "title": "5. Nos prestataires",
+      "body": [
+        "Paiement : notre prestataire de services de paiement, par lequel transitent les données de la transaction. Nous ne stockons aucun numéro de carte.",
+        "Notifications : notre prestataire de messagerie push, qui reçoit l'identifiant de votre appareil.",
+        "Hébergement et traitement d'images. Certains de ces prestataires traitent des données hors du Bénin ; ces transferts sont encadrés par le Livre V du Code du numérique."
+      ]
+    },
+    {
+      "title": "6. Sécurité",
+      "body": [
+        "Vos identifiants de session sont conservés dans le coffre-fort sécurisé de votre téléphone (Keychain sur iOS, Keystore sur Android), jamais en clair. Les échanges avec nos serveurs sont chiffrés.",
+        "En cas de violation de données susceptible de créer un risque pour vos droits, nous en informons l'APDP et, lorsque la loi l'exige, vous-même."
+      ]
+    },
+    {
+      "title": "7. Combien de temps",
+      "body": [
+        "Compte : tant qu'il est actif.",
+        "Commandes, facturation et paiements : au-delà, pour la durée imposée par les obligations comptables et fiscales. Ces données ne peuvent pas être effacées sur simple demande — c'est la loi, non un choix commercial."
+      ]
+    },
+    {
+      "title": "8. Vos droits",
+      "body": [
+        "Accès, rectification, opposition, suppression, copie de vos données — dans les limites de conservation ci-dessus.",
+        "Écrivez à support@hba-express.com depuis l'adresse de votre compte ; nous répondons sous 30 jours.",
+        "Si vous estimez vos droits méconnus, vous pouvez saisir l'APDP."
+      ]
+    }
+  ]
+}

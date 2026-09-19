@@ -1,0 +1,94 @@
+{
+  "version": "2026-07-12",
+  "lastUpdated": "12 juillet 2026",
+  "company": "HBA TECH ET TRADE",
+  "sections": [
+    {
+      "title": "1. Objet",
+      "body": [
+        "HBA TECH ET TRADE exploite la place de marché HBAExpress, qui met en relation des vendeurs professionnels et des acheteurs.",
+        "Ces conditions sont soumises au Code du numérique en République du Bénin (loi n° 2017-20 du 20 avril 2018, modifiée par la loi n° 2020-35 du 6 janvier 2021). Utiliser l'application vaut acceptation."
+      ]
+    },
+    {
+      "title": "2. Votre compte",
+      "body": [
+        "Un compte vendeur est ouvert après vérification de votre entreprise : registre du commerce (RCCM), identité du gérant, justificatifs. Les informations fournies doivent être exactes et tenues à jour.",
+        "Vous êtes responsable de vos identifiants et de tout ce qui est fait depuis votre compte."
+      ]
+    },
+    {
+      "title": "3. Commission et frais",
+      "body": [
+        "Vous fixez votre prix NET — ce que vous percevez. La plateforme ajoute une commission de 10 % et des frais de paiement de 5 % pour obtenir le prix payé par l'acheteur. Le calcul s'affiche avant chaque mise en vente.",
+        "Aucun abonnement, aucun frais de publication, aucun frais de retrait. Un mois sans vente est un mois sans facture."
+      ]
+    },
+    {
+      "title": "4. Information de l’acheteur",
+      "body": [
+        "Avant toute commande, l'acheteur doit disposer des caractéristiques essentielles du produit, de son état réel, du prix toutes taxes comprises, des frais de livraison, du délai de préparation que vous annoncez, et des modalités de retour et de remboursement.",
+        "Une description inexacte engage votre responsabilité, et la nôtre à votre place : c'est pourquoi elle est un motif de retrait immédiat de la mise en vente."
+      ]
+    },
+    {
+      "title": "5. Garanties légales",
+      "body": [
+        "Le Code du numérique met trois garanties à la charge de tout vendeur en ligne. Aucune clause ne peut les écarter, et vous les devez à chaque acheteur :",
+        "CONFORMITÉ — le produit livré correspond exactement à sa description, ses photos et son état annoncé. Annoncer « neuf » un produit d'occasion est une inexécution.",
+        "ÉVICTION — le produit ne porte atteinte à aucun droit de propriété intellectuelle. La contrefaçon entraîne la suspension.",
+        "VICES CACHÉS — le produit est garanti contre les défauts cachés qui le rendent impropre à son usage, ou qui diminuent tellement cet usage que l'acheteur ne l'aurait pas acheté, ou en aurait donné un moindre prix, s'il les avait connus."
+      ]
+    },
+    {
+      "title": "6. Commandes et expéditions",
+      "body": [
+        "Vous vous engagez à préparer et expédier toute commande payée dans le délai que vous avez annoncé, et à fournir un numéro de suivi.",
+        "Une commande non expédiée dans un délai raisonnable peut être annulée et intégralement remboursée à l'acheteur."
+      ]
+    },
+    {
+      "title": "7. Paiement et séquestre",
+      "body": [
+        "L'acheteur paie à la commande, mais les fonds sont RETENUS par la plateforme : ils ne vous sont pas immédiatement versés.",
+        "Vous êtes crédité après confirmation de la livraison. C'est ce mécanisme qui protège l'acheteur — et qui, en retour, le convainc d'acheter chez vous."
+      ]
+    },
+    {
+      "title": "8. Retours, rétractation et remboursement",
+      "body": [
+        "L'acheteur consommateur dispose d'un droit de rétractation pour les contrats conclus à distance, dans les conditions et le délai fixés par la loi, qui lui sont rappelés avant tout paiement.",
+        "Tout remboursement est effectué SANS FRAIS pour l'acheteur, par le MÊME moyen de paiement que celui utilisé — c'est une règle du Code du numérique, pas une politique commerciale.",
+        "Vous traitez les demandes de retour dans un délai raisonnable et motivez tout refus."
+      ]
+    },
+    {
+      "title": "9. Litiges",
+      "body": [
+        "En cas de litige, la plateforme peut arbitrer. Sans réponse de votre part, la décision se prend sur les seuls éléments fournis par l'acheteur.",
+        "Un remboursement décidé par arbitrage est prélevé sur votre solde.",
+        "Le droit béninois est applicable. À défaut de règlement amiable, les tribunaux compétents de la République du Bénin peuvent être saisis."
+      ]
+    },
+    {
+      "title": "10. Vos versements",
+      "body": [
+        "Vos gains sont crédités après confirmation de la livraison. Vous pouvez en demander le retrait vers votre compte Mobile Money : les fonds sont retenus dès la demande, puis versés après validation.",
+        "Un versement refusé par l'opérateur est intégralement recrédité sur votre solde. Aucun frais de retrait n'est prélevé."
+      ]
+    },
+    {
+      "title": "11. Suspension",
+      "body": [
+        "La plateforme peut suspendre une mise en vente, une boutique ou un compte en cas de manquement grave : contrefaçon, produit dangereux, non-expédition répétée, fraude, manipulation des avis.",
+        "Vos gains acquis restent dus, sous réserve des litiges en cours et des remboursements dus aux acheteurs."
+      ]
+    },
+    {
+      "title": "12. Modifications",
+      "body": [
+        "Ces conditions peuvent évoluer. Toute modification substantielle vous sera présentée dans l'application, et votre accord vous sera de nouveau demandé."
+      ]
+    }
+  ]
+}
