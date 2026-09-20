@@ -196,6 +196,15 @@ public class NotificationDispatcherIdempotencyTests
         public Task<IReadOnlyList<DeviceToken>> ListByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DeviceToken>>(new[] { DeviceToken.Create(userId, "jeton-de-test", "android") });
 
+        /// <summary>
+        /// Audience d'une diffusion. Ce faux n'en sert AUCUNE : ces tests-ci portent sur
+        /// l'idempotence du dispatcher pour un destinataire donné, pas sur la diffusion.
+        /// Rendre une liste vide est le comportement le plus honnête — il ne fait passer
+        /// aucun test par accident.
+        /// </summary>
+        public Task<IReadOnlyList<Guid>> ListUserIdsAsync(string? platform, int max, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
+
         public Task RemoveByTokensAsync(IReadOnlyCollection<string> tokens, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }

@@ -127,6 +127,23 @@ public sealed class UniqueViolationExceptionHandler : IExceptionHandler
                 "Cette référence (SKU) est déjà utilisée. Les SKU sont uniques sur toute la place : choisissez-en un autre.");
         }
 
+        // ── LES SLUGS NE SONT PLUS SEULEMENT CEUX DES PRODUITS ──────────────────────
+        // La correspondance se fait par FRAGMENT : « ix_campaigns_slug » contient
+        // « slug », et l'administrateur d'une campagne s'entendait donc répondre
+        // « un produit portant ce nom existe déjà ». Les index nommés sont testés avant
+        // le cas générique, du plus précis au plus vague.
+        if (name.Contains("campaign"))
+        {
+            return ("marketing.campaign.slug_taken",
+                "Cette adresse d'événement est déjà utilisée par une autre campagne.");
+        }
+
+        if (name.Contains("legal_document"))
+        {
+            return ("marketing.legal.slug_taken",
+                "Un document juridique occupe déjà cet emplacement.");
+        }
+
         if (name.Contains("slug"))
         {
             return ("catalog.product.slug_taken",

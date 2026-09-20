@@ -286,11 +286,11 @@ pire que pas de compte à rebours.
 | **1** | FAIT le 20/09/2026 — voir ci-dessous | |
 | **2** | FAIT le 20/09/2026 — voir §9 | |
 | **3** | FAIT le 20/09/2026 — voir §9 | |
-| **4** | `Slug`, `HeroImageUrl`, `Description`, `IsPublic` sur `Campaign` + migration | Prépare l'exposition sans rien casser. |
-| **5** | Routes `/client/events` et `/client/events/{slug}` | La résolution promotions → produits est le vrai travail. |
-| **6** | Pages `/evenements`, pastilles sur les vignettes, entrée de menu conditionnelle | L'affichage, une fois les données disponibles. |
-| **7** | Balayage d'arrière-plan des campagnes (D5), sur le modèle de `DiscountExpiryService` | Confort d'exploitation, pas bloquant. |
-| **8** | Diffusion segmentée des notifications (D6) | Le plus gros morceau, et le seul qui touche à la vie privée : une annonce poussée à tout le monde doit être justifiable. |
+| **4** | FAIT le 20/09/2026 — voir §10 | |
+| **5** | FAIT le 20/09/2026 — voir §10 | |
+| **6** | FAIT le 20/09/2026 — voir §11 | |
+| **7** | FAIT le 20/09/2026 — voir §11 | |
+| **8** | FAIT le 20/09/2026 — voir §11 | |
 
 Les lots 0 et 1 sont de l'ordre de la demi-journée. Le lot 5 est le seul qui demande une
 décision d'architecture (voir ci-dessous).
@@ -299,10 +299,13 @@ décision d'architecture (voir ci-dessous).
 
 ## 7. Décisions qui restent à prendre
 
-1. **Résolution promotions → produits.** Interroger `Pricing` produit par produit ne tient
-   pas à l'échelle d'une page d'événement. Soit `Pricing` expose « les produits d'une
-   promotion », soit `Marketing` conserve une liste de produits mise à jour par événement
-   d'intégration. La première est plus juste, la seconde plus rapide à afficher.
+1. **Résolution promotions → produits. TRANCHÉ le 20/09/2026 : ni l'une ni l'autre.**
+   En lisant `Promotion`, il s'est avéré qu'elle porte DÉJÀ un périmètre (`ScopeType`) et
+   des cibles (`Targets`), et que `PromotionSummary` les expose. Il n'y avait donc rien à
+   ajouter à `Pricing`, et surtout rien à dénormaliser dans `Marketing` : la seconde
+   option aurait créé une liste de produits à tenir à jour en plus de celle qui existe,
+   avec sa propre dérive. Le BFF résout chaque périmètre avec les lectures existantes —
+   voir §10.
 2. **Fuseau horaire de saisie.** Les dates saisies en console sont-elles à lire en UTC ou
    à l'heure de Cotonou (UTC+1) ? Tant que ce n'est pas tranché, « fin le 30 » reste
    ambigu d'une heure à un jour près.
@@ -399,3 +402,190 @@ passage dans la console y mettrait un terme.
 ### À faire à la mise en production
 
 `dotnet build Marketplace.sln`. **Aucune migration** : `Announcement` est une valeur d'énumération stockée en entier, aucune colonne ne change. Publier une annonce de test en portée globale, vérifier qu'elle apparaît sous l'en-tête du site dans la minute (cache de 60 s) et en tête de l'accueil de l'application, puis l'archiver.
+
+
+---
+
+## 10. Ce qui a été fait — lots 4 et 5, 20/09/2026
+
+### Lot 4 — une campagne peut être montrée
+
+| Fichier | Changement |
+|---|---|
+| `…Domain/Campaigns/Campaign.cs` | `Slug`, `Description`, `HeroImageUrl`, `IsPublic`, plus `DefinirPresentation` et `EstVisiblePubliquement(asOfUtc)`. Le slug est normalisé et validé DANS le domaine : c'est une adresse, donc une donnée du domaine, et aucune translittération silencieuse — « rentrée » est refusé plutôt que transformé en une adresse que personne n'a écrite. Le visuel doit être une URL http(s), contrôlée pour de bon : la propriété le promettait en commentaire, rien ne l'imposait, et la valeur est servie anonymement à trois applications. |
+| `…Infrastructure/Persistence/Configurations/MarketingConfigurations.cs` | Quatre colonnes et un index unique FILTRÉ sur `Slug IS NOT NULL` : sans filtre, l'unicité n'aurait fonctionné que par accident (PostgreSQL tient les NULL pour distincts), et le filtre documente que l'absence d'adresse est le cas ordinaire. |
+| `Migrations/20260920090000_AddCampaignPublicPresentation.{cs,Designer.cs}` + snapshot | Écrits à la main, aucun SDK .NET disponible. `IsPublic` est NOT NULL avec défaut `false` : les campagnes déjà en base gardent exactement le comportement qu'elles avaient, aucune n'est publiée par accident. Designer et snapshot vérifiés identiques octet pour octet. |
+| `…Application/Campaigns/CampaignCommandsAndQueries.cs` | `SetCampaignPresentationCommand` SÉPARÉE de `UpdateCampaignCommand`. Les fusionner aurait fait qu'un appelant ne connaissant pas les quatre champs les efface en enregistrant le nom — c'est le défaut que `targetSegment` a déjà coûté une fois dans cet écran. Plus un validateur de longueurs : EF ne valide pas `MaxLength` côté client, et une saisie trop longue serait revenue en 500. |
+| `Bff.Admin/Endpoints/AdminPlatformEndpoints.cs` | `PUT /admin/campaigns/{id}/presentation`. |
+| `Bootstrap/…/UniqueViolationExceptionHandler.cs` | La correspondance se fait par FRAGMENT : « ix_campaigns_slug » contient « slug », et l'administrateur d'une campagne s'entendait répondre « un produit portant ce nom existe déjà ». Les index nommés passent maintenant avant le cas générique — campagnes et documents juridiques compris. |
+| `apps/admin/.../marketing/page.tsx` | Dialogue « Page publique » : adresse, présentation, visuel, et la case qui décide. La même règle de slug est dite AVANT l'envoi, parce qu'une adresse refusée après un aller-retour se corrige à l'aveugle. Pastille « Publique » dans la liste, qui dit que la campagne a une page — pas qu'elle est visible, ce qui dépend aussi du statut et de la fenêtre. |
+
+### Lot 5 — les routes client, et la résolution
+
+`GET /client/events` et `GET /client/events/{slug}`, anonymes.
+
+LA RÈGLE DE VISIBILITÉ VIT DANS L'AGRÉGAT. `EstVisiblePubliquement` exige les quatre
+conditions — publique, active, dans la fenêtre, pourvue d'une adresse. Le BFF ne la
+réécrit pas : deux endroits qui décident séparément finissent par ne plus être d'accord,
+et c'est la vitrine qui tranche, au pire moment. Le dépôt ne fait qu'un pré-filtrage sur
+des conditions NÉCESSAIRES (`IsPublic` et `Slug != null`) pour ne pas charger
+l'historique marketing entier sur une route anonyme ; il ne peut donc jamais masquer ce
+que la règle aurait montré.
+
+« N'existe pas » et « pas encore publique » rendent la MÊME réponse : distinguer les deux
+dirait à un visiteur qu'une opération se prépare sous ce nom.
+
+**La résolution promotions → produits**, décision n°1 tranchée :
+
+| Périmètre de la promotion | Ce que la route en fait |
+|---|---|
+| `Product` | Les cibles SONT des produits : lecture publique, une par une. Un produit archivé ou rejeté depuis est écarté — l'afficher le rendrait cliquable vers une fiche qui n'existe plus. |
+| `Category` | Une seule recherche, filtrée sur l'ensemble des catégories visées. |
+| `Seller` | Une recherche par vendeur visé : l'index n'en filtre qu'un à la fois. |
+| `Cart`, `Global` | Aucun produit : l'opération porte sur toute la boutique. La page devra le dire plutôt que d'afficher une grille vide. |
+
+Les vignettes sortent dans la MÊME forme que la recherche, pour que la grille d'un
+événement réutilise la carte produit existante. Un objet « produit d'événement » aurait
+imposé une seconde carte, qui aurait divergé de la première au premier changement de
+design.
+
+Deux bornes assumées : 48 produits par page — une page d'événement donne envie, elle ne
+déroule pas un catalogue — et des lectures SÉQUENTIELLES, parce que les DbContext des
+modules ne sont pas utilisables en parallèle. C'est la contrainte qui gouverne déjà
+`ClientBff.WithProductImagesAsync`.
+
+### Vérifications
+
+`tsc`, `next lint` et `next build` sur la console ; les deux garde-fous ; Designer et
+snapshot de migration comparés programmatiquement. Le C# a été relu par un passage
+adversarial qui a confirmé la migration par différentiel (le `Verification` vide de la
+veille prouve que le snapshot était aligné avant) et a trouvé six défauts, tous corrigés :
+l'ordre des deux contrôles de slug, le message d'unicité qui parlait d'un produit,
+l'absence de validateur de longueurs, le contrat http(s) du visuel qui n'était qu'un
+commentaire, la lecture de toute la table des campagnes sur une route anonyme, et une
+double lecture des offres par produit.
+
+### À faire à la mise en production
+
+`dotnet build Marketplace.sln`, puis **appliquer la migration sur une base de recette
+d'abord** — elle s'applique au démarrage de l'API, et une migration qui échoue relance la
+pile en boucle. Ensuite `dotnet ef migrations add Verification2` doit produire une
+migration VIDE ; si elle ne l'est pas, le snapshot écrit à la main diverge du modèle et
+c'est lui qu'il faut corriger, pas la base.
+
+Reste le lot 6 : les pages `/evenements` de la vitrine, les pastilles « Vente flash » sur
+les vignettes, et l'entrée de menu conditionnelle.
+
+
+---
+
+## 11. Ce qui a été fait — lots 6 à 8, 20/09/2026
+
+### Lot 6 — les pages d'événement
+
+`/evenements` et `/evenements/[slug]`, plus l'entrée de menu qui n'apparaît que s'il y a
+quelque chose en cours — un menu permanent vers une page qui dit « aucune opération » use
+la confiance plus vite qu'il ne rapporte de clics. La PAGE, elle, reste indexable même
+vide : une page qui disparaît de l'index entre deux ventes flash perd à chaque fois
+l'ancienneté qu'elle a mis des semaines à gagner. Les événements en cours entrent dans le
+plan de site.
+
+DEUX ÉCARTS ASSUMÉS PAR RAPPORT À L'AUDIT :
+
+1. **Pas de pastille « Vente flash » sur les vignettes.** Elle aurait demandé de savoir,
+   pour chaque produit de chaque grille, s'il appartient à une campagne active — une
+   résolution par vignette sur des pages qui en portent vingt-quatre. À la place, la
+   carte affiche la FIN DE REMISE, qui arrivait déjà jusqu'à elle depuis le début et
+   n'était affichée nulle part : « −30 % » ne dit pas s'il faut se dépêcher, « −30 %
+   jusqu'au 25 sept. » le dit. Coût nul, même effet.
+2. **Une date sur la liste, un compte à rebours sur la page de l'événement.** Un décompte
+   par carte, c'est une minuterie par carte qui réveille React chaque seconde. La règle
+   était déjà écrite dans `carte-produit.tsx` ; elle vaut ici aussi.
+
+Le compte à rebours part de la fin rendue par le SERVEUR, jamais de l'horloge seule : sur
+un téléphone mal réglé, un compte à rebours faux fait rater l'affaire à quelqu'un qui
+croyait avoir le temps.
+
+### Lot 7 — les campagnes commencent et finissent toutes seules
+
+`SweepCampaignsCommand` + `CampaignScheduleService`, calqué sur `DiscountExpiryService`
+(même structure, même garde `BackgroundJobs.EnabledOnThisHost` — les cinq hôtes composent
+le module).
+
+UNE MINUTE, PAS CINQ. Le balayage des remises tourne toutes les cinq minutes et c'est
+très bien pour une remise dont personne ne connaît l'heure exacte. Une vente flash est
+annoncée « à 8 h », avec un compte à rebours sous les yeux de l'acheteur : cinq minutes
+de retard sur ce rendez-vous se voient.
+
+LA FIN L'EMPORTE SUR LE DÉBUT. Une campagne planifiée dont la fenêtre est entièrement
+passée — on la crée, on l'oublie, on la retrouve trois semaines plus tard — n'est pas
+activée d'abord pour être terminée au cycle suivant : elle aurait été publiquement
+visible entre les deux. Et un brouillon n'est jamais touché : tant que personne ne l'a
+planifié, il n'a pas été relu.
+
+### Lot 8 — la diffusion
+
+`BroadcastAnnouncementCommand`, route `POST /admin/notifications/broadcast`, et un
+formulaire séparé de l'envoi nominatif dans la console — un même formulaire avec une case
+« à tout le monde » met ces deux gestes à un clic l'un de l'autre.
+
+**Le point central, et il a failli m'échapper : une catégorie qu'on peut couper.**
+`NotificationCategories.FromRelatedType` rend `null` pour un type inconnu, et l'appelant
+lit ce `null` comme « aucune préférence ne s'applique, on envoie ». Une diffusion
+commerciale portant un type non mappé aurait donc traversé TOUTES les coupures de tous
+les utilisateurs : le défaut le plus permissif du système appliqué au message le moins
+souhaité. D'où la catégorie `announcements`, son mappage, et l'interrupteur ajouté dans
+les deux applications mobiles — une coupure que l'écran ne propose pas ne sert à rien.
+
+**L'audience est bornée au module.** Les destinataires sont ceux qui ont enregistré un
+appareil, pas « tous les comptes ». Énumérer la table des utilisateurs depuis Notifications
+pour leur écrire à tous aurait franchi une frontière de module pour fabriquer une liste de
+diffusion, et créé une ligne par compte — y compris pour ceux qui n'ont jamais installé
+l'application. Ceux-là voient le bandeau, qui est la même information par un autre chemin.
+
+**Le plafond est explicite et modeste.** Pas de valeur par défaut « tout le monde » :
+l'appelant doit dire combien de personnes il accepte de toucher. Le plafond absolu est à
+500 parce que l'envoi se fait DANS la requête HTTP de l'administrateur — au-delà, elle
+expirerait et il relancerait sans savoir ce qui est parti. Passer cette borne demandera
+une file et un service d'arrière-plan, pas une constante qu'on augmente.
+
+CE N'EST PAS UN OUTIL DE PROSPECTION. Rien ne segmente par comportement d'achat, et c'est
+délibéré : le jour où ce sera nécessaire, ce sera une décision à prendre avec le texte
+d'information des utilisateurs sous les yeux.
+
+### La relecture adversariale, et ce qu'elle a trouvé
+
+Dix défauts, tous corrigés. Les quatre qui comptent :
+
+- **Un test ne compilait plus.** `Notifications.UnitTests` contient un faux dépôt de
+  jetons ; l'ajout d'un membre à l'interface le laissait incomplet. La relecture
+  précédente avait affirmé qu'il n'y avait « aucun projet de test dans la solution » —
+  c'était faux, il y en a trente. Vérifié depuis : aucun faux n'implémente les interfaces
+  touchées par les lots 0 et 4.
+- **Un interrupteur invisible depuis longtemps.** Sur l'écran des préférences VENDEUR, un
+  `if` qui gardait un séparateur disparu gardait en réalité l'interrupteur suivant : la
+  première catégorie — « Commandes » — n'était jamais rendue. Défaut antérieur à ce lot,
+  trouvé en comparant avec l'écran acheteur, qui avait gardé son séparateur.
+- **Une panne du BFF se mettait en cache comme un 404.** La page d'événement appelle
+  `notFound()`, et Next met le 404 en cache 60 s : un hoquet transformait une opération
+  vivante en « cet événement n'existe pas ». Seul un vrai 404 rend désormais null ; le
+  reste lève. La LISTE, elle, continue d'avaler — elle est lue depuis la mise en page, et
+  une erreur y ferait tomber toutes les pages du site pour une entrée de menu.
+- **Une date affichée un jour trop tôt.** `Intl.DateTimeFormat` sans fuseau prend celui du
+  serveur, qui tourne en UTC : une remise expirant à 23 h 30 UTC s'affichait la veille du
+  jour où elle finit pour un acheteur béninois. Vérifié après correction — le 25 à 23 h 30
+  UTC affiche bien « 26 sept. » à Porto-Novo.
+
+Les six autres : plafond de diffusion ramené de 5 000 à 500, `try/catch` mort et compteur
+de push qui comptait toujours juste supprimés, `AsNoTracking` sur la lecture des jetons,
+`lower()` inutile retiré et ordre explicite sur l'audience tronquée, et les libellés de
+l'écran de préférences du site — qui décrivaient un vocabulaire n'ayant jamais existé
+côté serveur, et affichaient donc les clés techniques en anglais.
+
+### À faire à la mise en production
+
+`dotnet build Marketplace.sln` **et `dotnet test`** — c'est le projet de tests qui a
+révélé le seul défaut bloquant de ce lot. Aucune migration : lots 6 à 8 ne touchent à
+aucun schéma. Vérifier ensuite qu'une campagne planifiée dont l'heure est venue passe
+active toute seule dans la minute, et faire une diffusion d'essai à 1 destinataire avant
+d'en faire une vraie.

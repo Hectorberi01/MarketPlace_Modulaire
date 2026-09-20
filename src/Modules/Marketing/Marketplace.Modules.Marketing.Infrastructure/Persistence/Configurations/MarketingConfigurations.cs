@@ -23,6 +23,20 @@ internal sealed class CampaignConfiguration : IEntityTypeConfiguration<Campaign>
         builder.Property(c => c.TargetSegment).HasColumnType("jsonb");
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
 
+        // ── PRÉSENTATION PUBLIQUE ───────────────────────────────────────────────────
+        // Le slug est UNIQUE, mais seulement parmi les campagnes qui en ont un : un
+        // index unique ordinaire aurait interdit d'avoir deux campagnes sans adresse,
+        // ce qui est le cas de la plupart. D'où le filtre — PostgreSQL n'applique
+        // l'unicité qu'aux lignes retenues.
+        builder.Property(c => c.Slug).HasMaxLength(120);
+        builder.Property(c => c.Description).HasMaxLength(2000);
+        builder.Property(c => c.HeroImageUrl).HasMaxLength(500);
+        builder.Property(c => c.IsPublic).IsRequired();
+
+        builder.HasIndex(c => c.Slug)
+            .IsUnique()
+            .HasFilter("\"Slug\" IS NOT NULL");
+
         builder.Property<List<Guid>>("_promotionIds")
             .HasColumnName("promotion_ids")
             .HasColumnType("uuid[]")

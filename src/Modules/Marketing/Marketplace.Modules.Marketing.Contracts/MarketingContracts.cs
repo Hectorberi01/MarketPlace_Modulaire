@@ -1,8 +1,13 @@
 namespace Marketplace.Modules.Marketing.Contracts;
 
-/// <summary>Vue publique d'une campagne.</summary>
+/// <summary>
+/// Vue d'une campagne pour l'ADMINISTRATION. Elle porte tout, y compris ce qui ne doit
+/// pas sortir tel quel : `TargetSegment` et `PromotionIds` décrivent le ciblage interne.
+/// La vue acheteur est construite à part, dans le BFF client.
+/// </summary>
 public sealed record CampaignSummary(
-    Guid Id, string Name, string Type, DateTime StartUtc, DateTime EndUtc, string? TargetSegment, string Status, IReadOnlyList<Guid> PromotionIds);
+    Guid Id, string Name, string Type, DateTime StartUtc, DateTime EndUtc, string? TargetSegment, string Status, IReadOnlyList<Guid> PromotionIds,
+    string? Slug = null, string? Description = null, string? HeroImageUrl = null, bool IsPublic = false);
 
 /// <summary>Vue publique d'un bloc de contenu.</summary>
 public sealed record ContentBlockSummary(

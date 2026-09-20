@@ -283,6 +283,7 @@ app.MapClientAccountEndpoints();
 app.MapClientWalletEndpoints();
 app.MapClientMessagingEndpoints();
 app.MapClientContentEndpoints();
+app.MapClientEventEndpoints();
 app.MapClientEngagementEndpoints();
 app.MapClientAppEndpoints();
 app.MapClientStorefrontEndpoints();

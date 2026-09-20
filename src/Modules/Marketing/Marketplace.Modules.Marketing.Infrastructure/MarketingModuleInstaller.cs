@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Marketplace.BuildingBlocks.Infrastructure.Hosting;
 using Marketplace.BuildingBlocks.Infrastructure.Modularity;
 using Marketplace.BuildingBlocks.Infrastructure.Outbox;
 using Marketplace.Modules.Marketing.Application.Abstractions;
@@ -40,5 +41,13 @@ public sealed class MarketingModuleInstaller : IModuleInstaller
         services.AddValidatorsFromAssembly(ApplicationAssembly, includeInternalTypes: true);
 
         services.AddOutboxProcessor<MarketingDbContext>();
+
+        // Fait commencer et finir les campagnes sans intervention. Même garde que le
+        // balayage des remises du module Offers : les cinq hôtes composent ce module, et
+        // cinq services feraient basculer les mêmes campagnes en même temps.
+        if (BackgroundJobs.EnabledOnThisHost)
+        {
+            services.AddHostedService<CampaignScheduleService>();
+        }
     }
 }

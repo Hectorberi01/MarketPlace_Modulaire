@@ -20,7 +20,22 @@ internal sealed class CampaignRepository : ICampaignRepository
         => await _dbContext.Campaigns.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
     public async Task<IReadOnlyList<Campaign>> ListAsync(CancellationToken cancellationToken = default)
-        => await _dbContext.Campaigns.OrderByDescending(c => c.StartUtc).ToListAsync(cancellationToken);
+        // `AsNoTracking` : les deux appelants sont des lectures pures, aucune mutation ne
+        // dépend du suivi. Sans lui, chaque campagne entrait dans le suivi de changements
+        // pour rien.
+        => await _dbContext.Campaigns.AsNoTracking().OrderByDescending(c => c.StartUtc).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Campaign>> ListPubliablesAsync(CancellationToken cancellationToken = default)
+        => await _dbContext.Campaigns
+            .AsNoTracking()
+            .Where(c => c.IsPublic && c.Slug != null)
+            .OrderBy(c => c.EndUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<Campaign?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default)
+        => await _dbContext.Campaigns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Slug == slug, cancellationToken);
 }
 
 internal sealed class ContentBlockRepository : IContentBlockRepository

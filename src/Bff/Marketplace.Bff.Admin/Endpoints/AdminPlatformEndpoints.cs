@@ -47,6 +47,10 @@ public static class AdminPlatformEndpoints
         campaigns.MapGet("/{id:guid}", GetCampaignAsync);
         campaigns.MapPost("/", CreateCampaignAsync);
         campaigns.MapPut("/{id:guid}", UpdateCampaignAsync);
+        // Route SÉPARÉE de la mise à jour : voir `SetCampaignPresentationCommand`.
+        // Fusionner les deux ferait effacer la présentation par tout appelant qui ne la
+        // connaît pas.
+        campaigns.MapPut("/{id:guid}/presentation", SetCampaignPresentationAsync);
         campaigns.MapPost("/{id:guid}/promotions", AddPromotionAsync);
         campaigns.MapDelete("/{id:guid}/promotions/{promotionId:guid}", RemovePromotionAsync);
         campaigns.MapPost("/{id:guid}/schedule", ScheduleCampaignAsync);
@@ -78,6 +82,10 @@ public static class AdminPlatformEndpoints
         var notifications = app.MapAdminGroup("/admin/notifications", "Admin · Notifications");
         notifications.MapGet("/", ListNotificationsAsync);
         notifications.MapPost("/", SendNotificationAsync);
+        // La DIFFUSION est une route à part de l'envoi nominatif : ce ne sont pas les
+        // mêmes conséquences, et une faute de frappe sur un identifiant ne doit jamais
+        // pouvoir se transformer en envoi à tout le monde.
+        notifications.MapPost("/broadcast", BroadcastAsync);
         notifications.MapDelete("/{id:guid}", DeleteNotificationAsync);
 
         return app;
@@ -88,6 +96,10 @@ public static class AdminPlatformEndpoints
 
     private static async Task<IResult> SendNotificationAsync(NotificationRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new SendNotificationCommand(request.RecipientUserId, request.Channel, request.Subject, request.Body), ct)).Match(id => Results.Ok(new { notificationId = id }));
+
+    private static async Task<IResult> BroadcastAsync(BroadcastRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new BroadcastAnnouncementCommand(request.Subject, request.Body, request.Max, request.Platform), ct))
+            .Match(n => Results.Ok(new { recipients = n }));
 
     private static async Task<IResult> DeleteNotificationAsync(Guid id, ISender sender, CancellationToken ct)
         => (await sender.Send(new DeleteNotificationCommand(id), ct)).Match(() => Results.NoContent());
@@ -167,6 +179,9 @@ public static class AdminPlatformEndpoints
     private static async Task<IResult> CreateCampaignAsync(CampaignRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new CreateCampaignCommand(request.Name, request.Type, request.StartUtc, request.EndUtc, request.TargetSegment), ct)).Match(id => Results.Ok(new { campaignId = id }));
 
+    private static async Task<IResult> SetCampaignPresentationAsync(Guid id, CampaignPresentationRequest request, ISender sender, CancellationToken ct)
+        => (await sender.Send(new SetCampaignPresentationCommand(id, request.Slug, request.Description, request.HeroImageUrl, request.IsPublic), ct)).Match(() => Results.NoContent());
+
     private static async Task<IResult> UpdateCampaignAsync(Guid id, CampaignRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new UpdateCampaignCommand(id, request.Name, request.Type, request.StartUtc, request.EndUtc, request.TargetSegment), ct)).Match(() => Results.NoContent());
 
@@ -242,6 +257,11 @@ public static class AdminPlatformEndpoints
     public sealed record TaxRuleRequest(string Jurisdiction, Guid? CategoryId, decimal Rate, string Type, DateTime? EffectiveFromUtc);
     public sealed record ContentRequest(string Type, string Slot, int Position, string Content, DateTime? StartUtc, DateTime? EndUtc);
     public sealed record CampaignRequest(string Name, string Type, DateTime StartUtc, DateTime EndUtc, string? TargetSegment);
+    public sealed record CampaignPresentationRequest(string? Slug, string? Description, string? HeroImageUrl, bool IsPublic);
+    // `Max` est OBLIGATOIRE et sans valeur par défaut : l'appelant doit dire combien de
+    // personnes il accepte de toucher. Un défaut, même prudent, ferait que la question
+    // ne se pose plus.
+    public sealed record BroadcastRequest(string Subject, string Body, int Max, string? Platform);
     public sealed record PromotionRefRequest(Guid PromotionId);
     public sealed record RecommendationRequest(string Type, Guid? ContextProductId, Guid? UserId, IReadOnlyList<Guid> RecommendedProductIds, double Score);
     public sealed record AssessRiskRequest(string SubjectType, Guid SubjectId, IReadOnlyDictionary<string, double> Signals);
