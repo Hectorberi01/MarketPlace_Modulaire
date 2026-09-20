@@ -204,6 +204,18 @@ de routes distincts rendent l'erreur impossible à commettre par inadvertance.
   L'espace `legal` est ouvert dans la passerelle admin et couvert par
   `npm run verify:espaces`.
 
+  **La création se fait par EMPLACEMENT, pas par type.** Le domaine modélise huit types ;
+  les surfaces n'en demandent que cinq, et « Politique de confidentialité » couvre à elle
+  seule deux destinations — une par public. Demander un type puis une adresse posait une
+  question sans réponse lisible, et une adresse mal saisie ne se voit pas : le document
+  se crée, se publie, et n'atteint personne. L'écran propose donc les cinq destinations
+  réellement servies, barre celles qui existent déjà, et déduit l'adresse du choix. Une
+  sixième entrée « Autre » reste ouverte, avec l'avertissement qui va avec.
+
+  Les cinq adresses de `EMPLACEMENTS_LEGAUX` doivent rester **exactement** celles de
+  `ClientContentEndpoints.LegalSlots` et de `SellerLegalEndpoints`. En ajouter une ici
+  sans ouvrir la route là-bas ne crée qu'un document fantôme.
+
   Il n'a **ni « Éditer » ni « Supprimer »** sur une version : les seuls gestes sont
   « enregistrer le brouillon », « publier » et « archiver ». C'est ce qui distingue cet
   écran de celui des bannières, juste à côté.
