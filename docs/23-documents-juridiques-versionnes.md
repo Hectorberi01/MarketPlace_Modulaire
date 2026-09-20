@@ -210,6 +210,49 @@ de routes distincts rendent l'erreur impossible à commettre par inadvertance.
 
 ---
 
+---
+
+## 6 bis. Le livreur — la troisième surface (20/09/2026)
+
+Le coursier **n'acceptait rien du tout** : ni écran, ni texte, ni route, ni trace. C'était
+la seule des trois surfaces dans ce cas, et celle dont la relation est la plus engageante —
+il prend en charge le bien d'autrui, roule, et transmet sa position en travaillant.
+
+| Méthode | Route | Effet |
+|---|---|---|
+| `GET` | `/driver/legal/{terms\|privacy}` | le texte en vigueur et sa version — **publique**, comme côté acheteur et vendeur |
+| `POST` | `/driver/me/accept-terms` | inscrit la version sur le compte **et** au registre (`legal_terms_driver`, contexte `consent_gate_driver`) |
+| `GET` | `/driver/me` | rend désormais `acceptedTermsVersion` |
+
+Emplacements CMS **distincts** : `legal_terms_driver`, `legal_privacy_driver`. Le coursier
+n'a ni les obligations d'un vendeur ni les droits d'un acheteur, et pour la
+confidentialité, un texte acheteur ne parlerait pas de la seule donnée qui le concerne
+vraiment — sa position.
+
+Côté application, la porte (`_PorteConsentement`) s'intercale entre la session et
+l'accueil. Trois règles qui n'existent pas encore dans les deux autres surfaces, et qui
+devraient y remonter :
+
+1. **La porte charge le document et le PASSE à l'écran.** Deux lectures indépendantes du
+   même texte laissaient le second appel échouer là où le premier avait réussi : la porte
+   s'ouvrait sur la 2.0 servie et faisait enregistrer la 1.0 du binaire.
+2. **La comparaison de versions est numérique** (`versionPlusRecente`), donc orientée. Une
+   inégalité de chaînes rouvrait la porte vers l'arrière sur un simple retour du CMS.
+3. **Un texte plus court que l'écran est traité explicitement** (`maxScrollExtent <= 0`) :
+   sans cela la case restait grisée pour toujours derrière un `canPop: false`, et le
+   coursier ne pouvait ni entrer ni accepter.
+
+La version du livreur est **`1.0`, un numéro et non une date** : `LegalVersionNumber.Parse`
+refuse `2026-07-12`, et c'est pourquoi les acceptations acheteur et vendeur ne s'inscrivent
+pas au registre versionné aujourd'hui. Le livreur part avec la bonne forme.
+
+Textes proposés, décisions restantes et procédure de publication :
+**`docs/legal/PROPOSITION_legal_driver.md`**, avec `terms_driver.json` et
+`privacy_driver.json` extraits mécaniquement du binaire. **Six clauses portent la mention
+`À COMPLÉTER`** (assurance, responsabilité sur les colis, rythme de versement, préavis,
+effacement de la position hors ligne, durée de conservation) — elles engagent l'entreprise
+et ne sont pas une question technique.
+
 ## 7. Ce qui reste à faire
 
 - ~~L'écran « Contenus & juridique » de la console admin.~~ **Fait** :

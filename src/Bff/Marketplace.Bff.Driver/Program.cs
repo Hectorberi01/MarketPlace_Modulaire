@@ -201,5 +201,6 @@ app.MapObservability();
 app.MapDriverAuthEndpoints();
 app.MapDriverAccountEndpoints();
 app.MapDriverWalletEndpoints();
+app.MapDriverLegalEndpoints();
 
 await app.RunAsync();

@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "lastUpdated": "20 septembre 2026",
+  "company": "HBA TECH ET TRADE",
+  "sections": [
+    {
+      "title": "1. Objet",
+      "body": [
+        "HBA TECH ET TRADE exploite HBA Express, une place de marché et un service de livraison en République du Bénin. Les présentes conditions régissent l'usage de l'application livreur et les prestations de transport qui vous sont proposées par son intermédiaire.",
+        "Ces conditions sont soumises au Code du numérique en République du Bénin (loi n° 2017-20 du 20 avril 2018, modifiée par la loi n° 2020-35 du 6 janvier 2021). Utiliser l'application vaut acceptation."
+      ]
+    },
+    {
+      "title": "2. Votre statut",
+      "body": [
+        "Vous intervenez en qualité de PRESTATAIRE INDÉPENDANT. Vous n'êtes pas salarié de HBA TECH ET TRADE, et rien dans ces conditions ne crée de lien de subordination : vous choisissez vos horaires, votre zone de service, et vous acceptez ou refusez librement chaque course proposée.",
+        "Vous êtes responsable de vos obligations fiscales et sociales, ainsi que de la conformité de votre véhicule et de vos documents de conduite.",
+        "À COMPLÉTER — assurance : préciser quelle couverture est exigée du livreur (responsabilité civile professionnelle, assurance du véhicule), laquelle est le cas échéant fournie par la plateforme, et ce qui est demandé à l'inscription."
+      ]
+    },
+    {
+      "title": "3. Accès à l'application",
+      "body": [
+        "L'accès suppose un compte validé par HBA TECH ET TRADE. Votre compte peut être en attente de validation, actif ou suspendu ; l'application vous indique son état.",
+        "Vos identifiants sont personnels. Vous ne pouvez ni les prêter, ni laisser un tiers effectuer des courses en votre nom : l'acheteur et le vendeur doivent pouvoir savoir qui détient leur colis."
+      ]
+    },
+    {
+      "title": "4. Les courses",
+      "body": [
+        "Une course vous est proposée pour une durée limitée. La refuser ou la laisser expirer n'entraîne aucune sanction contractuelle.",
+        "Une fois la course acceptée, vous vous engagez à récupérer puis remettre le colis dans les conditions annoncées, à suivre les étapes dans l'application, et à signaler tout incident sans attendre.",
+        "Vous transportez le bien d'autrui. Vous devez le remettre à la personne indiquée, sans l'ouvrir ni en modifier le contenu, et ne le remettre à personne d'autre."
+      ]
+    },
+    {
+      "title": "5. Rémunération",
+      "body": [
+        "Chaque course vous est rémunérée selon le montant annoncé AVANT son acceptation. Ce montant ne change pas en cours de course.",
+        "Vos gains sont versés sur le compte de paiement enregistré sur votre profil, que vous seul pouvez faire modifier en vous adressant à la plateforme.",
+        "À COMPLÉTER — rythme et seuil de versement : préciser la périodicité des versements, l'éventuel montant minimum de retrait, et les frais éventuellement retenus."
+      ]
+    },
+    {
+      "title": "6. Incidents et dommages",
+      "body": [
+        "Tout incident — colis endommagé, destinataire absent, adresse introuvable, accident — doit être déclaré dans l'application, au moment où il survient.",
+        "À COMPLÉTER — responsabilité : préciser qui supporte la perte ou la détérioration d'un colis pendant le transport, dans quelle limite, et selon quelle procédure la responsabilité est établie. C'est la clause la plus lourde de conséquences pour le livreur comme pour la plateforme ; elle ne doit pas rester implicite."
+      ]
+    },
+    {
+      "title": "7. Suspension et fin de la relation",
+      "body": [
+        "Vous pouvez cesser d'utiliser l'application à tout moment. Les courses déjà acceptées doivent être menées à leur terme ou signalées comme incidents.",
+        "HBA TECH ET TRADE peut suspendre votre compte en cas de manquement grave — remise d'un colis à un tiers, ouverture d'un colis, mise en danger d'autrui, fraude. La suspension vous est notifiée, et les sommes dues pour les courses déjà effectuées vous restent acquises.",
+        "À COMPLÉTER — préavis : préciser si une résiliation sans manquement suppose un délai de prévenance, de part et d'autre."
+      ]
+    },
+    {
+      "title": "8. Nous joindre",
+      "body": [
+        "Pour toute question sur ces conditions ou sur une course : support@hba-express.com, ou depuis l'application, rubrique « Aide et assistance »."
+      ]
+    }
+  ]
+}

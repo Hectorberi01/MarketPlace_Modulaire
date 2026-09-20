@@ -1,11 +1,13 @@
 # Textes légaux servis par le serveur
 
-## Ce que ces deux fichiers sont
+## Ce que ces fichiers sont
 
-Le contenu à publier dans le CMS pour que `GET /client/legal/{document}` réponde.
-Ils ont été extraits **mot pour mot** de `legal_content.dart` de l'application
-acheteur — chaque paragraphe a été recontrôlé contre la source — et portent la
-version en vigueur au moment de l'extraction, `2026-07-12`.
+Le contenu à publier dans le CMS pour que les routes `legal/{document}` répondent.
+
+Les quatre premiers ont été extraits **mot pour mot** des `legal_content.dart` acheteur et
+vendeur — chaque paragraphe recontrôlé contre la source — et portent la version en vigueur
+au moment de l'extraction, `2026-07-12`. Les deux derniers sortent d'une extraction
+**mécanique** (par script) de `legal_content.dart` livreur, en version `1.0`.
 
 | Fichier | Slot CMS | Route |
 |---|---|---|
@@ -13,10 +15,19 @@ version en vigueur au moment de l'extraction, `2026-07-12`.
 | `privacy_customer.json` | `legal_privacy_customer` | `GET /client/legal/privacy` |
 | `terms_seller.json` | `legal_terms_seller` | `GET /seller/legal/terms` |
 | `privacy_seller.json` | `legal_privacy_seller` | `GET /seller/legal/privacy` |
+| `terms_driver.json` | `legal_terms_driver` | `GET /driver/legal/terms` |
+| `privacy_driver.json` | `legal_privacy_driver` | `GET /driver/legal/privacy` |
 
-Quatre documents et non deux : le fond juridique est commun, la rédaction ne l'est pas.
-Les textes acheteur énoncent ses DROITS, les textes vendeur ses OBLIGATIONS. Servir le
-même bloc aux deux surfaces ferait accepter à chacun un texte écrit pour l'autre.
+Six documents et non deux : le fond juridique est commun, la rédaction ne l'est pas.
+Les textes acheteur énoncent ses DROITS, les textes vendeur ses OBLIGATIONS, et ceux du
+livreur une prestation de transport. Servir le même bloc à deux surfaces ferait accepter à
+chacun un texte écrit pour l'autre.
+
+**Les deux documents LIVREUR sont d'une autre nature que les quatre premiers.** Ceux-ci
+sont une transcription d'un texte existant ; ceux-là sont une PROPOSITION rédigée le
+20/09/2026, dont six clauses restent à trancher — elles portent la mention `À COMPLÉTER`
+dans le texte lui-même. Lire `PROPOSITION_legal_driver.md` **avant** de les publier. Leur
+version est `1.0`, un numéro et non une date, pour la raison expliquée plus bas.
 
 ## Comment les publier
 

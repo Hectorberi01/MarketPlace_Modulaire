@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "lastUpdated": "20 septembre 2026",
+  "company": "HBA TECH ET TRADE",
+  "sections": [
+    {
+      "title": "1. Qui traite vos données",
+      "body": [
+        "HBA TECH ET TRADE, responsable du traitement, traite les données décrites ci-dessous dans le cadre du Livre V du Code du numérique béninois, sous le contrôle de l'Autorité de protection des données à caractère personnel (APDP)."
+      ]
+    },
+    {
+      "title": "2. Ce que nous collectons",
+      "body": [
+        "Votre identité et vos coordonnées : nom affiché, téléphone, adresse électronique.",
+        "Votre compte de paiement, pour le versement de vos gains.",
+        "Votre activité : courses proposées, acceptées, refusées, terminées, incidents déclarés, zone de service choisie, disponibilité en ligne ou hors ligne.",
+        "Votre position, dans les conditions précisées à la section suivante.",
+        "Votre photo de profil, si vous en déposez une. Elle est visible de l'acheteur qui suit sa livraison."
+      ]
+    },
+    {
+      "title": "3. Votre position — ce qui est réellement conservé",
+      "body": [
+        "Lorsque vous êtes EN LIGNE, l'application transmet votre position pour vous proposer les courses proches et permettre à l'acheteur de suivre sa livraison.",
+        "Seule votre DERNIÈRE position connue est conservée, et elle est remplacée à chaque nouvelle transmission. Aucun historique n'est constitué : il n'existe nulle part de trace de vos déplacements, et votre trajet ne peut pas être reconstitué.",
+        "Quand vous passez hors ligne, l'application cesse de transmettre votre position.",
+        "À COMPLÉTER — effacement à la déconnexion : la dernière position connue reste aujourd'hui enregistrée après le passage hors ligne, jusqu'à la transmission suivante. L'effacer au passage hors ligne serait plus protecteur ; tant que ce n'est pas fait, cette phrase doit rester exacte plutôt que flatteuse."
+      ]
+    },
+    {
+      "title": "4. Pourquoi, et sur quel fondement",
+      "body": [
+        "Exécuter la relation contractuelle qui nous lie : vous proposer des courses, en suivre l'exécution, vous rémunérer.",
+        "Assurer la sécurité des livraisons et traiter les litiges : un acheteur doit pouvoir savoir où est son colis, et un incident doit pouvoir être instruit.",
+        "Respecter nos obligations légales et comptables."
+      ]
+    },
+    {
+      "title": "5. Qui y a accès",
+      "body": [
+        "Nos équipes d'exploitation, pour le suivi des courses et le traitement des incidents.",
+        "L'acheteur concerné par une livraison en cours : votre prénom affiché, votre photo si vous en avez déposé une, et votre position pendant la livraison. Il ne voit ni votre adresse électronique, ni votre compte de paiement, ni vos autres courses.",
+        "Nos prestataires techniques d'hébergement et de notification, dans la seule mesure nécessaire au service."
+      ]
+    },
+    {
+      "title": "6. Combien de temps",
+      "body": [
+        "Votre compte et votre historique de courses sont conservés pendant la durée de la relation, puis pendant la durée exigée par les obligations comptables et fiscales.",
+        "Votre position n'a pas de durée de conservation, puisqu'elle n'est pas historisée : seule la dernière valeur connue existe, et elle est écrasée.",
+        "À COMPLÉTER — durée après la fin de la relation : préciser combien de temps le compte et les pièces justificatives sont conservés après que vous avez cessé de livrer."
+      ]
+    },
+    {
+      "title": "7. Vos droits",
+      "body": [
+        "Vous disposez d'un droit d'accès, de rectification, d'effacement, de limitation et d'opposition, ainsi que du droit à la portabilité de vos données.",
+        "Pour les exercer : support@hba-express.com, depuis l'adresse électronique de votre compte. Nous répondons dans un délai de trente jours.",
+        "Vous pouvez saisir l'APDP si vous estimez que vos droits ne sont pas respectés."
+      ]
+    }
+  ]
+}
