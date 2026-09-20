@@ -49,6 +49,15 @@ public static class ClientContentEndpoints
         {
             ["terms"] = "legal_terms_customer",
             ["privacy"] = "legal_privacy_customer",
+
+            // Les CONDITIONS DE VENTE, distinctes des conditions d'utilisation. La page
+            // publique de la vitrine porte ce texte-là depuis toujours ; elle n'avait
+            // simplement aucune route par où le recevoir, et restait donc écrite en dur.
+            //
+            // Ce n'est PAS le document qu'on fait accepter : l'acceptation porte sur
+            // « terms ». Les deux ne se confondent pas, et c'est pourquoi ils ont deux
+            // adresses plutôt qu'un document fourre-tout.
+            ["sales"] = "legal_sales_customer",
         };
 
     /// <summary>

@@ -219,6 +219,24 @@ de routes distincts rendent l'erreur impossible à commettre par inadvertance.
   directeur de publication ne changent pratiquement jamais et doivent être exacts : les
   tenir dans la configuration du déploiement reste défendable. Ce qui ne l'est pas, c'est
   de les avoir aux deux endroits à la fois. À trancher.
+- ~~Brancher les pages publiques de la vitrine.~~ **Fait** : `/legal/conditions` et
+  `/legal/confidentialite` servent le texte du CMS quand une version est en vigueur, et
+  retombent sur leur rédaction écrite en dur sinon. La route `sales` →
+  `legal_sales_customer` a été ouverte dans la liste fermée du BFF client pour les CGV.
+
+  Deux conséquences à connaître :
+  - **La bascule n'est pas instantanée.** Les deux pages sont générées statiquement, et
+    le texte est relu au plus toutes les dix minutes (`revalidate`). Au moment du build,
+    le BFF n'est pas joignable : la page produite est donc celle du repli, et elle passe
+    au texte du CMS à la première revalidation qui suit la publication.
+  - **Les métadonnées `robots` se calculent.** Une page servie par le CMS n'est plus
+    « à compléter » : elle redevient indexable et rentre dans le plan de site, sans
+    qu'on ait à retirer son chemin de `PAGES_INCOMPLETES` — ce qu'on oublierait.
+
+  Le rendu Markdown a été ajouté partout où le backend était déjà lu (console vendeur,
+  porte de consentement de la boutique) : ces surfaces affichaient les paragraphes en
+  texte brut et auraient montré les astérisques.
+
 - **La FAQ, l'aide et « À propos »** restent des `ContentBlock` non versionnés — décision
   prise : personne ne signe une FAQ.
 - **Retirer l'ancien repli** de `GetLegalDocumentQuery` une fois les quatre documents
