@@ -22,7 +22,14 @@ public sealed record UpdateContentBlockCommand(Guid ContentBlockId, string Type,
 /// <summary>Supprime un bloc de contenu.</summary>
 public sealed record DeleteContentBlockCommand(Guid ContentBlockId) : ICommand;
 
-/// <summary>Liste les blocs publiés d'un slot (rendu vitrine).</summary>
+/// <summary>
+/// Les blocs d'un slot tels qu'un VISITEUR les voit maintenant : publiés, et dans leur
+/// fenêtre d'affichage.
+///
+/// CE N'EST PAS LA VUE DE L'ADMINISTRATEUR. Une console qui s'en servirait perdrait de
+/// son écran les blocs programmés et les blocs expirés — c'est-à-dire précisément ceux
+/// dont il faut corriger les dates. Le back-office passe par `ListAllContentQuery`.
+/// </summary>
 public sealed record ListContentBySlotQuery(string Slot) : IQuery<IReadOnlyList<ContentBlockSummary>>;
 
 /// <summary>Liste tous les blocs de contenu (back-office admin / CMS).</summary>
@@ -52,7 +59,7 @@ public sealed class CreateContentBlockCommandValidator : AbstractValidator<Creat
         // valide. Deux règles pour la même chose finissent toujours par diverger.
         RuleFor(c => c.Type)
             .Must(v => Enum.TryParse<ContentBlockType>(v, ignoreCase: true, out _))
-            .WithMessage("Type de bloc invalide (Banner, Page, FeaturedList, Faq).");
+            .WithMessage("Type de bloc invalide (Banner, Page, FeaturedList, Faq, Announcement).");
         RuleFor(c => c.Slot).NotEmpty().MaximumLength(100);
         RuleFor(c => c.Content).NotEmpty();
     }
@@ -182,7 +189,7 @@ internal sealed class ListContentBySlotQueryHandler : IQueryHandler<ListContentB
 
     public async Task<Result<IReadOnlyList<ContentBlockSummary>>> Handle(ListContentBySlotQuery query, CancellationToken cancellationToken)
     {
-        var blocks = await _repository.ListPublishedBySlotAsync(query.Slot, cancellationToken);
+        var blocks = await _repository.ListPublishedBySlotAsync(query.Slot, DateTime.UtcNow, cancellationToken);
         IReadOnlyList<ContentBlockSummary> summaries = blocks.Select(ContentMapper.ToSummary).ToList();
         return Result.Success(summaries);
     }

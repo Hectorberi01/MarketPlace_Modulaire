@@ -114,6 +114,20 @@ du **Markdown simple**. Pas de HTML : le rendu mobile est un widget Flutter qui 
 cette structure, et un éditeur WYSIWYG produirait des balises qu'il ne sait pas afficher
 et qu'il faudrait assainir côté web sous peine d'injection.
 
+La syntaxe reconnue, en début de ligne : `## Sous-titre`, `### Sous-sous-titre`, `- ` ou
+`* ` pour une liste à puces, `1. ` ou `1) ` pour une liste numérotée. N'importe où :
+`**gras**`, `*italique*`, `` `code` ``, `[texte](lien)`.
+
+Le découpage se fait **ligne par ligne**, et un même bloc peut mélanger du texte, une
+liste et du texte à nouveau. La première version n'acceptait qu'un paragraphe OU une
+liste par bloc, et ne connaissait ni les sous-titres ni les listes numérotées : écrire
+une phrase d'introduction suivie de sa liste — la forme même de la section 3 de la
+politique de confidentialité — produisait un paragraphe avec des tirets au milieu.
+
+Les **numéros de section** s'écrivent à la main. Les renuméroter automatiquement
+changerait les renvois d'un article à l'autre, dans un texte où l'on cite les clauses par
+leur numéro.
+
 ---
 
 ## 4. La bascule ne casse rien
@@ -231,6 +245,21 @@ de routes distincts rendent l'erreur impossible à commettre par inadvertance.
   directeur de publication ne changent pratiquement jamais et doivent être exacts : les
   tenir dans la configuration du déploiement reste défendable. Ce qui ne l'est pas, c'est
   de les avoir aux deux endroits à la fois. À trancher.
+- **Décision révisée (20/09)** : la vitrine ne porte **plus aucun texte juridique**. Les
+  trois pages — conditions, confidentialité, mentions légales — sont vides tant qu'une
+  version n'est pas publiée, et affichent alors leur indisponibilité. La route `notice` →
+  `legal_notice` a été ouverte : les mentions légales passent finalement par le CMS.
+
+  Les 721 lignes de rédaction qu'elles portaient sont reprises dans
+  `docs/legal/TEXTES_vitrine_a_reprendre.md`, prêtes à saisir. **C'est la seule rédaction
+  existante** : sans cette sauvegarde, la suppression les effaçait du produit.
+
+  Le prix est assumé : une panne du back-office vide une page publique. C'est ce que le
+  repli évitait. Il a été retiré pour qu'un texte contractuel n'existe qu'à un seul
+  endroit — deux rédactions d'un même contrat finissent toujours par diverger, et rien
+  n'indique laquelle fait foi. Les pages restent `noindex` et hors du plan de site tant
+  qu'aucune version n'est publiée, ce qui est vérifié sur le HTML produit par le build.
+
 - ~~Brancher les pages publiques de la vitrine.~~ **Fait** : `/legal/conditions` et
   `/legal/confidentialite` servent le texte du CMS quand une version est en vigueur, et
   retombent sur leur rédaction écrite en dur sinon. La route `sales` →
@@ -248,6 +277,24 @@ de routes distincts rendent l'erreur impossible à commettre par inadvertance.
   Le rendu Markdown a été ajouté partout où le backend était déjà lu (console vendeur,
   porte de consentement de la boutique) : ces surfaces affichaient les paragraphes en
   texte brut et auraient montré les astérisques.
+
+- **CGU ET CGV SE RECOUVRENT — à trancher.** Le document accepté par l'acheteur,
+  `legal_terms_customer`, s'intitule « conditions générales » et traite en réalité du
+  PAIEMENT, de la LIVRAISON, de la RÉTRACTATION et des GARANTIES : ce sont des conditions
+  de vente. La page `/legal/conditions` de la vitrine porte une seconde rédaction du même
+  contrat, écrite séparément. Deux textes pour un même objet, et rien ne dit lequel fait
+  foi — c'est exactement la divergence que le versionnage devait supprimer.
+
+  Deux issues cohérentes :
+  1. **Un seul contrat acheteur** : `legal_terms_customer` est le contrat, il est accepté,
+     `/legal/conditions` le sert, et `legal_sales_customer` disparaît.
+  2. **Deux documents réellement distincts** : des CGU d'usage du service (compte,
+     contenus, comportements, résiliation) acceptées à l'inscription, et des CGV pour les
+     commandes. Plus rigoureux pour une place de marché, mais il faut RÉÉCRIRE : le texte
+     actuel de `terms_customer` n'est pas des CGU.
+
+  La page `/legal/utilisation` a été créée dans l'hypothèse 2. Tant que la décision n'est
+  pas prise, elle affiche son indisponibilité et reste hors de l'index.
 
 - **La FAQ, l'aide et « À propos »** restent des `ContentBlock` non versionnés — décision
   prise : personne ne signe une FAQ.

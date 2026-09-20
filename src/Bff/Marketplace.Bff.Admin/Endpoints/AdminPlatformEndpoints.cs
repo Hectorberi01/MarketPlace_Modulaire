@@ -115,8 +115,28 @@ public static class AdminPlatformEndpoints
         => (await sender.Send(new DeleteTaxRuleCommand(id), ct)).Match(() => Results.NoContent());
 
     // --- Contenus ---
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// L'ADMINISTRATEUR VOIT TOUT LE SLOT, PAS SEULEMENT CE QUI EST VISIBLE AUJOURD'HUI.
+    ///
+    /// Cette route passait par `ListContentBySlotQuery`, la MÊME requête que la vitrine.
+    /// Depuis que cette requête applique la fenêtre d'affichage, elle ne rend plus que
+    /// les blocs visibles à l'instant présent : une bannière préparée pour le mois
+    /// prochain, ou expirée hier, aurait disparu de la console — c'est-à-dire de l'écran
+    /// où l'on va justement corriger sa date.
+    ///
+    /// On filtre donc la liste complète, qui ignore le statut comme la fenêtre. Le coût
+    /// est celui d'un parcours de la table des blocs, qui se compte en dizaines de
+    /// lignes ; la console, elle, appelle déjà `/admin/content` sans filtre.
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
     private static async Task<IResult> ListContentBySlotAsync(string slot, ISender sender, CancellationToken ct)
-        => (await sender.Send(new ListContentBySlotQuery(slot), ct)).Match(c => Results.Ok(c));
+        => (await sender.Send(new ListAllContentQuery(), ct))
+            .Match(c => Results.Ok(c
+                .Where(b => string.Equals(b.Slot, slot, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(b => b.Position)
+                .ToList()));
 
     private static async Task<IResult> CreateContentAsync(ContentRequest request, ISender sender, CancellationToken ct)
         => (await sender.Send(new CreateContentBlockCommand(request.Type, request.Slot, request.Position, request.Content, request.StartUtc, request.EndUtc), ct)).Match(id => Results.Ok(new { contentBlockId = id }));

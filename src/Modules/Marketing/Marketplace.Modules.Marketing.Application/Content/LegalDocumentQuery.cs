@@ -111,7 +111,9 @@ internal sealed class GetLegalDocumentQueryHandler
     private async Task<Result<LegalDocumentView>> LireAncienBlocAsync(
         string slot, CancellationToken cancellationToken)
     {
-        var blocs = await _contentBlocks.ListPublishedBySlotAsync(slot, cancellationToken);
+        // La fenêtre d'affichage s'applique AUSSI aux anciens blocs juridiques : un texte
+        // daté qui sort de sa période ne doit pas rester servi comme contrat en vigueur.
+        var blocs = await _contentBlocks.ListPublishedBySlotAsync(slot, DateTime.UtcNow, cancellationToken);
 
         // UN SEUL BLOC PAR DOCUMENT, le premier par position. Un texte contractuel n'est
         // pas une liste de fragments qu'on assemble : le découper en blocs rendrait

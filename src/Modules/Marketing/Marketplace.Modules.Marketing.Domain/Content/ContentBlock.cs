@@ -16,7 +16,31 @@ public enum ContentBlockType
     Banner = 0,
     Page = 1,
     FeaturedList = 2,
-    Faq = 3
+    Faq = 3,
+
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// ANNONCE : UN MESSAGE DATÉ, PAS UNE CRÉATION GRAPHIQUE.
+    ///
+    /// « Les livraisons sont suspendues jeudi », « le paiement Mobile Money est
+    /// indisponible ce soir ». Du texte, un niveau de gravité, éventuellement un lien.
+    ///
+    /// POURQUOI UN TYPE DE BLOC ET NON UN AGRÉGAT À PART. Une annonce a besoin d'un
+    /// statut, d'une fenêtre d'affichage et d'une position — exactement ce que
+    /// `ContentBlock` porte déjà, avec sa console, sa publication et son archivage. Elle
+    /// n'a besoin d'aucune des trois choses qui ont justifié un agrégat pour le
+    /// juridique : pas d'historique de versions, pas de preuve de consentement, pas
+    /// d'immuabilité après publication. Refaire `LegalDocument` ici serait payer un
+    /// mécanisme pour ce qu'il a d'apparent plutôt que pour ce qu'il résout.
+    ///
+    /// Le champ `Content` porte un JSON
+    /// { niveau, titre, message, lien, libelleLien, fermable } ; le slot porte la
+    /// PORTÉE (voir `ContentSlots`). Découper par slot plutôt que par un champ
+    /// « portée » évite à chaque surface d'avoir à interpréter une valeur qui ne la
+    /// concerne pas : elle lit son emplacement, et ignore les autres.
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    Announcement = 4
 }
 
 /// <summary>Statut d'un bloc de contenu.</summary>

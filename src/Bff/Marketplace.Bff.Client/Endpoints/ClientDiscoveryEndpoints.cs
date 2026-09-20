@@ -5,6 +5,7 @@ using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Application.Categories.Queries.ListCategories;
 using Marketplace.Modules.Catalog.Contracts;
 using Marketplace.Modules.Marketing.Application.Content;
+using Marketplace.Modules.Marketing.Contracts;
 using Marketplace.Modules.Offers.Contracts;
 using Marketplace.Modules.Recommendations.Application.Recommendations;
 using Marketplace.Modules.Recommendations.Contracts;
@@ -47,7 +48,7 @@ public static class ClientDiscoveryEndpoints
     /// </summary>
     private static async Task<IResult> BannersAsync(ISender sender, IConfiguration config, CancellationToken ct)
     {
-        var blocks = await sender.Send(new ListContentBySlotQuery("home_banner"), ct);
+        var blocks = await sender.Send(new ListContentBySlotQuery(ContentSlots.HomeBanner), ct);
         if (blocks.IsSuccess && blocks.Value.Count > 0)
         {
             var fromCms = blocks.Value

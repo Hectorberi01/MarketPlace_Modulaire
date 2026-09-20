@@ -37,10 +37,38 @@ internal sealed class ContentBlockRepository : IContentBlockRepository
     public async Task<ContentBlock?> GetByIdAsync(ContentBlockId id, CancellationToken cancellationToken = default)
         => await _dbContext.ContentBlocks.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
 
-    public async Task<IReadOnlyList<ContentBlock>> ListPublishedBySlotAsync(string slot, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// LA FENÊTRE D'AFFICHAGE EST APPLIQUÉE ICI, ET ELLE NE L'ÉTAIT NULLE PART.
+    ///
+    /// Cette requête ne filtrait que sur le statut. `StartUtc` et `EndUtc` étaient saisis
+    /// dans la console, enregistrés, relus et réaffichés dans la liste des bannières —
+    /// mais jamais comparés à une horloge, dans aucun fichier du module. Une bannière
+    /// publiée partait donc en production sur-le-champ et n'en sortait plus d'elle-même :
+    /// la console promettait une planification qui n'existait pas.
+    ///
+    /// BORNES : début INCLUS, fin EXCLUE. La console convertit les deux jours saisis en
+    /// instants — 00:00:00.000Z pour le début, 23:59:59.999Z pour la fin — de sorte que
+    /// « du 1er au 30 » couvre bien le 30 entier malgré la borne exclue. Les deux
+    /// conventions se tiennent : changer l'une sans l'autre rouvre un trou en fin de
+    /// journée, invisible en lecture de code.
+    /// Une borne nulle veut dire « pas de limite de ce côté-là » : les deux nulles
+    /// donnent exactement l'ancien comportement, ce qui laisse les blocs déjà en ligne
+    /// intacts après ce changement.
+    ///
+    /// LA COMPARAISON EST TRADUITE EN SQL par EF : les deux colonnes sont des
+    /// `timestamp with time zone` et `asOfUtc` arrive en UTC. Le filtrage reste donc en
+    /// base — le faire en mémoire aurait rapatrié tous les blocs du slot pour en jeter la
+    /// moitié.
+    /// ═══════════════════════════════════════════════════════════════════════════════
+    /// </summary>
+    public async Task<IReadOnlyList<ContentBlock>> ListPublishedBySlotAsync(string slot, DateTime asOfUtc, CancellationToken cancellationToken = default)
         => await _dbContext.ContentBlocks
             .AsNoTracking()
-            .Where(b => b.Slot == slot && b.Status == ContentStatus.Published)
+            .Where(b => b.Slot == slot
+                && b.Status == ContentStatus.Published
+                && (b.StartUtc == null || b.StartUtc <= asOfUtc)
+                && (b.EndUtc == null || b.EndUtc > asOfUtc))
             .OrderBy(b => b.Position)
             .ToListAsync(cancellationToken);
 
