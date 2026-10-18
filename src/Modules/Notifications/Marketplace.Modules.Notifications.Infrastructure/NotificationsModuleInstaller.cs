@@ -25,7 +25,6 @@ using Marketplace.Modules.Sellers.Contracts.IntegrationEvents;
 using Marketplace.Modules.Ordering.Contracts.IntegrationEvents;
 using Marketplace.Modules.Shipping.Contracts.IntegrationEvents;
 using Marketplace.Modules.Returns.Contracts.IntegrationEvents;
-using Marketplace.Modules.Delivery.Contracts.IntegrationEvents;
 using Marketplace.Modules.Settlement.Contracts.IntegrationEvents;
 using Marketplace.Modules.Messaging.Contracts.IntegrationEvents;
 using Marketplace.Modules.Disputes.Contracts.IntegrationEvents;
@@ -199,9 +198,6 @@ public sealed class NotificationsModuleInstaller : IModuleInstaller
         // COURSIER. Trois événements qui étaient publiés sans aucun abonné : le livreur
         // apprenait sa validation en essayant, sa suspension en n'ayant plus de courses,
         // et son paiement en consultant son solde.
-        services.AddScoped<IIntegrationEventHandler<CourierActivatedIntegrationEvent>, CourierActivatedNotificationHandler>();
-        services.AddScoped<IIntegrationEventHandler<CourierSuspendedIntegrationEvent>, CourierSuspendedNotificationHandler>();
-        services.AddScoped<IIntegrationEventHandler<CourierEarningCreditedIntegrationEvent>, CourierEarningCreditedNotificationHandler>();
 
         // REVERSEMENT VERSÉ. L'événement existait sans consommateur : le vendeur était
         // payé sans en être informé — le message qu'il attend le plus.

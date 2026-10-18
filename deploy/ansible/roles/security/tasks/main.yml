@@ -2,10 +2,14 @@
 # Durcissement / observabilité sécurité du VPS.
 #
 # Installe Fail2ban (bannissement des IP qui brute-forcent SSH) et garantit la
-# présence des journaux texte (/var/log/auth.log, /var/log/fail2ban.log) que
-# Promtail expédie ensuite vers Loki. rsyslog est explicitement installé car les
-# Ubuntu récents peuvent ne conserver que journald — sans lui, auth.log n'existe
-# pas et il n'y a rien à collecter.
+# présence des journaux TEXTE (/var/log/auth.log, /var/log/fail2ban.log). rsyslog est
+# explicitement installé car les Ubuntu récents peuvent ne conserver que journald —
+# sans lui, auth.log n'existe pas et il n'y a rien à collecter.
+#
+# CES FICHIERS CONTINUENT D'ÊTRE ÉCRITS après le retrait de la supervision, le
+# 17/10/2026. C'est Promtail qui les expédiait vers Loki, et Promtail est parti avec
+# la pile ; le collecteur du VPS de supervision aura besoin de trouver ces mêmes
+# fichiers au même endroit.
 
 - name: Installer Fail2ban et rsyslog
   ansible.builtin.apt:
@@ -38,8 +42,9 @@
     enabled: true
 
 # ── Pare-feu UFW — OPT-IN (enable_ufw), pour les « ports sollicités » ─────────
-# Journalise les paquets (bloqués/autorisés) dans /var/log/ufw.log → Promtail →
-# Loki : on voit alors quels ports sont scannés/sollicités.
+# Journalise les paquets (bloqués/autorisés) dans /var/log/ufw.log : on voit alors
+# quels ports sont scannés/sollicités. Le fichier est écrit ici ; sa collecte est
+# passée sur le VPS de supervision le 17/10/2026.
 #
 # IMPORTANT : RISQUE DE LOCKOUT : activer un pare-feu à distance peut couper SSH. On
 # AUTORISE donc le port SSH courant AVANT d'activer, plus 80/443. Laisser

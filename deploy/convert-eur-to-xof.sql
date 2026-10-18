@@ -1,23 +1,4 @@
--- =====================================================================
---  Conversion des données existantes EUR -> XOF
---  Marketplace (monolithe modulaire, un schéma Postgres par module)
---
---  Taux fixe BCEAO : 1 EUR = 655,957 XOF (parité fixe euro / franc CFA).
---  Les montants sont en numeric(18,2) ; on arrondit au franc entier
---  (ROUND(..., 0)) car le XOF n'a pas de sous-unité.
---
---  SÛR À REJOUER : chaque UPDATE ne cible que les lignes encore en 'EUR'
---  (ou rattachées à un parent encore en 'EUR'). Une 2ᵉ exécution ne
---  retouche donc rien.
---
---  ORDRE IMPORTANT : les tables enfants SANS colonne devise
---  (order_lines, invoice_lines) sont converties AVANT leur parent,
---  via jointure sur la devise du parent (encore 'EUR' à ce moment).
---
---  Avant de lancer : FAIRE UNE SAUVEGARDE.
---    pg_dump -Fc marketplace > marketplace_avant_xof.dump
---  Puis :  psql -d marketplace -f convert-eur-to-xof.sql
--- =====================================================================
+
 
 \set ON_ERROR_STOP on
 

@@ -1,26 +1,14 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
-# LE VPS BASE — variables propres à la machine qui porte PostgreSQL.
-#
-# Cette machine ne fait QU'UNE chose. Pas de Docker, pas de Traefik, pas de
-# supervision : un serveur PostgreSQL, un tunnel, et une sauvegarde. Chaque service
-# qu'on y ajouterait serait un service de plus capable de la faire tomber.
-# ═════════════════════════════════════════════════════════════════════════════════
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# CE QUI NE TOURNE PAS ICI.
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLUS DE BASE SUPPLÉMENTAIRE À CRÉER.
 #
-# `site.yml` applique ses rôles par groupe, mais ces drapeaux ferment explicitement
-# la porte : le jour où quelqu'un élargira la portée d'un rôle, il faudra le décider
-# ici, pas le découvrir en production.
-# ─────────────────────────────────────────────────────────────────────────────────
-# Bases créées sur ce cluster. Écrit ICI et non dans les defaults d'un rôle :
-# `backup` s'en sert pour savoir quoi sauvegarder, et une valeur qui ne vivrait que
-# dans les defaults de `postgres_host` disparaîtrait le jour où les deux rôles ne
-# tourneraient plus dans le même play — la base du dispatch cesserait alors d'être
-# sauvegardée, sans aucune erreur.
-postgres_extra_databases:
-  - dispatch
+# `postgres_extra_databases: [dispatch]` créait la base du service de dispatch, retiré
+# le 09/10/2026. La liste vide ne SUPPRIME rien : la base `dispatch` existe encore sur
+# cette machine avec ses données. Son abandon se décide après l'export de la phase 0 —
+# `DROP DATABASE dispatch`, à la main, voir docs/25-retrait-livraison.md.
+# ═══════════════════════════════════════════════════════════════════════════════
+postgres_extra_databases: []
 
 # La sauvegarde complète ne tourne pas à chaque passage du playbook : un pg_dump
 # des deux bases plus l'envoi vers R2 n'a rien d'idempotent. Le runbook la lance
@@ -28,10 +16,6 @@ postgres_extra_databases:
 backup_run_now: false
 
 manage_docker: false
-enable_monitoring: false
-enable_portainer: false
-enable_web_terminal: false
-enable_db_admin: false
 
 # Le durcissement de l'hôte, lui, est OBLIGATOIRE ici plus qu'ailleurs.
 enable_security: true
@@ -61,12 +45,20 @@ postgres_allowed_cidr: "{{ wg_subnet }}"
 # ils supposent que rien d'autre ne tourne sur la machine — ce qui est justement
 # l'intérêt de l'avoir séparée.
 #
-# `max_connections` : SIX pools, pas cinq. L'api et les quatre BFF lisent la base
-# de la place de marché, et le service `dispatch` en ouvre un sixième sur SA base —
-# or `max_connections` est une limite de CLUSTER, pas de base. 6 × 15 = 90, plus
-# l'exporter de métriques (une connexion par base découverte), pgweb, le pg_dump
-# toutes les six heures et les trois connexions réservées au superutilisateur : 100
-# se dépassait sous charge, et Npgsql renvoie alors des refus, pas des lenteurs.
+# `max_connections` : QUATRE pools depuis le 17/10/2026, et la marge reste.
+#
+# C'étaient six : l'api, les quatre BFF, plus le service `dispatch` sur SA base — or
+# `max_connections` est une limite de CLUSTER, pas de base. Le BFF livreur et le
+# dispatch sont partis avec le périmètre livraison, pgweb avec l'administration base.
+# Restent 4 × 15 = 60, plus le pg_dump toutes les six heures, les trois connexions
+# réservées au superutilisateur, et l'exporter de métriques du VPS de supervision
+# quand il sera rebranché (une connexion par base découverte).
+#
+# LA VALEUR N'EST PAS RÉDUITE POUR AUTANT. Descendre `max_connections` ne libère
+# presque rien — c'est `work_mem` × connexions qui coûte — et laisse sans marge le
+# jour où un service revient. 100 se dépassait sous charge à six pools ; à quatre, la
+# marge est confortable, et Npgsql renvoie des refus plutôt que des lenteurs quand
+# elle manque.
 # ─────────────────────────────────────────────────────────────────────────────────
 postgres_ram_mb: 8192
 postgres_shared_buffers: "2GB"

@@ -18,7 +18,6 @@
     <ProjectReference Include="..\..\Identity\Marketplace.Modules.Identity.Contracts\Marketplace.Modules.Identity.Contracts.csproj" />
     <!-- Coordonnees de versement du COURSIER, et droit d'etre paye. Une seule
          direction : Delivery ne connait pas Settlement. -->
-    <ProjectReference Include="..\..\Delivery\Marketplace.Modules.Delivery.Contracts\Marketplace.Modules.Delivery.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

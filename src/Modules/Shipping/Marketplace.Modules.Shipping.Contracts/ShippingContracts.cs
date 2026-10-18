@@ -14,6 +14,23 @@ public sealed record CarrierSummary(
 public sealed record ShipmentItemSummary(string Sku, int Quantity);
 
 /// <summary>Vue publique d'une expédition.</summary>
+/// <summary>
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// LE CODE DE REMISE D'UNE EXPÉDITION — UN TYPE À PART, ET C'EST LA PROTECTION.
+///
+/// Il aurait été plus court d'ajouter un champ `DeliveryCode` à `ShipmentSummary`.
+/// C'était aussi le moyen le plus sûr de tout casser : ce résumé est servi AU VENDEUR
+/// par `SellerFulfillmentEndpoints`, et un vendeur qui lit le code avant la remise n'a
+/// plus rien à prouver. Le mécanisme entier ne coûterait plus que sa complexité.
+///
+/// Le code voyage donc dans son propre type, rendu par sa propre méthode, appelée
+/// depuis une seule route — celle de l'acheteur. Pour qu'il fuite, il faudrait
+/// désormais l'écrire explicitement quelque part : aucun ajout de champ, aucune
+/// sérialisation élargie ne peut le faire par inadvertance.
+/// ═════════════════════════════════════════════════════════════════════════════════
+/// </summary>
+public sealed record ShipmentDeliveryCode(Guid ShipmentId, Guid SellerId, string Code);
+
 public sealed record ShipmentSummary(
     Guid Id,
     Guid OrderId,

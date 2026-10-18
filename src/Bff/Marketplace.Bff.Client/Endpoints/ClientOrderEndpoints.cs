@@ -3,7 +3,6 @@ using System.Linq;
 using System.Security.Claims;
 using Marketplace.Api.Extensions;
 using Marketplace.Modules.Catalog.Contracts;
-using Marketplace.Modules.Delivery.Contracts;
 using Marketplace.Modules.Ordering.Application.Orders.Commands;
 using Marketplace.Modules.Ordering.Application.Orders.Queries;
 using Marketplace.Modules.Ordering.Contracts;
@@ -28,6 +27,13 @@ public static class ClientOrderEndpoints
         orders.MapPost("/{id:guid}/return", ReturnAsync);
         orders.MapGet("/{id:guid}/tracking", TrackingAsync);
 
+        // LE CODE DE REMISE — ROUTE SÉPARÉE, ET RÉSERVÉE À L'ACHETEUR.
+        //
+        // Elle ne rejoint pas `/tracking` : ce suivi rend des `ShipmentSummary`, le même
+        // type que le BFF vendeur sert au vendeur. Un secret ne voyage pas dans un
+        // wagon partagé.
+        orders.MapGet("/{id:guid}/delivery-codes", DeliveryCodesAsync).WithName("ClientOrderDeliveryCodes");
+
         // ═══════════════════════════════════════════════════════════════════════════
         // LE SUIVI VIVANT, À CÔTÉ DU SUIVI D'EXPÉDITION — ET NON DEDANS.
         //
@@ -45,7 +51,6 @@ public static class ClientOrderEndpoints
         // même appel. Séparées, la page s'affiche entière et seule la carte dit qu'elle
         // ne sait pas.
         // ═══════════════════════════════════════════════════════════════════════════
-        orders.MapGet("/{id:guid}/delivery", DeliveryTrackingAsync);
         orders.MapGet("/{id:guid}/invoice", InvoiceAsync);
 
         return app;
@@ -201,6 +206,29 @@ public static class ClientOrderEndpoints
             .Match(rid => Results.Ok(new { returnRequestId = rid }));
     }
 
+    /// <summary>
+    /// Les codes que l'acheteur donnera aux vendeurs à la remise. Réservé au propriétaire.
+    ///
+    /// DOUBLE CONTRÔLE, DÉLIBÉRÉMENT : `LoadOwnedOrderAsync` vérifie que la commande est
+    /// bien la sienne, puis la requête revérifie l'acheteur expédition par expédition.
+    /// Un seul verrou sur un secret, c'est un verrou de trop peu.
+    /// </summary>
+    private static async Task<IResult> DeliveryCodesAsync(
+        ClaimsPrincipal user, Guid id, ISender sender, IShippingModuleApi shipping, CancellationToken ct)
+    {
+        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (ClientBff.CurrentUserId(user) is not { } buyerId)
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(await shipping.GetDeliveryCodesByOrderAsync(id, buyerId, ct));
+    }
+
     /// <summary>Suivi d'expédition (expéditions de la commande + statuts). Réservé au propriétaire.</summary>
     private static async Task<IResult> TrackingAsync(ClaimsPrincipal user, Guid id, ISender sender, IShippingModuleApi shipping, CancellationToken ct)
     {
@@ -211,43 +239,6 @@ public static class ClientOrderEndpoints
         return Results.Ok(await shipping.GetShipmentsByOrderAsync(id, ct));
     }
 
-    /// <summary>
-    /// Où en est la livraison par coursier, et où est le coursier. Réservé au propriétaire.
-    ///
-    /// ═════════════════════════════════════════════════════════════════════════════
-    /// DEUX SERRURES, ET LA PREMIÈRE EST ICI.
-    ///
-    /// `LoadOwnedOrderAsync` garantit que la commande est bien celle du porteur du jeton —
-    /// c'est le même geste que les quatre autres routes par identifiant de ce fichier.
-    /// L'identifiant d'acheteur est ENSUITE transmis au module, qui le fait voyager dans
-    /// un corps signé jusqu'au service de dispatch, lequel le recompare à l'acheteur de
-    /// la course.
-    ///
-    /// La seconde serrure ne rattrape pas l'oubli de la première : elle protège contre un
-    /// tout autre scénario, celui d'un appel interne rejoué avec un autre identifiant de
-    /// commande. Les deux sont nécessaires et ne couvrent pas le même risque.
-    /// ═════════════════════════════════════════════════════════════════════════════
-    ///
-    /// RÉPOND TOUJOURS 200 QUAND LA COMMANDE EXISTE, même dispatch injoignable : c'est la
-    /// charge qui porte `reachable` et `byCourier`. Un 503 obligerait chaque application à
-    /// distinguer « pas de coursier sur cette commande » d'un incident, à partir d'un code
-    /// HTTP qui ne dit ni l'un ni l'autre.
-    /// </summary>
-    private static async Task<IResult> DeliveryTrackingAsync(
-        ClaimsPrincipal user, Guid id, ISender sender, IDeliveryModuleApi delivery, CancellationToken ct)
-    {
-        if (ClientBff.CurrentUserId(user) is not { } buyerId)
-        {
-            return Results.Unauthorized();
-        }
-
-        if (await LoadOwnedOrderAsync(user, id, sender, ct) is null)
-        {
-            return Results.NotFound();
-        }
-
-        return Results.Ok(await delivery.GetOrderTrackingAsync(id, buyerId, ct));
-    }
 
     /// <summary>
     /// Charge une commande en garantissant qu'elle appartient à l'acheteur du jeton.

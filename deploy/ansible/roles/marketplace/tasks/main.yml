@@ -8,9 +8,7 @@
     state: directory
     mode: "0755"
   when: not skip_sync
-  # Aussi sous « monitoring » : un déploiement monitoring-only doit pouvoir
-  # pousser les fichiers de conf (prometheus.yml, promtail, dashboards…).
-  tags: [deploy, monitoring]
+  tags: [deploy]
 
 - name: Synchroniser le code source vers l'hôte
   ansible.posix.synchronize:
@@ -27,13 +25,8 @@
       - "--exclude=.env.*"
       - "--exclude=*.dump"
       - "--exclude=TestResults"
-      # Config Alertmanager générée sur l'hôte depuis le vault (secrets) : ne pas
-      # la supprimer lors de la synchro (elle n'existe pas dans le dépôt).
-      - "--exclude=alertmanager.yml"
   when: not skip_sync
-  # Le sync pousse aussi deploy/monitoring/ (conf montée dans les conteneurs) :
-  # accessible via --tags monitoring pour ne PAS rebuild l'app.
-  tags: [deploy, monitoring]
+  tags: [deploy]
 
 # ═══════════════════════════════════════════════════════════════════════════════════
 # LE GARDE-FOU DU MOT DE PASSE POSTGRES VIT ICI, PAS DANS LE COMPOSE.
@@ -124,10 +117,10 @@
 # reference » — et les six images backend, pourtant publiées, ne se déployaient
 # pas. Voir registry_pull_required / registry_pull_optional dans defaults/main.yml.
 #
-# `postgres` n'est nommé nulle part À DESSEIN : il porte `profiles: [local-db]` et
-# c'est COMPOSE_PROFILES, dans .env.{{ target_env }}, qui décide de son existence.
-# Le nommer ici l'activerait de force et ressusciterait la base locale le jour de
-# la bascule vers le VPS base.
+# `postgres` n'est nommé dans aucune des deux listes, et ce n'est pas un oubli : il
+# n'est pas une image de CE dépôt. En production il n'existe plus du tout — le service
+# a été retiré du compose le 17/10/2026, la base vit sur le VPS base. En staging et en
+# développement, son image vient du Hub et `up` la tire de lui-même.
 # ═══════════════════════════════════════════════════════════════════════════════
 - name: Récupérer les images de ce dépôt (échec bloquant)
   ansible.builtin.command:
@@ -156,8 +149,8 @@
 
 # Une image de console peut être absente du registry ET absente du disque : la
 # nommer dans le `up` ferait échouer le démarrage de TOUTE la pile. On construit
-# donc la liste des services réellement démarrables. `config --services` respecte
-# COMPOSE_PROFILES, donc `postgres` y figure exactement quand il doit y figurer.
+# donc la liste des services réellement démarrables, telle que `config --services`
+# la rend — c'est-à-dire ce que le fichier compose de CET environnement déclare.
 - name: Déterminer les services démarrables (consoles absentes exclues)
   ansible.builtin.shell:
     cmd: |
@@ -223,59 +216,75 @@
   changed_when: true
 
 # ═══════════════════════════════════════════════════════════════════════════════════
-# BASE EXTERNE : RETIRER LES POSTGRES LOCAUX, ET PAS SEULEMENT LES DÉSACTIVER.
+# LES POSTGRES LOCAUX SE RETIRENT PAR DOCKER, PLUS PAR COMPOSE.
 #
-# Vider COMPOSE_PROFILES retire `postgres` et `postgres-dispatch` de la pile, mais NE
-# LES ARRÊTE PAS : ils portent `restart: always`, et Docker les relance au démarrage
-# suivant de la machine. `--remove-orphans` ne les attrape pas davantage — il ne retire
-# que les services DISPARUS du fichier compose, or ceux-ci y figurent toujours,
-# simplement inactifs.
+# Cette tâche passait par `docker compose --profile local-db rm -s -f postgres
+# postgres-dispatch`. Les deux services ont quitté `docker-compose.prod.yml` le
+# 17/10/2026 : compose ne les connaît plus, et la commande ne retirerait plus rien.
 #
-# Les laisser tourner est le scénario exact contre lequel tout le runbook met en garde :
-# une base VIDE qui continue de répondre au nom `postgres` sur le réseau interne. Une
-# variable mal résolue — un `.env` régénéré, un repli qui reprend le dessus — y
-# renverrait l'application, qui appliquerait ses vingt-six migrations, sèmerait le compte
-# admin, et se déclarerait en bonne santé. La plateforme remonterait vide, sans une seule
-# erreur.
+# POURQUOI ELLE NE DISPARAÎT PAS POUR AUTANT. Les conteneurs, eux, peuvent encore
+# TOURNER sur l'hôte. Ils portaient `restart: always` : Docker les relance au
+# démarrage de la machine, indépendamment de tout fichier compose. `--remove-orphans`
+# ne les attrape pas davantage, et retirer un service d'un fichier compose n'arrête
+# jamais le conteneur qu'il avait créé.
 #
-# LES VOLUMES SONT CONSERVÉS. `pgdata` et `pgdata-dispatch` sont le retour arrière ; ils
-# ne coûtent que de l'espace disque. Les supprimer est une décision manuelle, après
-# vingt-quatre heures de fonctionnement normal — voir docs/RUNBOOK_Bascule_Base.md,
-# étape 7.
+# C'est le scénario exact contre lequel tout le runbook met en garde : une base VIDE
+# qui continue de répondre au nom `postgres` sur le réseau interne. Une variable mal
+# résolue — un `.env` régénéré, un repli qui reprend le dessus — y renverrait
+# l'application, qui appliquerait ses vingt-six migrations, sèmerait le compte admin,
+# et se déclarerait en bonne santé. La plateforme remonterait vide, sans une erreur.
 #
-# `--profile local-db` est nécessaire pour que compose VOIE ces services : sans lui il ne
-# les connaît pas et ne saurait pas quoi retirer. `rm -s` les arrête d'abord, `-f` évite
-# la confirmation. Idempotent : sans conteneur, la commande ne fait rien.
+# D'OÙ UNE SUPPRESSION PAR NOM DE CONTENEUR. Compose les nomme
+# `<projet>-<service>-1`, et le projet est `name: marketplace-prod` en tête du
+# fichier. `docker rm -f` sur un nom inconnu rend 1 sans rien casser : la tâche est
+# idempotente, et devient un non-événement une fois les conteneurs partis.
+#
+# LES VOLUMES SONT CONSERVÉS. `marketplace-prod_pgdata` et `..._pgdata-dispatch` sont
+# le retour arrière ; ils ne coûtent que de l'espace disque. Les supprimer est une
+# décision manuelle, après vingt-quatre heures de fonctionnement normal — voir
+# docs/RUNBOOK_Bascule_Base.md, étape 7.
 # ═══════════════════════════════════════════════════════════════════════════════════
-- name: Retirer les conteneurs Postgres locaux (la base vit désormais sur le VPS base)
+- name: Retirer les conteneurs Postgres locaux s'il en reste (la base vit sur le VPS base)
   ansible.builtin.command:
-    cmd: >-
-      docker compose -f deploy/{{ compose_file }}
-      --env-file deploy/.env.{{ target_env }}
-      --profile local-db
-      rm -s -f postgres postgres-dispatch
-    chdir: "{{ app_dir }}"
+    # `docker rm -f` NE TOUCHE PAS aux volumes NOMMÉS, quelle que soit l'option : seul
+    # `docker volume rm` les supprime. Le retour arrière reste donc entier.
+    cmd: "docker rm -f marketplace-prod-postgres-1 marketplace-prod-postgres-dispatch-1"
   register: retrait_postgres_local
-  changed_when: "'Removing' in (retrait_postgres_local.stdout | default('')) or 'Removing' in (retrait_postgres_local.stderr | default(''))"
+  changed_when: retrait_postgres_local.rc == 0
   failed_when: false
   when: use_external_database | default(false)
 
 - name: Ce qui a été retiré
   ansible.builtin.debug:
-    var: retrait_postgres_local.stderr_lines
+    var: retrait_postgres_local.stdout_lines
   when:
     - use_external_database | default(false)
-    - retrait_postgres_local.stderr_lines | default([]) | length > 0
+    - retrait_postgres_local.stdout_lines | default([]) | length > 0
 
-# La config STATIQUE de Traefik (traefik.<env>.yml : entrypoints, metrics :8082) n'est
-# relue qu'à la RECRÉATION du conteneur — un « up -d » ne suffit pas quand seul le
-# fichier bind-monté a changé. On recrée donc Traefik explicitement, sinon les
-# métriques Prometheus (dashboard Traefik) restent à « No data ».
+# ═══════════════════════════════════════════════════════════════════════════════════
+# RECRÉER TRAEFIK — SEULEMENT LÀ OÙ C'EST NOUS QUI LE FAISONS TOURNER.
+#
+# Sa configuration STATIQUE (`traefik.<env>.yml` : points d'entrée, métriques) n'est
+# relue qu'à la RECRÉATION du conteneur ; un « up -d » n'y suffit pas quand seul le
+# fichier bind-monté a changé. D'où cette tâche.
+#
+# EN PRODUCTION, DEPUIS LE 17/10/2026, IL N'Y A PLUS DE SERVICE `traefik` DANS LE
+# COMPOSE : le VPS en fait tourner un, installé à part, sur le réseau `proxy`. La
+# commande échouerait sur « no such service: traefik ». Elle est donc sautée là —
+# et le `when` porte sur le target_env plutôt que sur un drapeau, parce que c'est
+# exactement ce qui distingue les deux cas : le fichier compose lui-même.
+#
+# Corollaire, et il compte : la configuration statique du proxy de production ne nous
+# appartient plus. Noms des points d'entrée, résolveur ACME, métriques — tout cela se
+# règle chez lui. C'est pour cela que les labels ne codent plus ces noms en dur mais
+# lisent TRAEFIK_ENTRYPOINT et TRAEFIK_CERTRESOLVER.
+# ═══════════════════════════════════════════════════════════════════════════════════
 - name: Recréer Traefik (recharge sa config statique — metrics, entrypoints)
   ansible.builtin.command:
     cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} up -d --no-build --force-recreate traefik"
     chdir: "{{ app_dir }}"
   changed_when: true
+  when: target_env != 'prod'
 
 - name: Statut des conteneurs
   ansible.builtin.command:

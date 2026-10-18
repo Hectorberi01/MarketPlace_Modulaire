@@ -37,6 +37,16 @@ internal sealed class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         // toute lecture SQL dépendante de l'ordre de déclaration de l'énumération.
         builder.Property(s => s.DeliveryMode).HasConversion<string>().HasMaxLength(20);
 
+        // ── LE CODE DE REMISE EST PERSISTÉ EN CLAIR, ET C'EST UN CHOIX ──────────────
+        // Un condensat empêcherait le support de le relire pour arbitrer un litige —
+        // or c'est exactement le cas où l'on en a besoin. Ce n'est pas un secret
+        // durable : quatre chiffres, à usage unique, liés à une seule expédition, sans
+        // valeur une fois celle-ci livrée. Sa protection ne tient pas au stockage mais
+        // à la règle d'exposition : IL NE SORT JAMAIS DANS UNE RÉPONSE DESTINÉE AU
+        // VENDEUR. Voir `Shipment.DeliveryCode`.
+        builder.Property(s => s.DeliveryCode).HasMaxLength(8);
+        builder.Property(s => s.DeliveryCodeAttempts).HasDefaultValue(0);
+
         // Pas de clé étrangère : la course vit dans la base d'un AUTRE service. C'est un
         // identifiant de corrélation, pas une relation — et c'est bien pour ça qu'il ne
         // doit pas être contraint ici.

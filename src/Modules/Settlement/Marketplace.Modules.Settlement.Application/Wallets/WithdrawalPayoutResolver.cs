@@ -1,4 +1,3 @@
-using Marketplace.Modules.Delivery.Contracts;
 using Marketplace.Modules.Identity.Contracts;
 using Marketplace.Modules.Sellers.Contracts;
 using Marketplace.Modules.Settlement.Domain.Wallets;
@@ -30,14 +29,11 @@ public sealed class WithdrawalPayoutResolver
 {
     private readonly ISellerModuleApi _sellers;
     private readonly IIdentityModuleApi _identity;
-    private readonly IDeliveryModuleApi _couriers;
 
-    public WithdrawalPayoutResolver(
-        ISellerModuleApi sellers, IIdentityModuleApi identity, IDeliveryModuleApi couriers)
+    public WithdrawalPayoutResolver(ISellerModuleApi sellers, IIdentityModuleApi identity)
     {
         _sellers = sellers;
         _identity = identity;
-        _couriers = couriers;
     }
 
     /// <summary>
@@ -51,7 +47,14 @@ public sealed class WithdrawalPayoutResolver
         {
             WalletOwnerType.Seller => await ResolveSellerAsync(ownerId, cancellationToken),
             WalletOwnerType.Customer => await ResolveCustomerAsync(ownerId, cancellationToken),
-            WalletOwnerType.Courier => await ResolveCourierAsync(ownerId, cancellationToken),
+            // `WalletOwnerType.Courier` tombe désormais dans le cas par défaut, et
+            // rend donc null. La plateforme ne livre plus en propre : il ne se crée
+            // plus de portefeuille coursier, et les anciens ont été soldés avant le
+            // retrait (voir docs/25-retrait-livraison.md, phase 0).
+            //
+            // La valeur reste dans l'énumération tant que des lignes `'Courier'`
+            // subsistent en base : elle y est stockée EN CHAÎNE, et la retirer du C#
+            // ferait échouer la lecture EF de ces lignes.
 
             // La plateforme ne retire jamais : ses soldes sont des postes de résultat,
             // pas de l'argent à sortir.
@@ -72,28 +75,6 @@ public sealed class WithdrawalPayoutResolver
             account.Provider,
             account.AccountNumber,
             string.IsNullOrWhiteSpace(account.AccountName) ? seller!.ShopName : account.AccountName);
-    }
-
-    private async Task<WithdrawalPayout?> ResolveCourierAsync(Guid courierId, CancellationToken ct)
-    {
-        var courier = await _couriers.GetCourierAsync(courierId, ct);
-        var account = courier?.Payout;
-
-        if (account is null || !WalletPayout.IsMobileMoney(account.Provider) || string.IsNullOrWhiteSpace(account.AccountNumber))
-        {
-            return null;
-        }
-
-        // ON NE VÉRIFIE PAS ICI QU'IL EST ACTIF, ET C'EST DÉLIBÉRÉ.
-        //
-        // Suspendre un coursier interdit de lui confier de nouvelles courses et de le
-        // créditer ; cela n'autorise pas à garder l'argent qu'il a déjà gagné. Refuser
-        // le versement d'un solde acquis ferait de la suspension une confiscation — et
-        // laisserait une dette impossible à solder dans les comptes de la plateforme.
-        return new WithdrawalPayout(
-            account.Provider,
-            account.AccountNumber,
-            string.IsNullOrWhiteSpace(account.AccountName) ? courier!.DisplayName : account.AccountName);
     }
 
     private async Task<WithdrawalPayout?> ResolveCustomerAsync(Guid customerId, CancellationToken ct)

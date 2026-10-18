@@ -1,21 +1,3 @@
-# =====================================================================
-#  PRODUCTION — Marketplace
-#  Traefik (TLS Let's Encrypt) → Marketplace.Api + 4 BFF, Redis managé en
-#  conteneur, base de données EXTERNE (Neon/Postgres managé).
-#
-#  Différences avec docker-compose.yml (dev) :
-#   • Pas de Postgres local : la base est fournie via MARKETPLACE_CONNECTION (Neon).
-#   • TLS automatique (Let's Encrypt, challenge TLS-ALPN) + redirection HTTP→HTTPS.
-#   • Routage par SOUS-DOMAINES réels (api./seller./admin./web./m.$ROOT_DOMAIN).
-#   • Aucun port applicatif exposé (seuls 80/443 de Traefik le sont).
-#   • Dashboard Traefik désactivé, Redis protégé par mot de passe.
-#   • Redémarrage automatique, limites de ressources, rotation des logs.
-#
-#  Lancement :
-#     cd deploy
-#     cp .env.prod.example .env.prod   # puis renseigner les secrets
-#     docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-# =====================================================================
 
 name: marketplace-prod
 
@@ -148,23 +130,14 @@ x-app-env: &app-env
   Notifications__Email__From: "${EMAIL_FROM:-}"
   Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
 
-  # ── Service de dispatch (livraison par coursier) ────────────────────────────
-  # Adresse INTERNE : la marketplace parle au dispatch par le réseau Docker, jamais par
-  # Traefik. Sans elle, « commande prête » part dans l'outbox, échoue, et finit en lettre
-  # morte — visible, mais aucune course n'est créée.
-  Dispatch__BaseUrl: "${DISPATCH_BASE_URL:-http://dispatch:8080}"
-  # Deux secrets DISTINCTS, un par sens : une fuite d'un côté ne doit pas ouvrir les deux.
-  # ABSENTS = appels rejetés hors développement, des deux côtés.
-  Dispatch__OutboundSecret: "${DISPATCH_OUTBOUND_SECRET:?DISPATCH_OUTBOUND_SECRET requis}"
-  Delivery__WebhookSecret: "${DELIVERY_WEBHOOK_SECRET:?DELIVERY_WEBHOOK_SECRET requis}"
-  # Plafond ABSOLU de rémunération d'une course. Le plafond RELATIF — jamais plus que les
-  # frais de livraison encaissés sur la commande — s'applique toujours, sans réglage.
-  Settlement__CourierPay__MaxAmount: "${COURIER_PAY_MAX_AMOUNT:-}"
-
 x-app-common: &app-common
   restart: always
   logging: *logging
-  networks: [marketplace-net]
+  # DEUX RÉSEAUX, et les quatre services qui partagent cet ancrage sont exposés : l'API
+  # (webhooks des PSP) et les trois BFF. `marketplace-net` pour joindre redis et rembg,
+  # `proxy` pour être joignables par le Traefik du VPS. Le label
+  # `traefik.docker.network` de chaque service dit auquel des deux le proxy doit parler.
+  networks: [marketplace-net, proxy]
   # Compte de service Firebase (push FCM) monté en lecture seule dans TOUS les
   # hôtes (api + BFF, dont bff-admin qui envoie le push de test au vendeur).
   volumes:
@@ -257,155 +230,6 @@ services:
     logging: *logging
     networks: [marketplace-net]
 
-  # ---------------- Base de données (co-hébergée sur ce VPS) ----------------
-  # AUCUN port publié : la base n'est JAMAIS joignable depuis Internet, seulement
-  # sur le réseau Docker interne par l'API et les BFF. Pour une base EXTERNE
-  # (Neon/Supabase), retire ce service + le depends_on postgres de l'API, et mets
-  # MARKETPLACE_CONNECTION sur l'endpoint externe.
-  # ═══════════════════════════════════════════════════════════════════════════
-  # POSTGRES LOCAL — SOUS PROFIL, DONC ABSENT DÈS QUE LA BASE EST AILLEURS.
-  #
-  # `profiles: [local-db]` fait que ce service n'est démarré QUE si
-  # COMPOSE_PROFILES contient « local-db ». `env.j2` ne l'y met que tant que
-  # `use_external_database` vaut false.
-  #
-  # POURQUOI CE N'EST PAS UN DÉTAIL. Après la bascule vers le VPS base, laisser ce
-  # conteneur tourner donnerait une base VIDE juste à côté de la vraie, sur le même
-  # réseau Docker, répondant au nom `postgres`. La moindre variable mal résolue —
-  # un `.env` régénéré, un repli qui reprend le dessus — y renverrait l'application.
-  # Elle appliquerait alors ses vingt-six migrations sur cette base vide, sèmerait
-  # l'admin, et se déclarerait en bonne santé. La plateforme remonterait vide, sans
-  # une seule erreur.
-  #
-  # Un service qui n'existe pas ne peut pas recevoir ce trafic-là.
-  # ═══════════════════════════════════════════════════════════════════════════
-  postgres:
-    profiles: ["local-db"]
-    image: postgres:16-alpine
-    restart: always
-    shm_size: "256mb"          # évite les erreurs "could not resize shared memory" sur les gros tris/index
-    environment:
-      POSTGRES_DB: "${POSTGRES_DB:-marketplace}"
-      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      # ═══════════════════════════════════════════════════════════════════════
-      # PAS DE « :? » ICI, ET CE N'EST PAS UN RELÂCHEMENT.
-      #
-      # Compose INTERPOLE TOUT LE FICHIER avant de filtrer par profil. Un
-      # `${POSTGRES_PASSWORD:?…}` sur un service désactivé fait donc échouer
-      # TOUTES les commandes compose — `pull`, `up`, `ps`, `config` — et pas
-      # seulement celles qui démarreraient ce service.
-      #
-      # Constaté en déploiement : depuis la bascule vers le VPS base, le gabarit
-      # n'écrit plus les POSTGRES_* dans .env.prod (ils n'ont plus de sens), et
-      # `docker compose pull` s'arrêtait sur « required variable POSTGRES_PASSWORD
-      # is missing a value » — pour deux services que ce déploiement n'allait
-      # justement PAS démarrer.
-      #
-      # CE QUI GARDE LE GARDE-FOU. Il remonte d'un cran, là où la valeur est
-      # produite : le rôle Ansible refuse désormais de déployer un Postgres
-      # co-hébergé sans mot de passe (tâche « Exiger un mot de passe… »). Et si
-      # l'on arrivait quand même ici avec une valeur vide, l'image postgres
-      # refuse d'initialiser un cluster sans mot de passe — l'erreur est claire,
-      # elle arrive au démarrage du conteneur, et elle n'emporte plus le reste.
-      # ═══════════════════════════════════════════════════════════════════════
-      # Voir l'encadré du service `postgres` : `:?` est impossible ici, Compose
-      # interpole AVANT de filtrer par profil.
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    logging: *logging
-    networks: [marketplace-net]
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # LA BASE DU DISPATCH — ELLE MANQUAIT À CETTE PILE, ET RIEN NE LE DISAIT.
-  #
-  # Le gabarit Ansible construit `DISPATCH_CONNECTION` avec `Host=postgres-dispatch`
-  # dès que la base n'est pas externe. Ce service existait dans le compose de
-  # DÉVELOPPEMENT et nulle part ici : en production, le dispatch cherchait un hôte
-  # que le réseau Docker ne connaissait pas, attendait l'expiration du délai de
-  # connexion, échouait sur `MigrateAsync` au démarrage — et le conteneur s'arrêtait.
-  #
-  # L'API, elle, démarrait normalement : sa chaîne pointe sur `postgres`, qui existe.
-  # D'où un déploiement « appliqué » avec un seul service à terre, et une trace
-  # Npgsql de soixante lignes qui ne nomme jamais l'hôte introuvable.
-  #
-  # BASE SÉPARÉE, ET C'EST VOULU : ce service réécrit des positions à la seconde, la
-  # marketplace tient de l'argent. Deux moteurs sur la même machine isolent déjà la
-  # charge d'écriture et les verrous ; la séparation des WAL et des sauvegardes, elle,
-  # n'arrive vraiment que le jour où `use_external_database` passe à vrai et où les
-  # deux bases vivent sur le VPS dédié.
-  #
-  # PAS DE `postgresql.conf` MONTÉ, contrairement à `postgres` : ce fichier est réglé
-  # pour les 8 Go de la base marketplace. L'appliquer à un conteneur qui en a deux
-  # donnerait des `shared_buffers` hors de proportion avec sa mémoire.
-  #
-  # AUCUN PORT PUBLIÉ. Le compose de développement expose 5435 pour qu'on s'y branche
-  # avec un client ; en production, seul le réseau interne y accède.
-  # ═══════════════════════════════════════════════════════════════════════════
-  postgres-dispatch:
-    # Même profil que `postgres` : les deux disparaissent ensemble le jour où la base
-    # est externe, et la chaîne de connexion bascule alors sur `wg_db_ip`.
-    profiles: ["local-db"]
-    image: postgres:16-alpine
-    restart: always
-    shm_size: "128mb"
-    environment:
-      # Ces trois valeurs DOIVENT correspondre à ce que le gabarit met dans
-      # `DISPATCH_CONNECTION` — mêmes variables, une seule source.
-      POSTGRES_DB: "${DISPATCH_DB:-dispatch}"
-      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      # Voir l'encadré du service `postgres` : `:?` est impossible ici, Compose
-      # interpole AVANT de filtrer par profil.
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
-    volumes:
-      - pgdata-dispatch:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DISPATCH_DB:-dispatch}"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    logging: *logging
-    networks: [marketplace-net]
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-
-  # ---------------- Edge gateway (TLS) ----------------
-  traefik:
-    image: traefik:v3.1
-    restart: always
-    environment:
-      # Docker récent (Ubuntu 24.04+/26.04) refuse les vieilles API : on force une
-      # version d'API moderne pour le client Docker interne de Traefik.
-      DOCKER_API_VERSION: "1.44"
-    command:
-      # E-mail ACME injecté depuis l'environnement (le reste vient de traefik.prod.yml).
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL requis}"
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.prod.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/dynamic-prod:/etc/traefik/dynamic:ro
-      - acme:/acme
-    logging: *logging
-    networks: [marketplace-net]
-
   # ---------------- Monolithe modulaire (migrateur) ----------------
   api:
     <<: *app-common
@@ -427,13 +251,20 @@ services:
       Identity__Bootstrap__AdminFirstName: "${ADMIN_FIRST_NAME:-Admin}"
       Identity__Bootstrap__AdminLastName: "${ADMIN_LAST_NAME:-Plateforme}"
       Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
+    # ═════════════════════════════════════════════════════════════════════════════
+    # PLUS DE `depends_on: postgres`, PARCE QU'IL N'Y A PLUS DE POSTGRES ICI.
+    #
+    # Il y en avait un, avec `required: false` pour survivre au jour où la base
+    # partirait sur sa propre machine. Ce jour est passé : les services `postgres` et
+    # `postgres-dispatch` ont été retirés de ce fichier le 17/10/2026, avec le profil
+    # `local-db` qui les tenait éteints.
+    #
+    # L'API N'ATTEND DONC PLUS SA BASE AU DÉMARRAGE, et c'est le comportement normal
+    # d'une base distante : rien sur cet hôte ne sait si le VPS base est prêt. Ce que
+    # l'API fait à la place, elle le faisait déjà — elle applique ses migrations au
+    # démarrage et échoue franchement si la base ne répond pas.
+    # ═════════════════════════════════════════════════════════════════════════════
     depends_on:
-      # `required: false` : sans lui, Compose refuse de démarrer `api` dès que
-      # `postgres` n'est pas dans le profil actif — c'est-à-dire exactement le jour
-      # où la base est sur sa propre machine et où tout devrait bien se passer.
-      postgres:
-        condition: service_healthy
-        required: false
       redis:
         condition: service_healthy
     labels:
@@ -462,9 +293,25 @@ services:
       # symptôme (« le PSP ne nous rappelle jamais ») ne pointera pas vers ce fichier.
       # ─────────────────────────────────────────────────────────────────────────
       - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`) && (PathPrefix(`/api/payments/webhooks`) || PathPrefix(`/api/payments/return`))"
-      - "traefik.http.routers.api.entrypoints=websecure"
-      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.api.middlewares=edge-chain@file"
+      - "traefik.http.routers.api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.api.middlewares=api-sec@docker,api-rl@docker,api-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.api-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.api-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.api-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.api-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.api-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.api-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.api-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.api-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.api-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.api-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.api-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.api-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.api.loadbalancer.server.port=8080"
 
   # ---------------- BFF ----------------
@@ -506,9 +353,25 @@ services:
       # politique CORS ci-dessus autorise, et c'est pour cela qu'elle existe.
       # ─────────────────────────────────────────────────────────────────────
       - "traefik.http.routers.client.rule=Host(`m.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.client.entrypoints=websecure"
-      - "traefik.http.routers.client.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.client.middlewares=edge-chain@file"
+      - "traefik.http.routers.client.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.client.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.client.middlewares=client-sec@docker,client-rl@docker,client-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.client-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.client-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.client-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.client-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.client-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.client-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.client-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.client-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.client-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.client-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.client-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.client-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.client.loadbalancer.server.port=8080"
 
 
@@ -531,9 +394,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.seller.rule=Host(`seller.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.seller.entrypoints=websecure"
-      - "traefik.http.routers.seller.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.seller.middlewares=edge-chain@file"
+      - "traefik.http.routers.seller.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.seller.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.seller.middlewares=seller-sec@docker,seller-rl@docker,seller-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.seller-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.seller-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.seller-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.seller-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.seller-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.seller-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.seller-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.seller-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.seller-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.seller-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.seller-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.seller-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.seller.loadbalancer.server.port=8080"
 
   bff-admin:
@@ -558,9 +437,24 @@ services:
       # pas localhost (défaut dev d'appsettings.json).
       #
       # LA LISTE SUIT LE DÉCOUPAGE PAR AUDIENCE. « BFF Mobile » et « BFF Web » ont
-      # fusionné en « BFF Client » ; « BFF Driveur » et le service de dispatch s'y
-      # ajoutent. Une surface oubliée ici n'est pas surveillée — et son absence ne
-      # produit aucune erreur, juste une ligne manquante que personne ne cherche.
+      # fusionné en « BFF Client ». Une surface oubliée ici n'est pas surveillée — et
+      # son absence ne produit aucune erreur, juste une ligne manquante que personne
+      # ne cherche.
+      #
+      # ═══════════════════════════════════════════════════════════════════════════
+      # CES SONDES SURVIVENT AU RETRAIT DE LA SUPERVISION, ET CE N'EST PAS UN OUBLI.
+      #
+      # Elles n'ont RIEN à voir avec Prometheus : le BFF Admin interroge lui-même
+      # `/health` et `/health/ready` de chaque service par le réseau Docker, et la
+      # console affiche le résultat. C'est la seule page qui dit encore « l'API
+      # répond » sans dépendre d'une machine tierce — à conserver pour cette raison
+      # précise.
+      #
+      # LES INDICES SONT POSITIONNELS. Retirer « BFF Driveur » (indice 4) et le
+      # dispatch (5) sans renuméroter aurait laissé un trou ; .NET arrête de lier
+      # un tableau au premier indice manquant, et les surfaces suivantes auraient
+      # disparu en silence. Il n'y en avait pas après, mais la règle reste.
+      # ═══════════════════════════════════════════════════════════════════════════
       Monitoring__Surfaces__0__Name: "API"
       Monitoring__Surfaces__0__Url: "http://api:8080"
       Monitoring__Surfaces__1__Name: "BFF Client"
@@ -569,15 +463,24 @@ services:
       Monitoring__Surfaces__2__Url: "http://bff-seller:8080"
       Monitoring__Surfaces__3__Name: "BFF Admin"
       Monitoring__Surfaces__3__Url: "http://bff-admin:8080"
-      Monitoring__Surfaces__4__Name: "BFF Driveur"
-      Monitoring__Surfaces__4__Url: "http://bff-driver:8080"
-      Monitoring__Surfaces__5__Name: "Service de dispatch"
-      Monitoring__Surfaces__5__Url: "http://dispatch:8080"
-      # KPIs live (Prometheus) + dashboards Grafana intégrés. Vides = masqués.
+      # ═══════════════════════════════════════════════════════════════════════════
+      # QUATRE URL QUI DÉSIGNENT DÉSORMAIS UNE AUTRE MACHINE.
+      #
+      # La pile de supervision a quitté ce serveur le 17/10/2026 : elle vit sur un VPS
+      # dédié, avec sa propre configuration. Ces variables ne pointent donc plus un
+      # conteneur voisin, et c'est pour cela qu'elles RESTENT : le jour où le VPS de
+      # supervision publie ses URL, on les renseigne ici et la page Système retrouve
+      # ses KPIs, ses tableaux de bord et ses journaux sans qu'une ligne de code
+      # change.
+      #
+      # VIDES, LA CONSOLE MASQUE CES PANNEAUX — elle ne les affiche pas en erreur.
+      # C'est l'état normal tant que les URL ne sont pas connues ; y laisser
+      # « http://prometheus:9090 » aurait été le seul vrai défaut, la page attendant
+      # alors un conteneur disparu à chaque ouverture.
+      # ═══════════════════════════════════════════════════════════════════════════
       Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
       Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
       Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
-      # Logs des conteneurs (panneau « Logs » de la page Système) via l'API Loki.
       Monitoring__LokiUrl: "${LOKI_URL:-}"
     depends_on:
       api:
@@ -585,9 +488,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.admin.rule=Host(`admin.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.admin.middlewares=edge-chain@file"
+      - "traefik.http.routers.admin.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.admin.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.admin.middlewares=admin-sec@docker,admin-rl@docker,admin-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.admin-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.admin-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.admin-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.admin-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.admin-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.admin-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.admin-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.admin-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.admin-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.admin-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.admin-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.admin-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.admin.loadbalancer.server.port=8080"
 
   # --- CONSOLE ADMIN (Next.js, image poussée par le dépôt HbaEpress_admin) -------
@@ -615,7 +534,7 @@ services:
     image: ${IMAGE_PREFIX:-marketplace}/seller-console:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *logging
-    networks: [marketplace-net]
+    networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
       SELLER_BFF_URL: "http://bff-seller:8080"
@@ -653,18 +572,32 @@ services:
       # sur le même hôte, et Traefik en choisirait un au hasard.
       # ─────────────────────────────────────────────────────────────────────────
       - "traefik.http.routers.seller-console.rule=Host(`${SELLER_CONSOLE_DOMAIN:-pro.${ROOT_DOMAIN}}`)"
-      - "traefik.http.routers.seller-console.entrypoints=websecure"
-      - "traefik.http.routers.seller-console.tls.certresolver=letsencrypt"
-      # edge-chain : HSTS, en-têtes de sécurité, limitation de débit de bordure.
-      # L'omettre priverait la console de tout ce que Traefik apporte.
-      - "traefik.http.routers.seller-console.middlewares=edge-chain@file"
+      - "traefik.http.routers.seller-console.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.seller-console.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.seller-console.middlewares=seller-console-sec@docker,seller-console-rl@docker,seller-console-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.seller-console-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.seller-console-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.seller-console-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.seller-console-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.seller-console-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.seller-console-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.seller-console-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.seller-console-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.seller-console-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.seller-console-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.seller-console-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.seller-console-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.seller-console.loadbalancer.server.port=3000"
 
   console:
     image: ${IMAGE_PREFIX:-marketplace}/console:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *logging
-    networks: [marketplace-net]
+    networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
       ADMIN_BFF_URL: "http://bff-admin:8080"
@@ -689,9 +622,25 @@ services:
       # .com, les BFF restent sur le .org. Écrire `console.${ROOT_DOMAIN}` produirait
       # `console.hba-express.org`, un domaine qu'on ne sert plus — et silencieusement.
       - "traefik.http.routers.console.rule=Host(`${ADMIN_CONSOLE_DOMAIN:-console.${ROOT_DOMAIN}}`)"
-      - "traefik.http.routers.console.entrypoints=websecure"
-      - "traefik.http.routers.console.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.console.middlewares=edge-chain@file"
+      - "traefik.http.routers.console.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.console.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.console.middlewares=console-sec@docker,console-rl@docker,console-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.console-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.console-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.console-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.console-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.console-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.console-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.console-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.console-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.console-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.console-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.console-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.console-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.console.loadbalancer.server.port=3000"
 
   # ---------------- Vitrine acheteur (hba-express.org) ----------------
@@ -715,7 +664,7 @@ services:
     image: ${IMAGE_PREFIX:-marketplace}/boutique:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *logging
-    networks: [marketplace-net]
+    networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
       CLIENT_BFF_URL: "http://bff-client:8080"
@@ -744,131 +693,60 @@ services:
       # CHAQUE nom doit résoudre vers le VPS avant le premier démarrage : le certificat
       # est émis par nom d'hôte.
       - "traefik.http.routers.site.rule=Host(`${SITE_DOMAIN:-${ROOT_DOMAIN}}`) || Host(`${SITE_DOMAIN_APEX:-www.${ROOT_DOMAIN}}`)"
-      - "traefik.http.routers.site.entrypoints=websecure"
-      - "traefik.http.routers.site.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.site.middlewares=edge-chain@file"
+      - "traefik.http.routers.site.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.site.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.site.middlewares=site-sec@docker,site-rl@docker,site-gz@docker"
+      # En-têtes de sécurité durcis + HSTS.
+      - "traefik.http.middlewares.site-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.site-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.site-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.site-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.site-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.site-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.site-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.site-sec.headers.customResponseHeaders.X-Gateway=traefik"
+      - "traefik.http.middlewares.site-sec.headers.customResponseHeaders.Server="
+      # Débit par client, et compression.
+      - "traefik.http.middlewares.site-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.site-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.site-gz.compress=true"
+      # Deux réseaux sur ce conteneur : on DÉSIGNE celui que le proxy doit utiliser.
+      - "traefik.docker.network=${TRAEFIK_PROXY_NETWORK:-proxy}"
       - "traefik.http.services.site.loadbalancer.server.port=3000"
 
-  # ---------------- BFF Driveur (coursier : compte + portefeuille) ----------------
-  # Quatrième surface, découpée par AUDIENCE : la même API pour l'application mobile du
-  # coursier et pour sa console web. Elle ne pilote AUCUNE course — celles-ci vivent dans
-  # le service de dispatch, que l'application appelle directement.
-  bff-driver:
-    <<: *app-common
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Driver/Marketplace.Bff.Driver.csproj
-        APP_DLL: Marketplace.Bff.Driver.dll
-    image: ${IMAGE_PREFIX:-marketplace}/bff-driver:${IMAGE_TAG:-latest}
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      OUTBOX_ENABLED: "false"
-      # Origines de la console web coursier. VIDE = REPLI FERMÉ : aucune origine
-      # navigateur acceptée. Un repli ouvert avec AllowCredentials laisserait n'importe
-      # quel site lire le portefeuille d'un coursier connecté.
-      Cors__Origins: "${DRIVER_CONSOLE_ORIGINS:-}"
-    depends_on:
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.driver.rule=Host(`driver.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.driver.entrypoints=websecure"
-      - "traefik.http.routers.driver.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.driver.middlewares=edge-chain@file"
-      - "traefik.http.services.driver.loadbalancer.server.port=8080"
-
-  # ---------------- Service de dispatch (coursiers) ----------------
-  # Déployé à part du monolithe : il tient les courses, les offres et les positions de
-  # coursier, et n'accède à AUCUNE base de la marketplace. Les deux ne communiquent que
-  # par HTTP signé — voir docs/CDC_Service_Livraison_Coursier.md.
-  dispatch:
-    <<: *app-common
-    # ANNULE le montage FCM hérité de *app-common : ce service n'envoie aucune
-    # notification push, et un compte de service n'a rien à faire dans un conteneur qui
-    # ne s'en sert pas. Le reste de l'ancre — santé, réseau, journalisation, limites —
-    # est bien voulu.
-    volumes: []
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: Services/HbaExpress.Dispatch/src/HbaExpress.Dispatch.Api/HbaExpress.Dispatch.Api.csproj
-        APP_DLL: HbaExpress.Dispatch.Api.dll
-    image: ${IMAGE_PREFIX:-marketplace}/dispatch:${IMAGE_TAG:-latest}
-    environment:
-      ASPNETCORE_ENVIRONMENT: "Production"
-      # BASE SÉPARÉE, jamais celle de la marketplace (CDC §11) : ce service réécrit des
-      # positions à la seconde, la marketplace tient de l'argent.
-      ConnectionStrings__Dispatch: "${DISPATCH_CONNECTION:?DISPATCH_CONNECTION requis (base dediee au dispatch)}"
-      # Ce service n'ÉMET aucun jeton : il VÉRIFIE ceux de la marketplace. La clé doit
-      # être IDENTIQUE, sinon aucun coursier ne peut s'authentifier.
-      Jwt__Issuer: "marketplace"
-      Jwt__Audience: "marketplace"
-      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
-      # Adresse INTERNE de la marketplace : c'est par là que part l'annonce de course
-      # livrée, celle qui crédite le coursier. Jamais par Traefik — la surface publique
-      # de l'API ne route que les rappels des PSP.
-      Marketplace__BaseUrl: "${MARKETPLACE_BASE_URL:-http://api:8080}"
-      # Secrets CROISÉS : ce qu'on envoie doit valoir Delivery__WebhookSecret côté
-      # marketplace ; ce qu'on reçoit doit valoir Dispatch__OutboundSecret là-bas.
-      Marketplace__OutboundSecret: "${DELIVERY_WEBHOOK_SECRET:?DELIVERY_WEBHOOK_SECRET requis}"
-      Marketplace__InboundSecret: "${DISPATCH_OUTBOUND_SECRET:?DISPATCH_OUTBOUND_SECRET requis}"
-      # Part des frais de livraison versée au coursier. AUCUN DÉFAUT DANS LE CODE : le
-      # service refuse de démarrer sans elle (CourierPayGuard). C'est une décision
-      # commerciale — voir docs/PLAN_Reste_A_Faire.md §5.3.
-      Dispatch__CourierShare: "${DISPATCH_COURIER_SHARE:?DISPATCH_COURIER_SHARE requis (ex. 0.80)}"
-      # BACKPLANE SIGNALR. Sans lui, un coursier connecté à une instance ne recevrait
-      # jamais une offre dispatchée par une autre : il la verrait au rattrapage, vingt
-      # secondes plus tard, sur une fenêtre qui en dure vingt-cinq. Panne intermittente,
-      # invisible tant qu'on ne tourne qu'à une instance.
-      Redis__ConnectionString: "${DISPATCH_REDIS_CONNECTION:-redis:6379,password=${REDIS_PASSWORD:-},abortConnect=false}"
-      Otel__Endpoint: "${OTEL_ENDPOINT:-}"
-      RunMigrationsAtStartup: "true"
-    depends_on:
-      # `required: false`, comme `api` avec `postgres` : sans lui, Compose refuse de
-      # démarrer `dispatch` dès que la base est externe et donc hors du profil actif.
-      postgres-dispatch:
-        condition: service_healthy
-        required: false
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      # ─────────────────────────────────────────────────────────────────────────
-      # SEUL /api/courier EST PUBLIÉ. /internal NE L'EST PAS, ET NE DOIT JAMAIS L'ÊTRE.
-      #
-      # Les routes /internal créent des courses, en annulent, et décident du droit de
-      # travailler d'un coursier. Leur authentification est une SIGNATURE, pas un jeton :
-      # elles sont anonymes au sens ASP.NET. Fermées par défaut, oui — mais la première
-      # défense est qu'elles ne soient pas joignables. Seule la marketplace les appelle,
-      # par le réseau interne.
-      #
-      # L'ABSENCE DE ROUTE EST LE CONTRÔLE. Élargir cette règle « pour tester »
-      # ouvrirait la création de courses à Internet.
-      #
-      # `/hubs/courier` est publié avec `/api/courier` : c'est le canal temps réel de la
-      # même application mobile.
-      # ─────────────────────────────────────────────────────────────────────────
-      - "traefik.http.routers.dispatch.rule=Host(`dispatch.${ROOT_DOMAIN}`) && (PathPrefix(`/api/courier`) || PathPrefix(`/hubs/courier`))"
-      - "traefik.http.routers.dispatch.entrypoints=websecure"
-      - "traefik.http.routers.dispatch.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.dispatch.middlewares=edge-chain@file"
-      - "traefik.http.services.dispatch.loadbalancer.server.port=8080"
-
 networks:
+  # Réseau INTERNE de la pile : api ↔ redis ↔ rembg. Rien n'est exposé par là.
   marketplace-net:
     name: marketplace-prod-net
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # LE RÉSEAU DU PROXY, DÉJÀ CRÉÉ, ET QUI NE NOUS APPARTIENT PAS.
+  #
+  # `external: true` dit à Compose de le JOINDRE, pas de le créer : il appartient au
+  # Traefik installé sur le VPS, qui y vit déjà. S'il n'existe pas, `up` échoue tout de
+  # suite — « network proxy declared as external, but could not be found ». Une erreur
+  # franche, bien préférable à une pile qui démarre sans être joignable.
+  #
+  # SEULS LES SEPT SERVICES EXPOSÉS le rejoignent. `redis` et `rembg` restent sur le
+  # réseau interne : les mettre là les rendrait joignables par tout ce qui est branché
+  # sur ce proxy, y compris les autres piles qu'il sert.
+  # ═══════════════════════════════════════════════════════════════════════════════
+  proxy:
+    name: ${TRAEFIK_PROXY_NETWORK:-proxy}
+    external: true
 
 volumes:
-  pgdata:
-  pgdata-dispatch:
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # `pgdata` ET `pgdata-dispatch` NE SONT PLUS DÉCLARÉS ICI.
+  #
+  # Compose ne SUPPRIME pas un volume qu'on retire du fichier : s'ils existent encore
+  # sur l'hôte de production, ils y restent, intacts, et `docker volume ls` les
+  # montre. C'était le retour arrière de la bascule vers le VPS base ; leur
+  # suppression est une décision manuelle, `docker volume rm marketplace-prod_pgdata`
+  # et `..._pgdata-dispatch`, à prendre quand la bascule est acquise.
+  # ═══════════════════════════════════════════════════════════════════════════════
   redisdata:
-  acme:
+  # `acme` est parti avec le service `traefik` : le certificat est obtenu et stocké par
+  # le proxy du VPS, dans SON volume. `marketplace-prod_acme` peut subsister sur l'hôte ;
+  # il ne contient que d'anciens certificats, et sa suppression est manuelle.
   # Cache des modèles ONNX de rembg (sinon retéléchargés à chaque redémarrage).
   rembgmodels:

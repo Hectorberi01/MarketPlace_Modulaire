@@ -1,7 +1,0 @@
----
-# Déployer Portainer ? (désactivé en dev — Traefik y route par fichier, pas par labels)
-enable_portainer: true
-# Sous-domaine d'exposition : portainer.<root_domain>
-portainer_subdomain: portainer
-# Image (épingler une version en prod, ex. portainer/portainer-ce:2.21.4).
-portainer_image: portainer/portainer-ce:latest

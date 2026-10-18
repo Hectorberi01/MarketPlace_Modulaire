@@ -86,6 +86,8 @@ public sealed class WalletMutations
     public const string OrderCancelledReferenceType = "order_cancelled";
 
     /// <summary>Rémunération d'une course livrée, référencée par l'identifiant de la course.</summary>
+    // Conservée pour relire les écritures passées : les lignes
+    // `wallet_transactions` d'avant le retrait portent encore cette référence.
     public const string CourierDeliveryReferenceType = "courier_delivery";
 
     /// <summary>
@@ -377,47 +379,19 @@ public sealed class WalletMutations
     // Coursier
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Paie une course livrée : crédite le coursier ET débite les frais de livraison
-    /// encaissés par la plateforme, en une seule opération.
-    ///
-    /// ═════════════════════════════════════════════════════════════════════════════
-    /// LES DEUX ÉCRITURES VONT ENSEMBLE, ET C'EST TOUT L'INTÉRÊT.
-    ///
-    /// La plateforme a encaissé un forfait de livraison à la commande (compte
-    /// « Shipping »). Payer le coursier sans y toucher ferait grossir indéfiniment un
-    /// solde qui ne correspond à rien : la plateforme afficherait des frais de livraison
-    /// jamais dépensés, alors même qu'elle paie des coursiers avec.
-    ///
-    /// SI LE COMPTE PASSE EN NÉGATIF, C'EST UNE INFORMATION, PAS UNE PANNE. La politique
-    /// de la plateforme l'autorise, et ce négatif dit exactement une chose : les forfaits
-    /// facturés aux acheteurs ne couvrent pas ce que coûtent les courses. C'est le seul
-    /// endroit du système où cette vérité devient visible — et il vaut mieux la voir sur
-    /// un écran que la découvrir en fin d'exercice.
-    ///
-    /// LE CRÉDIT VA DIRECTEMENT AU DISPONIBLE, pas au « à venir ». Le vendeur a un solde
-    /// à venir parce que son gain est retenu jusqu'à la livraison ; pour le coursier, la
-    /// livraison EST l'événement. Le mettre en attente demanderait un déclencheur pour
-    /// l'en sortir, et un séquestre sans libération, c'est de l'argent bloqué pour
-    /// toujours — la panne qu'on vient de corriger sur les commandes abandonnées.
-    /// ═════════════════════════════════════════════════════════════════════════════
-    /// </summary>
-    public async Task PayCourierForDeliveryAsync(
-        Guid courierId, decimal amount, string currency, Guid deliveryJobId, CancellationToken ct)
-    {
-        if (amount <= 0m)
-        {
-            return;
-        }
-
-        await CreditAsync(
-            WalletOwnerType.Courier, courierId, WalletAccount.Available, amount, currency,
-            "courier_delivery", CourierDeliveryReferenceType, deliveryJobId, ct);
-
-        await DebitPlatformAsync(
-            WalletAccount.Shipping, amount, currency,
-            "courier_delivery", CourierDeliveryReferenceType, deliveryJobId, ct);
-    }
+    // ═════════════════════════════════════════════════════════════════════════════
+    // `PayCourierForDeliveryAsync` A ÉTÉ RETIRÉ (09/10/2026).
+    //
+    // Il créditait le coursier ET débitait le compte plateforme `Shipping` — les frais
+    // de livraison encaissés auprès de l'acheteur. Les deux écritures partaient
+    // ensemble ; elles partent ensemble.
+    //
+    // CE QUE CELA LAISSE OUVERT : plus rien ne débite `Platform/Shipping`. Tant que la
+    // livraison est faite par le vendeur lui-même, sans rémunération versée par la
+    // plateforme, c'est cohérent — les frais encaissés restent un produit. Le jour où
+    // `hba-delivery` facturera ses courses, il faudra reposer un débit de ce compte,
+    // sans quoi il gonflera indéfiniment.
+    // ═════════════════════════════════════════════════════════════════════════════
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Plateforme

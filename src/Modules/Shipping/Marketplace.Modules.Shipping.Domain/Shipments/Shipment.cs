@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Marketplace.BuildingBlocks.Domain.Primitives;
 using Marketplace.BuildingBlocks.Domain.Results;
 using Marketplace.Modules.Shipping.Domain.Shipments.Events;
@@ -59,6 +62,36 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
     /// </summary>
     public Guid? DeliveryJobId { get; private set; }
 
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// LE CODE DE REMISE — CE QUI PROUVE QUE LE VENDEUR A VRAIMENT LIVRÉ.
+    ///
+    /// Quand le vendeur livre lui-même, c'est LUI qui déclare la livraison — et c'est
+    /// aussi lui que cette déclaration paie, puisqu'elle libère sa séquestre. Le laisser
+    /// appuyer seul sur « livré » revient à lui confier le déclenchement de son propre
+    /// versement, sans contrepartie.
+    ///
+    /// Le code casse cette boucle : l'acheteur le lit dans son application et le donne
+    /// de vive voix à la remise. Le vendeur ne peut donc déclarer que ce qu'il a
+    /// réellement fait. C'est l'usage courant au Bénin, et il fonctionne hors ligne —
+    /// ni l'un ni l'autre n'a besoin de réseau au moment de la remise.
+    ///
+    /// IL NE DOIT JAMAIS SORTIR DANS UNE RÉPONSE DESTINÉE AU VENDEUR. Ni dans le détail
+    /// d'une expédition, ni dans une liste, ni dans un journal. Un code que le vendeur
+    /// peut lire avant la remise ne prouve plus rien, et tout ce mécanisme ne coûterait
+    /// plus que sa complexité.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    public string? DeliveryCode { get; private set; }
+
+    /// <summary>
+    /// Essais infructueux. QUATRE CHIFFRES SE DEVINENT EN DIX MILLE COUPS, et rien
+    /// n'empêcherait de les tenter en boucle depuis l'API vendeur. Au-delà du plafond,
+    /// la remise par code est close : elle passe par le support, qui constate.
+    /// </summary>
+    public int DeliveryCodeAttempts { get; private set; }
+
+    /// <summary>Au-delà, plus aucune tentative n'est acceptée sur cette expédition.</summary>
+    public const int MaxDeliveryCodeAttempts = 5;
+
     /// <summary>
     /// La course qui a ÉCHOUÉ sur cette expédition, quand un coursier a renoncé.
     ///
@@ -110,6 +143,13 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         {
             shipment._items.Add(new ShipmentItem(Guid.NewGuid(), line.Sku, line.Quantity));
         }
+
+        // ENGENDRÉ DÈS LA CRÉATION, pas à la remise : l'acheteur doit pouvoir le lire
+        // avant que le vendeur ne se présente. `RandomNumberGenerator` et non `Random` —
+        // ce code garde de l'argent, et `Random` est prévisible à partir de ses sorties.
+        shipment.DeliveryCode = RandomNumberGenerator
+            .GetInt32(0, 10_000)
+            .ToString("D4", CultureInfo.InvariantCulture);
 
         shipment.Raise(new ShipmentCreatedDomainEvent(shipment.Id.Value, orderId, sellerId));
         return shipment;
@@ -174,6 +214,69 @@ public sealed class Shipment : AggregateRoot<ShipmentId>
         TrackingUrl = string.IsNullOrWhiteSpace(trackingUrl) ? null : trackingUrl.Trim();
         ShippedAtUtc = DateTime.UtcNow;
         Raise(new ShipmentShippedDomainEvent(Id.Value, OrderId, Carrier, TrackingNumber));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// REMISE EN MAIN PROPRE PAR LE VENDEUR, prouvée par le code de l'acheteur.
+    ///
+    /// Part de « en préparation » et non de « en transit » : il n'y a pas de transit
+    /// quand le vendeur porte le colis lui-même. C'est la même raison qui fait partir
+    /// la livraison par coursier d'un autre état.
+    ///
+    /// LE CODE EST COMPARÉ EN TEMPS CONSTANT. Comparer deux chaînes avec `==` s'arrête
+    /// au premier caractère qui diffère : le temps de réponse trahit alors combien de
+    /// chiffres sont bons, et quatre chiffres se retrouvent en quelques dizaines
+    /// d'essais au lieu de dix mille. Le plafond de tentatives ne suffirait pas à s'en
+    /// protéger — il ne compte que les essais, pas ce qu'ils apprennent.
+    /// </summary>
+    public Result MarkDeliveredBySeller(string code)
+    {
+        if (Status != ShipmentStatus.Preparing)
+        {
+            return Result.Failure(Error.Conflict(
+                "shipping.invalid_transition",
+                "Seule une expédition préparée peut être remise en main propre."));
+        }
+
+        if (DeliveryCodeAttempts >= MaxDeliveryCodeAttempts)
+        {
+            return Result.Failure(Error.Conflict(
+                "shipping.delivery_code_locked",
+                "Trop de codes erronés. Contactez le support pour confirmer la remise."));
+        }
+
+        if (string.IsNullOrWhiteSpace(DeliveryCode))
+        {
+            // Expédition antérieure au code : il n'y a rien à comparer. On ne laisse pas
+            // passer pour autant — ce serait rouvrir la porte qu'on vient de fermer.
+            return Result.Failure(Error.Conflict(
+                "shipping.delivery_code_missing",
+                "Cette expédition n'a pas de code de remise. Contactez le support."));
+        }
+
+        var saisi = (code ?? string.Empty).Trim();
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(saisi), Encoding.UTF8.GetBytes(DeliveryCode)))
+        {
+            // L'ESSAI RATÉ EST COMPTÉ AVANT DE RENDRE L'ÉCHEC, et l'appelant doit
+            // enregistrer l'agrégat même sur un refus : sans cela le compteur ne monte
+            // jamais et le plafond ne protège rien.
+            DeliveryCodeAttempts++;
+            return Result.Failure(Error.Validation(
+                "shipping.delivery_code_invalid",
+                "Code de remise incorrect."));
+        }
+
+        DeliveryMode = ShipmentDeliveryMode.Seller;
+        Status = ShipmentStatus.Delivered;
+        DeliveredAtUtc = DateTime.UtcNow;
+        ShippedAtUtc ??= DeliveredAtUtc;
+
+        // MÊME ÉVÉNEMENT QUE LES AUTRES CANAUX : c'est lui qui libère la séquestre et
+        // fait avancer la commande. Un événement propre au vendeur obligerait chaque
+        // consommateur à connaître un troisième cas pour le même fait.
+        Raise(new ShipmentDeliveredDomainEvent(Id.Value, OrderId, SellerId));
         return Result.Success();
     }
 

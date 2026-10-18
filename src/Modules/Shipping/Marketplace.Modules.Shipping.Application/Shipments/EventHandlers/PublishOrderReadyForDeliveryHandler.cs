@@ -32,6 +32,28 @@ namespace Marketplace.Modules.Shipping.Application.Shipments.EventHandlers;
 /// ramassage (Inventory). Uniquement par leurs Contracts, jamais par leurs bases.
 /// ═════════════════════════════════════════════════════════════════════════════
 /// </summary>
+/// ═══════════════════════════════════════════════════════════════════════════════════
+/// CET ÉVÉNEMENT N'A PLUS AUCUN CONSOMMATEUR, ET C'EST VOULU (09/10/2026).
+///
+/// Il était consommé par `SendOrderReadyToDispatchHandler`, dans le module Delivery, qui
+/// créait la course chez le service de dispatch. Ce service est retiré : la plateforme
+/// ne livre plus elle-même, le vendeur remet le colis et le clôt avec le code de
+/// l'acheteur (`Shipment.MarkDeliveredBySeller`).
+///
+/// ON CONTINUE POURTANT DE LE PUBLIER. Le projet `hba-delivery` reprendra la logistique
+/// une fois terminé, et c'est ICI qu'il se branchera : « la commande est prête à
+/// partir » reste un fait vrai du domaine, que Shipping est seul à connaître. Le
+/// supprimer maintenant obligerait à le réinventer — avec un autre nom, d'autres
+/// champs, et des expéditions d'intervalle que personne n'aurait publiées.
+///
+/// SON SILENCE EST DONC NORMAL, ET C'EST PRÉCISÉMENT CE QU'IL FAUT ÉCRIRE. Le
+/// répartiteur ne dit rien quand la liste des gestionnaires est vide : un événement sans
+/// destinataire est marqué traité sans avoir rien produit. Tant qu'il n'y avait qu'un
+/// seul consommateur, cette discrétion était un piège — elle aurait masqué sa
+/// disparition. Aujourd'hui l'absence est l'état attendu ; demain, l'apparition d'un
+/// gestionnaire sera le branchement de `hba-delivery`. Entre les deux, personne ne doit
+/// lire ce vide comme une panne.
+/// ═══════════════════════════════════════════════════════════════════════════════════
 public sealed class PublishOrderReadyForDeliveryHandler : IDomainEventHandler<ShipmentPreparingDomainEvent>
 {
     private readonly IShipmentRepository _shipments;

@@ -31,47 +31,6 @@ public sealed record CategoryAttributeConflict(
     string IgnoredCategoryName,
     string WinningCategoryName);
 
-/// <summary>
-/// ═════════════════════════════════════════════════════════════════════════════════
-/// LE SCHÉMA D'UNE CATÉGORIE, COMPOSÉ LE LONG DE SA BRANCHE.
-///
-/// Un produit rangé dans « Informatique › Ordinateurs › Ordinateurs portables » doit
-/// respecter les attributs des trois étages. Ils ne sont RECOPIÉS NULLE PART : chaque
-/// catégorie ne stocke que ce qu'elle déclare elle-même, et la composition se refait à
-/// la lecture, à partir du chemin matérialisé.
-///
-/// C'EST CE QUI REND UN AJOUT DE PARENT RÉTROACTIF. Poser un attribut sur
-/// « Informatique » le rend attendu, à l'instant même, dans toutes les feuilles
-/// dessous. Une duplication physique aurait demandé de repasser sur chaque descendant
-/// — et aurait laissé, le jour où ce passage échoue à mi-chemin, une branche où la
-/// moitié des catégories connaissent une contrainte que l'autre moitié ignore.
-///
-/// ─────────────────────────────────────────────────────────────────────────────────
-/// TROIS RÈGLES DE COMPOSITION, ET AUCUNE N'EST ARBITRAIRE.
-///
-/// 1. L'ORDRE VA DE LA RACINE À LA FEUILLE. Le vendeur lit d'abord le général
-///    (« Marque », posé sur Informatique), puis le particulier (« Taille d'écran »,
-///    posé sur Ordinateurs portables). C'est aussi l'ordre dans lequel un formulaire
-///    se lit sans effort.
-///
-/// 2. EN CAS DE COLLISION DE CLÉ, L'ANCÊTRE GAGNE — et cela ne devrait jamais servir,
-///    puisque déclarer une clé déjà portée par un parent est refusé à l'écriture. Les
-///    données antérieures à ce contrôle, elles, peuvent en porter. Laisser l'enfant
-///    gagner lui permettrait d'AFFAIBLIR la contrainte d'un parent (rendre facultatif
-///    ce qui est obligatoire, rouvrir une liste fermée) : l'héritage ne voudrait plus
-///    rien dire. Les collisions sont donc résolues en faveur du plus proche de la
-///    racine, ET signalées dans <see cref="Conflicts"/> pour qu'on puisse les nettoyer.
-///
-/// 3. « ATTRIBUTS HORS SCHÉMA » : LE PLUS STRICT L'EMPORTE. Si un seul étage de la
-///    branche refuse les clés inconnues, la branche entière les refuse. Un parent qui
-///    ferme son jeu d'attributs ne peut pas être rouvert par un enfant — ce serait
-///    contourner la règle en créant une sous-catégorie.
-/// ─────────────────────────────────────────────────────────────────────────────────
-///
-/// OBJET PUREMENT CALCULATOIRE : il ne lit rien, il compose ce qu'on lui donne. Les
-/// ancêtres sont chargés par l'Application, en une seule requête sur les chemins.
-/// ═════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class ResolvedCategorySchema
 {
     private ResolvedCategorySchema(

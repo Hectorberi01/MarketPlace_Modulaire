@@ -21,5 +21,13 @@ public interface IShippingModuleApi
     /// de secours qui répondent. Une grille absente doit dégrader le prix, jamais
     /// interrompre la vente.
     /// </summary>
+    /// <summary>
+    /// Les codes de remise d'une commande, pour SON acheteur. Voir
+    /// <see cref="ShipmentDeliveryCode"/> : ce secret ne transite jamais par
+    /// <see cref="ShipmentSummary"/>, qui est servi au vendeur.
+    /// </summary>
+    Task<IReadOnlyList<ShipmentDeliveryCode>> GetDeliveryCodesByOrderAsync(
+        Guid orderId, Guid buyerId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ShippingRateOption>> GetRatesForCommuneAsync(string? communeCode, CancellationToken cancellationToken = default);
 }

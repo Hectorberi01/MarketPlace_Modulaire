@@ -146,18 +146,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Shippin
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Shipping.UnitTests", "tests\Shipping.UnitTests\Shipping.UnitTests.csproj", "{22222222-0000-0000-0000-000000000065}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Delivery", "Delivery", "{11111111-0000-0000-0000-000000000020}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Delivery.Domain", "src\Modules\Delivery\Marketplace.Modules.Delivery.Domain\Marketplace.Modules.Delivery.Domain.csproj", "{22222222-0000-0000-0000-0000000000A1}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Delivery.Application", "src\Modules\Delivery\Marketplace.Modules.Delivery.Application\Marketplace.Modules.Delivery.Application.csproj", "{22222222-0000-0000-0000-0000000000A2}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Delivery.Infrastructure", "src\Modules\Delivery\Marketplace.Modules.Delivery.Infrastructure\Marketplace.Modules.Delivery.Infrastructure.csproj", "{22222222-0000-0000-0000-0000000000A3}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Modules.Delivery.Contracts", "src\Modules\Delivery\Marketplace.Modules.Delivery.Contracts\Marketplace.Modules.Delivery.Contracts.csproj", "{22222222-0000-0000-0000-0000000000A4}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Delivery.UnitTests", "tests\Delivery.UnitTests\Delivery.UnitTests.csproj", "{22222222-0000-0000-0000-0000000000A5}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Reviews", "Reviews", "{11111111-0000-0000-0000-000000000010}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Search", "Search", "{11111111-0000-0000-0000-000000000011}"
@@ -345,8 +333,6 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Client", "src\Bff\Marketplace.Bff.Client\Marketplace.Bff.Client.csproj", "{22222222-0000-0000-0000-0000000001D1}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Seller", "src\Bff\Marketplace.Bff.Seller\Marketplace.Bff.Seller.csproj", "{22222222-0000-0000-0000-0000000001D3}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Driver", "src\Bff\Marketplace.Bff.Driver\Marketplace.Bff.Driver.csproj", "{22222222-0000-0000-0000-0000000001D5}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Marketplace.Bff.Admin", "src\Bff\Marketplace.Bff.Admin\Marketplace.Bff.Admin.csproj", "{22222222-0000-0000-0000-0000000001D4}"
 EndProject

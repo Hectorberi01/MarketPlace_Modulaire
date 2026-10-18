@@ -27,8 +27,6 @@ acme_caserver: https://acme-v02.api.letsencrypt.org/directory
 # traefik_http_port: 8081
 # traefik_https_port: 8443
 
-# Portainer (visualisation des conteneurs) → https://portainer.marketplace-staging.hba-marketplace.fr
-enable_portainer: true
 traefik_network: marketplace-staging-net
 
 # Versements FedaPay réels pour les retraits vendeur (visibles sur la console FedaPay).
@@ -36,57 +34,31 @@ traefik_network: marketplace-staging-net
 fedapay_enable_payouts: true
 
 # --- Sécurité VPS (rôle « security ») ---
-# Installe Fail2ban (+ rsyslog) et garantit /var/log/auth.log + fail2ban.log,
-# expédiés vers Loki par Promtail. Bannissement SSH activé.
+# Installe Fail2ban (+ rsyslog) et garantit /var/log/auth.log + fail2ban.log.
+# (Promtail les expédiait vers Loki ; la collecte est passée sur le VPS de
+# supervision le 17/10/2026 — les fichiers, eux, restent écrits ici.)
 enable_security: true
 fail2ban_bantime: "1h"
 fail2ban_findtime: "10m"
 fail2ban_sshd_maxretry: 4
-# Pare-feu UFW (« ports sollicités » dans Loki). OPT-IN : à passer à true SEULEMENT
+# Pare-feu UFW. OPT-IN : à passer à true SEULEMENT
 # après avoir vérifié que le port SSH (ansible_port = 8022) est correct — sinon
 # risque de se verrouiller dehors. Le rôle autorise SSH + 80/443 avant d'activer.
 enable_ufw: false
 
-# ── Terminal web (shell root de l'hôte) — DÉSACTIVÉ par défaut ────────────────
-#   TRÈS SENSIBLE. Ne passer à true qu'APRÈS avoir mis dans le VAULT :
-#   terminal_allowed_ips      : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
-#   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB)
-# Sans ces deux verrous, le rôle échoue volontairement (pas d'exposition nue).
-# DNS requis : terminal.marketplace-staging.hba-marketplace.fr → IP du VPS.
-enable_web_terminal: true
-terminal_subdomain: "terminal"
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUPERVISION, PORTAINER, TERMINAL WEB ET ADMIN BASE : RETIRÉS LE 17/10/2026.
+#
+# La supervision vit sur un VPS dédié, avec sa propre configuration ; les trois
+# autres n'ont plus de rôle dans ce dépôt. `otel_endpoint`, `prometheus_url`,
+# `loki_url`, `grafana_*`, `portainer_url` et le bloc Alertmanager sont partis avec.
+#
+# POUR REBRANCHER LA PAGE SYSTÈME de la console sur la nouvelle machine, renseigner
+# `otel_endpoint`, `prometheus_url`, `loki_url`, `grafana_url` et `grafana_embed_url`.
+# Vides, la console masque ces panneaux et garde ses propres sondes `/health`, qui
+# ne dépendent d'aucune machine tierce.
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Admin base de données (pgweb, LECTURE SEULE) — DÉSACTIVÉ par défaut ───────
-#   Explorateur web des tables + éditeur SQL SELECT. Trois verrous :
-#   1) rôle PostgreSQL `readonly` (créé par le rôle Ansible) — SELECT partout ;
-#   2) pgweb --readonly + --lock-session ;
-#   3) Traefik : liste blanche d'IP + auth HTTP (deny-all si vide).
-#   À passer à true qu'APRÈS avoir mis dans le VAULT :
-#     db_admin_readonly_password : "<mot de passe fort, sans \" ni $>"
-#     db_admin_allowed_ips       : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
-#     db_admin_basic_auth_users  : [ "admin:$apr1$…" ]         (htpasswd -nbB)
-# Sans ces trois verrous, le rôle échoue volontairement (pas d'exposition nue).
-# DNS requis : db.marketplace-staging.hba-marketplace.fr → IP du VPS.
-enable_db_admin: true
-db_admin_subdomain: "db"
-
-# --- Observabilité (stack deploy/monitoring/) ---
-# Active le rôle « monitoring » (lance la stack Grafana/Prometheus/…).
-enable_monitoring: true
-grafana_host: "grafana.marketplace-staging.hba-marketplace.fr"
-# grafana_password : dans le vault (secret).
-# URLs INTERNES (noms de services Docker) : nécessitent que la stack monitoring
-
-# partage le réseau « marketplace-staging-net ». Vides = monitoring désactivé.
-otel_endpoint: "http://otel-collector:4317"
-prometheus_url: "http://prometheus:9090"
-loki_url: "http://loki:3100"                       # interne → panneau Logs de la console
-# URLs navigateur (Grafana) : renseigner quand Grafana est exposé (sous-domaine).
-grafana_url: "https://grafana.marketplace-staging.hba-marketplace.fr"
-grafana_embed_url: "https://grafana.marketplace-staging.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
-# Portainer (gestion des conteneurs) — bouton dans la page Système.
-# Le fragment « /#!/auth » ouvre directement l'écran de connexion Portainer.
-portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth"
 
 # --- E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe ---
 # Secret DANS LE VAULT : resend_api_key. Ici, uniquement du non-sensible.
@@ -109,24 +81,6 @@ portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth
 email_from: "no-reply@hba-express.org"
 email_app_base_url: "https://console.marketplace-staging.hba-marketplace.fr"
 #email_app_base_url: "https://hba-express.org"
-
-# --- Alertmanager (notifications d'alerte) ---
-# Secrets DANS LE VAULT : alertmanager_slack_webhook_url, smtp_password.
-# Laisser une valeur vide désactive le canal correspondant.
-alert_slack_channel: "#alerts"
-# Passerelle SMTP de Resend, comme en production. L'identifiant est la chaîne
-# « resend » (pas une adresse), et le mot de passe est une CLÉ D'API Resend — voir
-# l'encadré du même bloc côté prod. Port 587 = STARTTLS.
-smtp_host: "smtp.resend.com"                                        # vide = pas d'e-mail
-smtp_port: 587
-# L'expéditeur doit appartenir à un domaine VÉRIFIÉ dans Resend, sans quoi l'envoi
-# est refusé et l'échec ne se voit que dans les journaux d'Alertmanager.
-smtp_from: "hector.adjakpa@hbatechettrade.com"
-smtp_username: "resend"
-alert_email_to: "hector.adjakpa@gmail.com"        # destinataire des alertes critiques
-# Battement de cœur externe (healthchecks.io, Better Stack…) : alerte quand les
-# pings cessent. Vide = sonde inactive.
-alert_heartbeat_url: ""
 
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: documents-pdf
@@ -152,17 +106,13 @@ r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
 
-terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
-
 # ── Vérification après déploiement : URL testées à travers Traefik ───────────
-# `api` et `dispatch` n'ont un routeur que sur certains préfixes : leur racine
-# renverrait un 404 de Traefik, indistinguable d'un backend sain. On vise donc pour
-# ces deux-là un chemin RÉELLEMENT routé. Un 404 applicatif est un succès : il prouve
-# que la requête est arrivée jusqu'à l'application.
+# `api` n'a un routeur que sur certains préfixes : sa racine renverrait un 404 de
+# Traefik, indistinguable d'un backend sain. On vise donc un chemin RÉELLEMENT routé.
+# Un 404 applicatif est un succès : il prouve que la requête est arrivée jusqu'à
+# l'application.
 post_deploy_public_urls:
   - "https://m.{{ root_domain }}/"
   - "https://seller.{{ root_domain }}/"
   - "https://admin.{{ root_domain }}/"
-  - "https://driver.{{ root_domain }}/"
   - "https://api.{{ root_domain }}/api/payments/return"
-  - "https://dispatch.{{ root_domain }}/api/courier"

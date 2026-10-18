@@ -34,8 +34,6 @@ registry_pull_required:
   - bff-client
   - bff-seller
   - bff-admin
-  - bff-driver
-  - dispatch
 registry_pull_optional:
   - console
   - seller-console
@@ -77,8 +75,6 @@ post_deploy_health_services:
   - bff-client
   - bff-seller
   - bff-admin
-  - bff-driver
-  - dispatch
 post_deploy_health_path: /health/ready
 post_deploy_health_retries: 10
 post_deploy_health_delay: 15

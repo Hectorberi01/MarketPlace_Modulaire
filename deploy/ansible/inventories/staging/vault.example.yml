@@ -24,8 +24,8 @@ client_session_secret: ""
 # deux surfaces distinctes, deux compromissions indépendantes.
 seller_session_secret: ""
 
-# Mot de passe admin Grafana (stack monitoring).
-grafana_password: "CHANGE_ME_STRONG_RANDOM"
+# `grafana_password` a disparu le 17/10/2026 : la pile de supervision a quitté ce
+# serveur pour un VPS dédié, qui porte sa propre configuration.
 
 # FedaPay SANDBOX en staging.
 fedapay_api_key: "sk_sandbox_xxx"

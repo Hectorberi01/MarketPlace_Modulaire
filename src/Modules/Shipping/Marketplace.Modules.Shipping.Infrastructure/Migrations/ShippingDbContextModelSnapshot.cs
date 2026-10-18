@@ -134,6 +134,15 @@ namespace Marketplace.Modules.Shipping.Infrastructure.Migrations
                     b.Property<DateTime?>("DeliveredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DeliveryCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("DeliveryCodeAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid?>("DeliveryJobId")
                         .HasColumnType("uuid");
 

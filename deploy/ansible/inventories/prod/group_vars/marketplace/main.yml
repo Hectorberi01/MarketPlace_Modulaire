@@ -90,66 +90,51 @@ site_domain_apex: hba-express.com
 admin_console_domain: console.hba-express.com
 acme_email: hector.adjakpa@hbatechettrade.com
 
-# Portainer (visualisation des conteneurs) → https://portainer.$ROOT_DOMAIN
-enable_portainer: true
+# ═══════════════════════════════════════════════════════════════════════════════
+# LE REVERSE PROXY EST CELUI DU VPS, PAS LE NÔTRE (17/10/2026).
+#
+# `docker-compose.prod.yml` n'embarque plus Traefik : un Traefik installé sur la
+# machine sert déjà plusieurs piles, sur le réseau Docker `proxy`. Nos sept services
+# le rejoignent et portent leurs routeurs en labels, comme avant.
+#
+# LES TROIS VALEURS CI-DESSOUS SONT LES SIENNES, ET ELLES SONT À CONFIRMER. Ce sont
+# pour l'instant les noms de l'ancien Traefik embarqué — un report, pas une lecture.
+# Voir l'encadré de `roles/marketplace/templates/env.j2` pour les commandes qui
+# donnent les vrais noms, et ce que coûte chaque erreur.
+traefik_entrypoint: websecure
+traefik_certresolver: letsencrypt
+traefik_proxy_network: proxy
+
+# `traefik_network` ne sert plus à rien ici : il nommait le réseau que créait NOTRE
+# Traefik, et les trois rôles qui le lisaient (portainer, webterminal, dbadmin) sont
+# partis le 17/10/2026. Conservé le temps de vérifier qu'aucun playbook hors dépôt ne
+# s'y réfère, puis à supprimer.
 traefik_network: marketplace-prod-net
 
-# --- Observabilité (stack deploy/monitoring/) ---
-# Déploie Grafana/Prometheus/Loki/Tempo, sur le réseau applicatif (traefik_network).
-# grafana_password : à mettre dans le VAULT prod. DNS requis : grafana.$ROOT_DOMAIN → VPS.
-enable_monitoring: true
-grafana_host: "grafana.hba-express.org"
-otel_endpoint: "http://otel-collector:4317"
-prometheus_url: "http://prometheus:9090"          # interne (réseau Docker) → KPIs live
-loki_url: "http://loki:3100"                       # interne → panneau Logs de la console
-grafana_url: "https://grafana.hba-express.org"     # navigateur (iframe)
-grafana_embed_url: "https://grafana.hba-express.org/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# CANAL D'ALERTE — SANS CE BLOC, LA SUPERVISION DE PRODUCTION EST MUETTE.
+# LA SUPERVISION A QUITTÉ CE SERVEUR LE 17/10/2026.
 #
-# `enable_monitoring: true` déploie Prometheus, ses règles et Alertmanager. Aucune
-# de ces trois briques ne notifie quoi que ce soit tant qu'Alertmanager n'a pas de
-# destinataire : il rendait jusqu'ici des receivers vides, acceptait chaque alerte
-# et la jetait. Le tableau de bord montrait des alertes rouges que personne ne
-# recevait — le pire des deux mondes, puisqu'il ressemble à une supervision.
+# Grafana, Prometheus, Loki, Tempo, Alertmanager, les exportateurs et leur canal
+# d'alerte vivaient ici, dans `deploy/monitoring/` et le rôle `monitoring`. Ils sont
+# désormais sur un VPS dédié, avec sa propre configuration — ce dépôt n'en déploie
+# plus rien, et `enable_monitoring`, `grafana_*`, `prometheus_url`, `loki_url`,
+# `otel_endpoint`, `smtp_*` et `alert_*` ont disparu avec eux.
 #
-# Le rôle `monitoring` échoue désormais si aucun canal n'est joignable.
+# CE QUE LE VPS DE SUPERVISION DEVRA VENIR CHERCHER ICI, et qui est resté en place
+# exprès :
+#   - Les métriques de Traefik ne sont PLUS de notre ressort : depuis le même jour,
+#     le reverse proxy est celui du VPS. Son point d'entrée de métriques, s'il en a
+#     un, se règle dans SA configuration — pas ici.
+#   - L'API et les BFF exportent leurs traces dès qu'`OTEL_ENDPOINT` est renseigné.
+#     Vide, l'instrumentation tourne sans exporter — c'est l'état actuel.
+#   - La page Système de la console affiche KPIs, tableaux de bord et journaux dès
+#     que `PROMETHEUS_URL`, `GRAFANA_URL`, `GRAFANA_EMBED_URL` et `LOKI_URL` pointent
+#     quelque part. Vides, elle masque ces panneaux ; elle garde ses propres sondes
+#     `/health`, qui ne dépendent de personne.
 #
+# Renseigner ces quatre variables et `otel_endpoint` le jour où le VPS de supervision
+# publie ses adresses, en les joignant par le tunnel plutôt que par Internet.
 # ═══════════════════════════════════════════════════════════════════════════════
-# ALERTMANAGER PASSE PAR RESEND, COMME LE RESTE DES E-MAILS.
-#
-# Ce fichier affirmait que Resend « ne fait pas de SMTP sortant pour un tiers » et
-# renvoyait Alertmanager vers la boîte Hostinger du domaine. C'était faux : Resend
-# expose une passerelle SMTP sur `smtp.resend.com`, et c'est ce qui a coûté plusieurs
-# déploiements bloqués sur un mot de passe de boîte que personne n'avait sous la main.
-#
-# Trois conséquences concrètes :
-#
-#   - L'IDENTIFIANT EST LA CHAÎNE « resend », littéralement — pas une adresse.
-#   - LE MOT DE PASSE EST UNE CLÉ D'API Resend, pas un mot de passe de messagerie.
-#     Elle n'est donc pas soumise à l'authentification à deux facteurs de la boîte,
-#     et se révoque sans toucher au courrier.
-#   - L'EXPÉDITEUR DOIT APPARTENIR À UN DOMAINE VÉRIFIÉ dans Resend. `smtp_from`
-#     ci-dessous utilise le domaine d'où partent déjà les e-mails transactionnels ;
-#     si ce n'est plus celui qui est vérifié, l'envoi est refusé par Resend et
-#     l'échec n'apparaît que dans les journaux d'Alertmanager.
-#
-# Port 587 = STARTTLS, ce qu'attend `smtp_require_tls: true` dans le modèle.
-# `smtp_password` reste dans le VAULT — il n'a rien à faire ici.
-# ═══════════════════════════════════════════════════════════════════════════════
-alert_slack_channel: "#alerts"
-smtp_host: "smtp.resend.com"
-smtp_port: 587
-smtp_from: "hector.adjakpa@hbatechettrade.com"
-smtp_username: "resend"
-alert_email_to: "hector.adjakpa@gmail.com"
-
-# Battement de cœur : URL d'un service externe qui alerte quand les pings CESSENT
-# (healthchecks.io, Better Stack Heartbeats, cron-monitor). C'est le SEUL mécanisme
-# qui détecte une pile d'alerte morte — sans lui, « aucune alerte » et « plus rien
-# ne fonctionne » se ressemblent trait pour trait. Vide = sonde inactive.
-alert_heartbeat_url: ""
 
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: hbaexpress-documents-pdf
@@ -187,89 +172,34 @@ r2_media_bucket_chat: "hbaexpress-messagerie"
 r2_media_url_chat: ""
 # En prod, préférer un domaine personnalisé connecté au bucket public.
 r2_media_public_base_url: "https://images.hbamediacore.fr"
-
-# FedaPay — DOIT correspondre à ta clé : sk_live_… ⇒ URL live (ci-dessous),
-# sk_sandbox_… ⇒ https://sandbox-api.fedapay.com/v1. Sinon l'API refuse de démarrer.
 fedapay_base_url: "https://api.fedapay.com/v1"
-# Versements réels (retraits vendeur) : garde false tant que FedaPay n'a pas activé
-# les DÉPÔTS sur ton compte marchand (sinon 403 à chaque payout).
 fedapay_enable_payouts: false
-
-# E-mails transactionnels (Resend) — OBLIGATOIRE, sinon l'API refuse de démarrer.
-# Le domaine de email_from DOIT être vérifié chez Resend (SPF + DKIM), sinon
-# les envois échouent en 403 (le démarrage, lui, passe). Ajuste si ton domaine
-# vérifié n'est pas hba-express.org. resend_api_key → vault.
-# Expéditeur : le DOMAINE doit être « Verified » chez Resend (compte de resend_api_key).
-# Aligné sur le domaine vérifié updates.hbatechettrade.com (le même que staging) — car
-# hba-express.org n'est PAS vérifié dans ce compte (Resend renvoyait 403). Pour repasser
-# sur no-reply@hba-express.org, il faut d'abord vérifier ce domaine dans Resend (SPF+DKIM).
 email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
-# Base des liens cliquables envoyés aux ACHETEURS — confirmation d'adresse,
-# réinitialisation de mot de passe. C'est la vitrine qu'ils doivent atteindre, donc le
-# .com : un lien vers l'ancien domaine mènerait à une page qui n'existe plus.
 email_app_base_url: "https://www.hba-express.com"
 
-# Amorçage du 1er admin : compte créé au 1er démarrage (admin_password → vault).
 admin_email: "hector.adjakpa@hbatechettrade.com"
-
-
-# ── Terminal web (shell de l'hôte) — ACTIVÉ en prod ──────────────────────────
-# TRÈS SENSIBLE. Le rôle échoue volontairement tant que les DEUX verrous ne sont
-# pas dans le VAULT prod (pas d'exposition nue) :
-#   terminal_allowed_ips      : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
-#   terminal_basic_auth_users : [ "admin:$apr1$…" ]         (htpasswd -nbB admin '…')
-#   terminal_ssh_private_key  : la clé privée wetty (paire de terminal_ssh_public_key)
-# DNS REQUIS : terminal.hba-express.org → 79.137.35.129 (IP du VPS).
-enable_web_terminal: true
-terminal_subdomain: "terminal"
-# Le VPS OVH écoute le SSH sur 8022 et n'autorise pas root : wetty se connecte en
-# « ubuntu » (shell sudo-capable). La clé publique ci-dessous est ajoutée aux
-# authorized_keys de cet utilisateur par le rôle.
-terminal_ssh_user: "root"
-terminal_ssh_port: "22"
-
-terminal_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyQ79kjNYRpzXXYDHLVpClN+VU4dFPBLxsVkuj+7Mxw wetty-terminal"
-
-# ── Admin base de données (pgweb, LECTURE SEULE) — ACTIVÉ en prod ─────────────
-# Sans cette activation, le rôle `dbadmin` est SAUTÉ (défaut false) : c'est
-# pourquoi db.hba-express.org n'avait aucun backend en prod.
-# Triple verrou : le rôle échoue volontairement tant que les secrets ne sont pas
-# dans le VAULT prod (pas d'exposition nue) :
-#   db_admin_allowed_ips       : [ "TON.IP.PUBLIQUE/32" ]   (deny-all si vide)
-#   db_admin_basic_auth_users  : [ "admin:$apr1$…" ]         (htpasswd -nbB admin '…')
-#   db_admin_readonly_password : "<mot de passe fort, sans \" ni $>"
-# DNS REQUIS : db.hba-express.org → 79.137.35.129 (IP du VPS).
-enable_db_admin: true
-db_admin_subdomain: "db"
-
-# ── Fail2ban — durcissement contre le brute-force LENT ───────────────────────
-# Un attaquant qui espace ses tentatives (~2 toutes les ~12 min) passait sous le
-# radar : avec findtime=10m / maxretry=4, le seuil n'était jamais atteint → 0 ban
-# malgré 114 échecs SSH constatés. On élargit la fenêtre d'observation, on abaisse
-# la tolérance et on allonge le bannissement.
+# ═══════════════════════════════════════════════════════════════════════════════
+# LE TERMINAL WEB ET L'ADMINISTRATION BASE ONT ÉTÉ RETIRÉS LE 17/10/2026.
+#
+# `wetty` ouvrait un shell SSH sur l'hôte depuis un navigateur, `pgweb` une console
+# SQL en lecture seule sur la base. Les deux étaient les surfaces les plus sensibles
+# de ce déploiement — un shell root et la base qui tient l'argent, derrière une liste
+# blanche d'IP et une authentification HTTP.
+#
+# À LIRE AVANT DE LES FAIRE REVENIR : la clé SSH `terminal_ssh_public_key` reste
+# peut-être dans `~/.ssh/authorized_keys` de l'hôte. Elle n'ouvre plus rien tant que
+# le conteneur n'existe pas, mais une clé qui traîne dans un authorized_keys est une
+# porte dont on a juste rangé la poignée. À retirer de l'hôte.
+# ═══════════════════════════════════════════════════════════════════════════════
 fail2ban_findtime: "1h"
 fail2ban_bantime: "24h"
 fail2ban_sshd_maxretry: 3
 
-# ── Vérification après déploiement : URL testées à travers Traefik ───────────
-# `api` et `dispatch` n'ont un routeur que sur certains préfixes : leur racine
-# renverrait un 404 de Traefik, indistinguable d'un backend sain. On vise donc pour
-# ces deux-là un chemin RÉELLEMENT routé. Un 404 applicatif est un succès : il prouve
-# que la requête est arrivée jusqu'à l'application.
-#
-# LA CONSOLE VENDEUR MANQUAIT À CETTE LISTE, ET ÇA S'EST VU. Elle est la seule
-# surface servie sur une AUTRE racine, donc la seule dont le nom d'hôte puisse
-# diverger sans que rien d'autre ne bouge — exactement ce qui s'est produit : un 404
-# de Traefik sur `consolevendeur.hba-express.com`, découvert à la main dans un
-# navigateur, alors que le déploiement s'était déclaré réussi. La vérification après
-# déploiement ne valait que pour les six surfaces de `root_domain`.
 post_deploy_public_urls:
   - "https://m.{{ root_domain }}/"
   - "https://seller.{{ root_domain }}/"
   - "https://admin.{{ root_domain }}/"
-  - "https://driver.{{ root_domain }}/"
   - "https://api.{{ root_domain }}/api/payments/return"
-  - "https://dispatch.{{ root_domain }}/api/courier"
   - "https://{{ seller_console_domain }}/api/health"
   - "https://{{ site_domain }}/api/health"
   - "https://{{ admin_console_domain }}/api/health"

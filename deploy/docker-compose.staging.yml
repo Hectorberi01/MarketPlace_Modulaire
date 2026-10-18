@@ -143,19 +143,6 @@ x-app-env: &app-env
   Notifications__Email__From: "${EMAIL_FROM:-}"
   Notifications__Email__AppBaseUrl: "${EMAIL_APP_BASE_URL:-}"
 
-  # ── Service de dispatch (livraison par coursier) ────────────────────────────
-  # Adresse INTERNE : la marketplace parle au dispatch par le réseau Docker, jamais par
-  # Traefik. Sans elle, « commande prête » part dans l'outbox, échoue, et finit en lettre
-  # morte — visible, mais aucune course n'est créée.
-  Dispatch__BaseUrl: "${DISPATCH_BASE_URL:-http://dispatch:8080}"
-  # Deux secrets DISTINCTS, un par sens : une fuite d'un côté ne doit pas ouvrir les deux.
-  # ABSENTS = appels rejetés hors développement, des deux côtés.
-  Dispatch__OutboundSecret: "${DISPATCH_OUTBOUND_SECRET:?DISPATCH_OUTBOUND_SECRET requis}"
-  Delivery__WebhookSecret: "${DELIVERY_WEBHOOK_SECRET:?DELIVERY_WEBHOOK_SECRET requis}"
-  # Plafond ABSOLU de rémunération d'une course. Le plafond RELATIF — jamais plus que les
-  # frais de livraison encaissés sur la commande — s'applique toujours, sans réglage.
-  Settlement__CourierPay__MaxAmount: "${COURIER_PAY_MAX_AMOUNT:-}"
-
 x-app-common: &app-common
   restart: unless-stopped
   logging: *logging
@@ -446,9 +433,13 @@ services:
       # Surfaces surveillées : URLs INTERNES (noms de services sur le réseau).
       #
       # LA LISTE SUIT LE DÉCOUPAGE PAR AUDIENCE. « BFF Mobile » et « BFF Web » ont
-      # fusionné en « BFF Client » ; « BFF Driveur » et le service de dispatch s'y
-      # ajoutent. Une surface oubliée ici n'est pas surveillée — et son absence ne
-      # produit aucune erreur, juste une ligne manquante que personne ne cherche.
+      # fusionné en « BFF Client ». Une surface oubliée ici n'est pas surveillée — et
+      # son absence ne produit aucune erreur, juste une ligne manquante que personne
+      # ne cherche. Les indices sont POSITIONNELS : .NET arrête de lier le tableau au
+      # premier manquant, donc on renumérote toujours plutôt que de laisser un trou.
+      #
+      # Ces sondes ne dépendent PAS de la supervision retirée le 17/10/2026 : le BFF
+      # Admin interroge lui-même `/health` de chaque service par le réseau Docker.
       Monitoring__Surfaces__0__Name: "API"
       Monitoring__Surfaces__0__Url: "http://api:8080"
       Monitoring__Surfaces__1__Name: "BFF Client"
@@ -457,16 +448,20 @@ services:
       Monitoring__Surfaces__2__Url: "http://bff-seller:8080"
       Monitoring__Surfaces__3__Name: "BFF Admin"
       Monitoring__Surfaces__3__Url: "http://bff-admin:8080"
-      Monitoring__Surfaces__4__Name: "BFF Driveur"
-      Monitoring__Surfaces__4__Url: "http://bff-driver:8080"
-      Monitoring__Surfaces__5__Name: "Service de dispatch"
-      Monitoring__Surfaces__5__Url: "http://dispatch:8080"
-      # KPIs live + liens Grafana (vides = masqués). Ex. PROMETHEUS_URL=http://prometheus:9090
+      # ═══════════════════════════════════════════════════════════════════════════
+      # QUATRE URL QUI DÉSIGNENT DÉSORMAIS UNE AUTRE MACHINE.
+      #
+      # La supervision a quitté ce serveur le 17/10/2026 pour un VPS dédié. Vides, la
+      # console masque les panneaux KPIs, tableaux de bord et journaux — elle ne les
+      # affiche pas en erreur. À renseigner le jour où le VPS de supervision publie
+      # ses adresses.
+      #
+      # `Monitoring__PortainerUrl` est partie : le bouton qu'elle alimentait
+      # n'ouvrait qu'un Portainer local, qui n'existe plus.
+      # ═══════════════════════════════════════════════════════════════════════════
       Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
       Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
       Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
-      Monitoring__PortainerUrl: "${PORTAINER_URL:-}"
-      # Logs des conteneurs (panneau « Logs » de la page Système) via l'API Loki.
       Monitoring__LokiUrl: "${LOKI_URL:-}"
     depends_on:
       api:
@@ -590,113 +585,6 @@ services:
 
   # NOTE : service « site » à ajouter quand l'image hbaexpress-site sera poussée
   # (sinon le déploiement backend échoue au `pull site` d'une image absente).
-
-  # ---------------- BFF Driveur (coursier : compte + portefeuille) ----------------
-  # Quatrième surface, découpée par AUDIENCE : la même API pour l'application mobile du
-  # coursier et pour sa console web. Elle ne pilote AUCUNE course — celles-ci vivent dans
-  # le service de dispatch, que l'application appelle directement.
-  bff-driver:
-    <<: *app-common
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Driver/Marketplace.Bff.Driver.csproj
-        APP_DLL: Marketplace.Bff.Driver.dll
-    image: ${IMAGE_PREFIX:-marketplace}/bff-driver:${IMAGE_TAG:-staging}
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      OUTBOX_ENABLED: "false"
-      # Origines de la console web coursier. VIDE = REPLI FERMÉ : aucune origine
-      # navigateur acceptée. Un repli ouvert avec AllowCredentials laisserait n'importe
-      # quel site lire le portefeuille d'un coursier connecté.
-      Cors__Origins: "${DRIVER_CONSOLE_ORIGINS:-}"
-    depends_on:
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.driver.rule=Host(`driver.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.driver.entrypoints=websecure"
-      - "traefik.http.routers.driver.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.driver.middlewares=edge-chain@file"
-      - "traefik.http.services.driver.loadbalancer.server.port=8080"
-
-  # ---------------- Service de dispatch (coursiers) ----------------
-  # Déployé à part du monolithe : il tient les courses, les offres et les positions de
-  # coursier, et n'accède à AUCUNE base de la marketplace. Les deux ne communiquent que
-  # par HTTP signé — voir docs/CDC_Service_Livraison_Coursier.md.
-  dispatch:
-    <<: *app-common
-    # ANNULE le montage FCM hérité de *app-common : ce service n'envoie aucune
-    # notification push, et un compte de service n'a rien à faire dans un conteneur qui
-    # ne s'en sert pas. Le reste de l'ancre — santé, réseau, journalisation, limites —
-    # est bien voulu.
-    volumes: []
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: Services/HbaExpress.Dispatch/src/HbaExpress.Dispatch.Api/HbaExpress.Dispatch.Api.csproj
-        APP_DLL: HbaExpress.Dispatch.Api.dll
-    image: ${IMAGE_PREFIX:-marketplace}/dispatch:${IMAGE_TAG:-staging}
-    environment:
-      ASPNETCORE_ENVIRONMENT: "Staging"
-      # BASE SÉPARÉE, jamais celle de la marketplace (CDC §11) : ce service réécrit des
-      # positions à la seconde, la marketplace tient de l'argent.
-      ConnectionStrings__Dispatch: "${DISPATCH_CONNECTION:?DISPATCH_CONNECTION requis (base dediee au dispatch)}"
-      # Ce service n'ÉMET aucun jeton : il VÉRIFIE ceux de la marketplace. La clé doit
-      # être IDENTIQUE, sinon aucun coursier ne peut s'authentifier.
-      Jwt__Issuer: "marketplace"
-      Jwt__Audience: "marketplace"
-      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
-      # Adresse INTERNE de la marketplace : c'est par là que part l'annonce de course
-      # livrée, celle qui crédite le coursier. Jamais par Traefik — la surface publique
-      # de l'API ne route que les rappels des PSP.
-      Marketplace__BaseUrl: "${MARKETPLACE_BASE_URL:-http://api:8080}"
-      # Secrets CROISÉS : ce qu'on envoie doit valoir Delivery__WebhookSecret côté
-      # marketplace ; ce qu'on reçoit doit valoir Dispatch__OutboundSecret là-bas.
-      Marketplace__OutboundSecret: "${DELIVERY_WEBHOOK_SECRET:?DELIVERY_WEBHOOK_SECRET requis}"
-      Marketplace__InboundSecret: "${DISPATCH_OUTBOUND_SECRET:?DISPATCH_OUTBOUND_SECRET requis}"
-      # Part des frais de livraison versée au coursier. AUCUN DÉFAUT DANS LE CODE : le
-      # service refuse de démarrer sans elle (CourierPayGuard). C'est une décision
-      # commerciale — voir docs/PLAN_Reste_A_Faire.md §5.3.
-      Dispatch__CourierShare: "${DISPATCH_COURIER_SHARE:?DISPATCH_COURIER_SHARE requis (ex. 0.80)}"
-      # BACKPLANE SIGNALR. Sans lui, un coursier connecté à une instance ne recevrait
-      # jamais une offre dispatchée par une autre : il la verrait au rattrapage, vingt
-      # secondes plus tard, sur une fenêtre qui en dure vingt-cinq. Panne intermittente,
-      # invisible tant qu'on ne tourne qu'à une instance.
-      Redis__ConnectionString: "${DISPATCH_REDIS_CONNECTION:-redis:6379,password=${REDIS_PASSWORD:-},abortConnect=false}"
-      Otel__Endpoint: "${OTEL_ENDPOINT:-}"
-      RunMigrationsAtStartup: "true"
-    depends_on:
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      # ─────────────────────────────────────────────────────────────────────────
-      # SEUL /api/courier EST PUBLIÉ. /internal NE L'EST PAS, ET NE DOIT JAMAIS L'ÊTRE.
-      #
-      # Les routes /internal créent des courses, en annulent, et décident du droit de
-      # travailler d'un coursier. Leur authentification est une SIGNATURE, pas un jeton :
-      # elles sont anonymes au sens ASP.NET. Fermées par défaut, oui — mais la première
-      # défense est qu'elles ne soient pas joignables. Seule la marketplace les appelle,
-      # par le réseau interne.
-      #
-      # L'ABSENCE DE ROUTE EST LE CONTRÔLE. Élargir cette règle « pour tester »
-      # ouvrirait la création de courses à Internet.
-      #
-      # `/hubs/courier` est publié avec `/api/courier` : c'est le canal temps réel de la
-      # même application mobile.
-      # ─────────────────────────────────────────────────────────────────────────
-      - "traefik.http.routers.dispatch.rule=Host(`dispatch.${ROOT_DOMAIN}`) && (PathPrefix(`/api/courier`) || PathPrefix(`/hubs/courier`))"
-      - "traefik.http.routers.dispatch.entrypoints=websecure"
-      - "traefik.http.routers.dispatch.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.dispatch.middlewares=edge-chain@file"
-      - "traefik.http.services.dispatch.loadbalancer.server.port=8080"
 
 networks:
   marketplace-net:

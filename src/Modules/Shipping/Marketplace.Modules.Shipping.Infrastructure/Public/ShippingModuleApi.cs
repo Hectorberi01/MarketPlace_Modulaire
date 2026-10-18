@@ -18,6 +18,14 @@ internal sealed class ShippingModuleApi : IShippingModuleApi
         return result.IsSuccess ? result.Value : Array.Empty<ShipmentSummary>();
     }
 
+    public async Task<IReadOnlyList<ShipmentDeliveryCode>> GetDeliveryCodesByOrderAsync(
+        Guid orderId, Guid buyerId, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(
+            new ListDeliveryCodesByOrderQuery(orderId, buyerId), cancellationToken);
+        return result.IsSuccess ? result.Value : Array.Empty<ShipmentDeliveryCode>();
+    }
+
     public async Task<IReadOnlyList<ShippingRateOption>> GetRatesForCommuneAsync(
         string? communeCode, CancellationToken cancellationToken = default)
     {

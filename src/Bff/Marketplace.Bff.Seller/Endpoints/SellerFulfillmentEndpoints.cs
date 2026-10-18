@@ -27,6 +27,13 @@ public static class SellerFulfillmentEndpoints
         ship.MapPost("/{id:guid}/prepare", PrepareAsync);
         ship.MapPost("/{id:guid}/ship", ShipAsync);
         ship.MapPost("/{id:guid}/deliver", DeliverAsync);
+
+        // REMISE EN MAIN PROPRE — route distincte de `/deliver`, et pas un paramètre
+        // de plus sur elle. Ce ne sont pas deux variantes du même geste : `/deliver`
+        // clôt une expédition CONFIÉE À UN TRANSPORTEUR, déjà en transit. Celle-ci
+        // part de « préparée » et exige le code de l'acheteur. Les confondre, c'est
+        // ouvrir un chemin où le code devient facultatif.
+        ship.MapPost("/{id:guid}/hand-over", HandOverAsync);
         ship.MapPost("/{id:guid}/cancel", CancelAsync);
 
         // Catalogue des transporteurs actifs (le vendeur choisit à l'expédition).
@@ -181,6 +188,33 @@ public static class SellerFulfillmentEndpoints
     private static async Task<IResult> DeliverAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new MarkShipmentDeliveredCommand(id), ct));
 
+    /// <summary>
+    /// Le vendeur a remis le colis en main propre, et saisit le code de l'acheteur.
+    ///
+    /// L'IDENTIFIANT DU VENDEUR VIENT DU JETON, jamais du corps. C'est ce qui empêche
+    /// un vendeur de clore l'expédition d'un autre — et donc de déclencher le
+    /// versement de la séquestre de quelqu'un d'autre.
+    ///
+    /// Elle n'utilise PAS `GuardAsync` : cet assistant vérifie la propriété puis jette
+    /// l'identifiant du vendeur, alors que la commande en a besoin pour la revérifier
+    /// de son côté. Le contrôle est fait ici, explicitement, et deux fois.
+    /// </summary>
+    private static async Task<IResult> HandOverAsync(
+        ClaimsPrincipal user, Guid id, HandOverRequest request,
+        ISender sender, ISellerModuleApi sellers, CancellationToken ct)
+    {
+        var seller = await SellerBff.ResolveSellerAsync(user, sellers, ct);
+        if (seller is null)
+        {
+            return SellerBff.NotASeller();
+        }
+
+        var resultat = await sender.Send(
+            new MarkShipmentDeliveredBySellerCommand(id, seller.Id, request.Code ?? string.Empty), ct);
+
+        return resultat.Match(() => Results.NoContent());
+    }
+
     private static async Task<IResult> CancelAsync(ClaimsPrincipal user, Guid id, ISender sender, ISellerModuleApi sellers, CancellationToken ct)
         => await GuardAsync(user, sender, sellers, id, ct, () => sender.Send(new CancelShipmentCommand(id), ct));
 
@@ -226,4 +260,7 @@ public static class SellerFulfillmentEndpoints
     /// [Carrier] : nom libre, repli si le catalogue n'est pas utilisé.
     /// </summary>
     public sealed record ShipRequest(string Carrier, string TrackingNumber, Guid? CarrierId = null);
+
+    /// <summary>Le code à quatre chiffres que l'acheteur donne à la remise.</summary>
+    public sealed record HandOverRequest(string Code);
 }

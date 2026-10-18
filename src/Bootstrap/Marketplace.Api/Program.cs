@@ -15,7 +15,6 @@ using Marketplace.Modules.Pricing.Infrastructure.Persistence;
 using Marketplace.Modules.Cart.Infrastructure.Persistence;
 using Marketplace.Modules.Ordering.Infrastructure.Persistence;
 using Marketplace.Modules.Payments.Infrastructure.Persistence;
-using Marketplace.Modules.Delivery.Infrastructure.Persistence;
 using Marketplace.Modules.Shipping.Infrastructure.Persistence;
 using Marketplace.Modules.Reviews.Infrastructure.Persistence;
 using Marketplace.Modules.Search.Infrastructure.Persistence;
@@ -335,7 +334,6 @@ if (app.Configuration.GetValue<bool>("RunMigrationsAtStartup"))
     var shippingDb = scope.ServiceProvider.GetRequiredService<ShippingDbContext>();
     await shippingDb.Database.MigrateAsync();
 
-    var deliveryDb = scope.ServiceProvider.GetRequiredService<DeliveryDbContext>();
     await deliveryDb.Database.MigrateAsync();
 
     var reviewsDb = scope.ServiceProvider.GetRequiredService<ReviewsDbContext>();
@@ -423,7 +421,6 @@ app.MapCartEndpoints();
 app.MapOrderingEndpoints();
 app.MapPaymentsEndpoints();
 app.MapShippingEndpoints();
-app.MapDeliveryEndpoints();
 app.MapReviewsEndpoints();
 app.MapSearchEndpoints();
 app.MapNotificationsEndpoints();

@@ -190,9 +190,16 @@
 
 # ── Le rôle en lecture seule ─────────────────────────────────────────────────────
 #
-# Pour l'explorateur SQL et l'exporter de métriques. Ils lisaient jusqu'ici avec le
-# compte applicatif, c'est-à-dire avec le droit d'écrire sur toute la base : un
-# exporter compromis pouvait la modifier.
+# Il est né pour l'explorateur SQL et l'exporter de métriques, qui lisaient jusque-là
+# avec le compte applicatif — c'est-à-dire avec le droit d'écrire sur toute la base.
+#
+# IL SURVIT AU RETRAIT DES DEUX, le 17/10/2026, et c'est délibéré : la supervision
+# déplacée sur son VPS aura besoin exactement de ce rôle-là pour son exporter
+# Postgres, par le tunnel. Le supprimer maintenant obligerait à le recréer à la main
+# sur une machine de production, sous pression, le jour du rebranchement.
+#
+# `db_admin_readonly_password` garde son nom, hérité de pgweb, pour ne pas toucher au
+# vault pendant une rotation de secrets.
 
 - name: Créer le rôle de lecture seule
   community.postgresql.postgresql_user:

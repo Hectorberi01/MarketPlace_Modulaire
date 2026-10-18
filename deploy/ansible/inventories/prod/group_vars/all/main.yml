@@ -1,106 +1,11 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
-# TOPOLOGIE DE PRODUCTION — CE QUE LES DEUX MACHINES DOIVENT SAVOIR L'UNE DE L'AUTRE.
-#
-# Ce fichier est lu par les DEUX groupes (`marketplace` et `database`). Il ne contient
-# que ce qui décrit le lien entre eux : les adresses du tunnel et l'identité de la
-# base. Tout ce qui est propre à une machine reste dans son propre group_vars.
-#
-# Le vault est également ici, dans `all/vault.yml`, et non plus sous `marketplace/` :
-# le VPS base a besoin de `postgres_password` pour créer le rôle applicatif, et une
-# variable rangée sous `group_vars/marketplace/` n'est pas visible du groupe
-# `database`. Le fichier n'a pas été déchiffré pour autant — il a été déplacé tel quel.
-# ═════════════════════════════════════════════════════════════════════════════════
-
 target_env: prod
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# LE TUNNEL WIREGUARD
-#
-# `10.20.0.0/24` est un réseau privé qui n'existe que dans ce tunnel. Les deux
-# adresses ci-dessous ne sont joignables que par les deux machines, jamais depuis
-# Internet — c'est ce qui permet à Postgres de n'écouter que là.
-#
-# SI VOUS INVERSEZ CES DEUX LIGNES, TOUT CASSE EN SILENCE : l'application se
-# connecterait à elle-même. La règle est simple — `wg_db_ip` est l'adresse que
-# porte la machine du groupe `database`, celle qui apparaît en `AllowedIPs` dans la
-# configuration du VPS applicatif.
-# ─────────────────────────────────────────────────────────────────────────────────
-enable_wireguard: true
-wg_subnet: "10.20.0.0/24"
-wg_app_ip: "10.20.0.1"
-wg_db_ip: "10.20.0.2"
-wg_port: 51820
-
-# Adresses PUBLIQUES, utilisées uniquement comme point de rendez-vous du tunnel
-# (`Endpoint`). Aucun service applicatif ne les emprunte.
-# CLÉS PUBLIQUES — ce ne sont pas des secrets, et les ranger au vault serait une
-# fausse prudence : on ne pourrait plus vérifier que les deux côtés se correspondent
-# sans déchiffrer, alors que c'est le premier geste de diagnostic d'un tunnel muet.
-# Les clés PRIVÉES, elles, sont au vault (wg_app_private_key, wg_db_private_key).
-#   wg genkey | tee cle_privee | wg pubkey
-wg_app_public_key: "LvZzrirV5QAh2XxX9q9qO3BXyCoC87zJnaOtSNwf0jw="
-wg_db_public_key: "ZI9+NE77rozypwkCVEuYc+GNWt9oAS/6GMiaeOrwkDg="
-wg_prefix: 24
-
-wg_app_endpoint_host: "79.137.35.129"
-wg_db_endpoint_host: "51.255.40.214"
-
-# ─────────────────────────────────────────────────────────────────────────────────
-# IDENTITÉ DE LA BASE
-#
-# Ces trois valeurs sont la SEULE source de vérité. Le rôle `postgres_host` les
-# utilise pour créer la base et son rôle ; `marketplace_connection` les réutilise
-# pour construire la chaîne de connexion. Les écrire deux fois, c'est se garantir
-# qu'elles divergeront — c'est exactement ce qui s'était produit entre
-# `.env.prod.example` (HbaExpressDb / HbaExpressUser) et le repli du compose
-# (marketplace / postgres).
-# ─────────────────────────────────────────────────────────────────────────────────
-# NOMS DISTINCTS DE `postgres_db` / `postgres_user`, ET C'EST ESSENTIEL.
-#
-# Ces deux dernières variables pilotent aussi le conteneur LOCAL : `env.j2` les
-# place dans POSTGRES_DB / POSTGRES_USER, qui n'ont d'effet qu'au tout premier
-# initdb. Les définir ici les aurait fait entrer dans le `.env.prod` du VPS
-# applicatif, où le volume `pgdata` existe déjà avec SES noms d'origine — et
-# l'application se serait connectée avec un rôle que la base ne connaît pas.
-# « FATAL: role does not exist », migrations impossibles, plateforme à terre, au
-# prochain `--tags deploy` et sans avoir rien basculé.
-#
-# `app_db_*` ne décrit que la base du VPS DÉDIÉ. Le chemin local garde ses défauts.
-#
-# À RENSEIGNER APRÈS L'ÉTAPE 0 DU RUNBOOK, qui va lire les vrais noms sur le
-# serveur : ce qui est ici doit être ce qu'on veut sur la NOUVELLE base, et la
-# restauration doit viser ces noms-là.
 app_db_name: HbaExpressDb
 app_db_user: HbaExpressUser
-# Version du cluster RÉELLEMENT installé sur le VPS base, pas celle qu'on souhaite :
-# le rôle `postgres_host` n'installe pas PostgreSQL, il le CONSTATE. Cette valeur ne
-# sert qu'à construire `/etc/postgresql/<version>/main` et à recharger le bon cluster.
-#
-# 18 et non 16 : le VPS base a été provisionné à la main, hors Ansible, avec la version
-# des dépôts de la distribution. Le conteneur de l'applicatif, lui, reste en 16 — un
-# dump produit par un pg_dump 16 se restaure sans difficulté dans un serveur 18, c'est
-# le sens normal d'une migration. L'inverse ne serait pas vrai.
-postgres_version: 18
 
-# Taille du pool Npgsql, PAR HÔTE applicatif. Cinq hôtes lisent cette base
-# (api + 4 BFF) : le total côté serveur doit rester très en dessous de
-# `postgres_max_connections` du groupe `database`.
-npgsql_max_pool_size: 15
-
-# ─────────────────────────────────────────────────────────────────────────────────
-# STOCKAGE OBJET DES PIÈCES KYB
-#
-# Défini dans `all/` parce que les DEUX machines en ont besoin : le VPS base pour
-# configurer MinIO, le VPS applicatif pour construire l'endpoint et signer.
-#
-# LA RÉGION DOIT ÊTRE LA MÊME DES DEUX CÔTÉS. SigV4 l'inclut dans la portée de la
-# signature : une divergence donne « SignatureDoesNotMatch », un message qui ne dit
-# pas que la région est en cause et qu'on cherche longtemps du côté des clés.
 minio_region: "us-east-1"
 minio_api_port: 9000
 minio_bucket_kyb: hbaexpress-kyb
 
-# `false` tant que MinIO n'est pas en service : le stockage KYB continue de viser
-# R2. Comme pour la base, le drapeau ne migre rien — il dit seulement où écrire.
 use_minio_for_kyb: false

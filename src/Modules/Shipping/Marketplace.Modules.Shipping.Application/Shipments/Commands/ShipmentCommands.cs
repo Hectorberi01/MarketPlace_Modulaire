@@ -20,6 +20,16 @@ public sealed record MarkShipmentShippedCommand(Guid ShipmentId, string Carrier,
 /// <summary>Marque l'expédition « livrée ».</summary>
 public sealed record MarkShipmentDeliveredCommand(Guid ShipmentId) : ICommand;
 
+/// <summary>
+/// REMISE EN MAIN PROPRE PAR LE VENDEUR, validée par le code de l'acheteur.
+///
+/// [SellerId] vient du JETON, jamais du corps de la requête : sans lui, n'importe quel
+/// vendeur authentifié pourrait clore l'expédition d'un autre en devinant un
+/// identifiant — et se faire payer la séquestre de quelqu'un d'autre.
+/// </summary>
+public sealed record MarkShipmentDeliveredBySellerCommand(
+    Guid ShipmentId, Guid SellerId, string Code) : ICommand;
+
 /// <summary>Annule l'expédition.</summary>
 public sealed record CancelShipmentCommand(Guid ShipmentId) : ICommand;
 
@@ -164,6 +174,72 @@ internal sealed class MarkShipmentDeliveredCommandHandler : ShipmentCommandHandl
 
     public Task<Result> Handle(MarkShipmentDeliveredCommand command, CancellationToken cancellationToken)
         => MutateAsync(command.ShipmentId, s => s.MarkDelivered(), cancellationToken);
+}
+
+internal sealed class MarkShipmentDeliveredBySellerCommandHandler
+    : ICommandHandler<MarkShipmentDeliveredBySellerCommand>
+{
+    private readonly IShipmentRepository _repository;
+    private readonly IShippingUnitOfWork _unitOfWork;
+
+    public MarkShipmentDeliveredBySellerCommandHandler(
+        IShipmentRepository repository, IShippingUnitOfWork unitOfWork)
+    {
+        _repository = repository;
+        _unitOfWork = unitOfWork;
+    }
+
+    /// ═════════════════════════════════════════════════════════════════════════════
+    /// IL N'UTILISE PAS `MutateAsync`, ET C'EST TOUT L'INTÉRÊT DE CE HANDLER.
+    ///
+    /// L'assistant partagé rend la main dès que la mutation échoue :
+    ///
+    ///     var result = mutate(shipment);
+    ///     if (result.IsFailure) return result;   // ← AUCUN SaveChanges
+    ///
+    /// C'est le bon comportement pour une transition refusée, où rien n'a changé. Ce
+    /// n'en est pas un ici : un code FAUX incrémente `DeliveryCodeAttempts`, et c'est
+    /// une modification qu'il faut écrire. Passer par `MutateAsync` laisserait le
+    /// compteur revenir à sa valeur d'avant à chaque essai raté — le plafond de cinq
+    /// tentatives ne protégerait plus rien, et les dix mille codes se parcourraient
+    /// tranquillement depuis l'API vendeur.
+    /// ═════════════════════════════════════════════════════════════════════════════
+    public async Task<Result> Handle(
+        MarkShipmentDeliveredBySellerCommand command, CancellationToken cancellationToken)
+    {
+        var shipment = await _repository.GetByIdAsync(new ShipmentId(command.ShipmentId), cancellationToken);
+        if (shipment is null)
+        {
+            return Result.Failure(Error.NotFound("shipping.not_found", "Expédition introuvable."));
+        }
+
+        // L'APPARTENANCE SE VÉRIFIE AVANT LE CODE, et le message ne distingue pas les
+        // deux cas : « expédition introuvable » pour un vendeur qui n'est pas le sien,
+        // plutôt que « ce n'est pas la vôtre », qui confirmerait l'existence de
+        // l'expédition et permettrait d'énumérer celles des autres.
+        if (shipment.SellerId != command.SellerId)
+        {
+            return Result.Failure(Error.NotFound("shipping.not_found", "Expédition introuvable."));
+        }
+
+        var resultat = shipment.MarkDeliveredBySeller(command.Code);
+
+        // L'ÉCHEC SUR CODE FAUX S'ENREGISTRE QUAND MÊME : c'est le compteur.
+        // Les autres échecs — mauvais état, verrouillé, code absent — n'ont rien
+        // modifié, et il n'y a rien à écrire.
+        if (resultat.IsFailure)
+        {
+            if (resultat.Error.Code == "shipping.delivery_code_invalid")
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            return resultat;
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
 }
 
 internal sealed class MarkOrderDeliveredByCourierCommandHandler

@@ -216,9 +216,9 @@ jobs:
         run: |
           # docker,setup : installe Docker si absent (idempotent).
           # deploy : synchronise le code, génère l'env, pull les images, up la stack.
-          # monitoring,portainer,webterminal,dbadmin : stacks annexes (gated par
-          #   enable_* dans group_vars ; sans ces tags, leurs rôles sont sautés
-          #   même si enable_*=true).
+          # La supervision, Portainer, le terminal web et dbadmin ont été retirés du
+          #   dépôt le 17/10/2026 : la supervision vit sur un VPS dédié, avec sa propre
+          #   configuration. Il n'y a plus de tag annexe à passer ici.
           # --limit : LE VPS BASE N'EST PAS ENCORE DANS LE PÉRIMÈTRE DE LA CI.
           #
           # L'inventaire de production déclare désormais deux groupes,
@@ -234,5 +234,5 @@ jobs:
           # que plus personne ne regardera.
           ansible-playbook -i "inventories/${ENV_NAME}/hosts.ini" site.yml \
             --limit marketplace \
-            --tags docker,setup,security,deploy,monitoring,portainer,webterminal,dbadmin \
+            --tags docker,setup,security,deploy \
             --vault-password-file "$RUNNER_TEMP/vault.pass"

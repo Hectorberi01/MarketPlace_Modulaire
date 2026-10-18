@@ -14,7 +14,6 @@
     <ProjectReference Include="..\..\Returns\Marketplace.Modules.Returns.Contracts\Marketplace.Modules.Returns.Contracts.csproj" />
     <!-- Reversements (paiement vendeur), messagerie (nouveau message) et litiges. -->
     <ProjectReference Include="..\..\Settlement\Marketplace.Modules.Settlement.Contracts\Marketplace.Modules.Settlement.Contracts.csproj" />
-    <ProjectReference Include="..\..\Delivery\Marketplace.Modules.Delivery.Contracts\Marketplace.Modules.Delivery.Contracts.csproj" />
     <ProjectReference Include="..\..\Messaging\Marketplace.Modules.Messaging.Contracts\Marketplace.Modules.Messaging.Contracts.csproj" />
     <ProjectReference Include="..\..\Disputes\Marketplace.Modules.Disputes.Contracts\Marketplace.Modules.Disputes.Contracts.csproj" />
     <!-- Avis (produit → vendeur), rupture de stock (SKU → offre → vendeur). -->

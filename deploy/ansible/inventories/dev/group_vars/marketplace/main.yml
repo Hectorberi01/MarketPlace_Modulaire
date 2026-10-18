@@ -5,7 +5,6 @@ manage_docker: false          # Docker Desktop déjà présent
 ansible_become: false         # pas de sudo en local
 skip_sync: true               # on déploie le dépôt courant en place
 app_dir: "{{ project_local_path }}"
-enable_portainer: false       # en dev, utilise Docker Desktop
 
 # Secrets dev (non sensibles) — identiques à deploy/.env.
 postgres_db: marketplace

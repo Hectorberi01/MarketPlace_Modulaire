@@ -85,27 +85,6 @@ fcm_service_account_b64: "CHANGE_ME_BASE64_SUR_UNE_LIGNE"
 # deux surfaces distinctes, deux compromissions indépendantes.
 seller_session_secret: ""
 
-# ── LE SERVICE DE DISPATCH ───────────────────────────────────────────────────
-# Ces trois-là sont exigées par le compose de production avec la syntaxe `${X:?}`,
-# qui fait échouer l'interpolation. Compose interpolant TOUT le fichier avant de
-# créer quoi que ce soit, leur absence n'empêchait pas seulement le dispatch de
-# démarrer : elle arrêtait `pull` et `up` pour la pile entière.
-
-# Secrets CROISÉS. Ce que la marketplace envoie doit valoir ce que le dispatch
-# attend, et réciproquement. Deux valeurs DISTINCTES : une seule valeur partagée
-# ferait qu'un secret compromis ouvre les deux sens.
-#   openssl rand -base64 32
-delivery_webhook_secret: "CHANGE_ME_BASE64_32"
-dispatch_outbound_secret: "CHANGE_ME_AUTRE_BASE64_32"
-
-# Part des frais de livraison versée au coursier. 0.80 = 80 %. Décision
-# commerciale : le service refuse de démarrer sans elle, plutôt que de deviner.
-dispatch_courier_share: "0.80"
-
-# Chaîne de connexion du dispatch. À NE DÉFINIR QUE si la base n'est ni le
-# conteneur local ni le VPS dédié — sinon `env.j2` la construit.
-#   dispatch_connection: "Host=…;Port=5432;Database=dispatch;Username=…;Password=…"
-
 # ── SESSIONS DES CONSOLES ────────────────────────────────────────────────────
 # Exigées en `${X:?}` par le compose (minimum 32 caractères).
 #   openssl rand -base64 32
@@ -121,40 +100,26 @@ client_session_secret: "CHANGE_ME_BASE64_48"
 # de production permettrait de republier les images qu'il déploie.
 registry_token: "ghp_CHANGE_ME"
 
-# ── SUPERVISION ──────────────────────────────────────────────────────────────
-# Une alerte qui ne réveille personne n'existe pas. Le rôle `monitoring` ÉCHOUE
-# désormais tant qu'aucun canal n'est joignable — et les valeurs d'exemple ci-dessous
-# ne comptent pas : toute valeur contenant « CHANGE » est traitée comme absente,
-# précisément parce qu'elle est non vide et passait donc pour une vraie coordonnée.
+# ── LECTURE SEULE SUR LA BASE ────────────────────────────────────────────────
+# Le rôle PostgreSQL `readonly` est créé par Ansible (rôle postgres_host) ; ce mot
+# de passe est le sien, distinct de celui du rôle applicatif.
 #
-# Il faut SOIT un webhook Slack réel, SOIT le trio smtp_host / alert_email_to /
-# smtp_password (les deux premiers sont dans group_vars, non secrets).
-grafana_password: "CHANGE_ME_STRONG"
-alertmanager_slack_webhook_url: "https://hooks.slack.com/services/CHANGE/ME"
-smtp_password: "CHANGE_ME"
-
-# ── TERMINAL WEB ─────────────────────────────────────────────────────────────
-# Le rôle ÉCHOUE si ces valeurs manquent, et c'est voulu : ce terminal ouvre un
-# shell sur le serveur de production. Un `0.0.0.0/0` dans l'allowlist passerait
-# ce garde-fou tout en n'en étant pas un.
-#   htpasswd -nbB admin 'motdepasse'   → pour terminal_basic_auth_users
-terminal_allowed_ips:
-  - "A.B.C.D/32"        # votre IP fixe, jamais un /0
-terminal_basic_auth_users:
-  - "admin:$2y$05$CHANGE_ME"
-terminal_ssh_private_key: |
-  -----BEGIN OPENSSH PRIVATE KEY-----
-  CHANGE_ME
-  -----END OPENSSH PRIVATE KEY-----
-
-# ── ADMINISTRATION DE LA BASE (pgweb) ────────────────────────────────────────
-# Même logique de garde-fou. Le rôle en lecture seule est créé par Ansible ;
-# ce mot de passe est le sien, distinct de celui du rôle applicatif.
-db_admin_allowed_ips:
-  - "A.B.C.D/32"
-db_admin_basic_auth_users:
-  - "admin:$2y$05$CHANGE_ME"
+# IL SURVIT AU RETRAIT DE pgweb ET DE L'EXPORTER, le 17/10/2026 : la supervision
+# déplacée sur son VPS en aura besoin pour lire les métriques de la base par le
+# tunnel. Le nom de la variable garde son préfixe `db_admin_`, hérité de pgweb.
 db_admin_readonly_password: "CHANGE_ME_STRONG"
+
+# ── CE QUI A DISPARU DE CE FICHIER LE 17/10/2026 ─────────────────────────────
+# `grafana_password`, `alertmanager_slack_webhook_url`, `smtp_password` : la pile de
+# supervision a quitté ce serveur, avec son canal d'alerte.
+# `terminal_allowed_ips`, `terminal_basic_auth_users`, `terminal_ssh_private_key` :
+# le terminal web est retiré. SI CES VALEURS EXISTENT DÉJÀ DANS VOTRE VAULT, la clé
+# publique correspondante traîne peut-être encore dans l'`authorized_keys` de
+# l'hôte — à retirer de la machine, pas seulement d'ici.
+# `db_admin_allowed_ips`, `db_admin_basic_auth_users` : pgweb est retiré.
+# `delivery_webhook_secret`, `dispatch_outbound_secret`, `dispatch_courier_share`,
+# `dispatch_connection` : le périmètre livraison est retiré (voir
+# docs/25-retrait-livraison.md).
 
 # ── TUNNEL WIREGUARD ─────────────────────────────────────────────────────────
 # Les clés PRIVÉES seulement. Les clés publiques ne sont pas des secrets et
