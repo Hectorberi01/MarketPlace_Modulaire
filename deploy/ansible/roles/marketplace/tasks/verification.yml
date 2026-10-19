@@ -1,0 +1,122 @@
+---
+# Tout ce qui précède vérifie que Docker a reçu ses ordres, jamais que l'application
+# fonctionne. Une API qui s'arrête sur une variable manquante ou une migration en
+# échec laissait le déploiement en SUCCÈS.
+#
+# Deux contrôles, qui ne se remplacent pas :
+#   - readiness interne (/health/ready) : le service ET ses dépendances. Le
+#     healthcheck du conteneur n'interroge que /health, qui répond base morte.
+#   - routage Traefik depuis l'hôte : un backend sain derrière un routeur mal
+#     étiqueté est invisible.
+- name: Vérification après déploiement
+  block:
+    - name: Attendre que chaque service applicatif soit PRÊT
+      ansible.builtin.shell:
+        cmd: |
+          set -u
+          COMPOSE="docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}"
+          DEFINIS=$($COMPOSE config --services 2>/dev/null || true)
+          # Une liste vide signifie que `docker compose config` a ÉCHOUÉ (un ${X:?}
+          # non renseigné, un compose invalide). Sans ce test, la boucle sautait tous
+          # les services et annonçait « tout va bien » dans le cas même qu'on traque.
+          if [ -z "$DEFINIS" ]; then
+            echo "docker compose config n'a renvoye aucun service : compose ou .env invalide"
+            exit 1
+          fi
+          EN_MARCHE=$($COMPOSE ps --services --status running 2>/dev/null || true)
+          EN_ECHEC=""
+          for svc in {{ post_deploy_health_services | join(' ') }}; do
+            echo "$DEFINIS" | grep -qx "$svc" || continue
+            if ! echo "$EN_MARCHE" | grep -qx "$svc"; then
+              EN_ECHEC="$EN_ECHEC $svc(arrete)"
+              continue
+            fi
+            if ! $COMPOSE exec -T "$svc" curl -fsS -m 5 \
+                 "http://localhost:8080{{ post_deploy_health_path }}" >/dev/null 2>&1; then
+              EN_ECHEC="$EN_ECHEC $svc(non-pret)"
+            fi
+          done
+          if [ -n "$EN_ECHEC" ]; then
+            echo "SERVICES EN ECHEC :$EN_ECHEC"
+            exit 1
+          fi
+          echo "Tous les services applicatifs repondent {{ post_deploy_health_path }}"
+        chdir: "{{ app_dir }}"
+      register: post_deploy_ready
+      retries: "{{ post_deploy_health_retries | default(10) }}"
+      delay: "{{ post_deploy_health_delay | default(15) }}"
+      until: post_deploy_ready.rc == 0
+      changed_when: false
+
+    # `--resolve` force la connexion vers 127.0.0.1 en gardant le SNI et l'en-tête
+    # Host : on teste Traefik, son certificat et le backend, sans dépendre du DNS
+    # public ni du hairpin NAT. Un 404 applicatif est un SUCCÈS — la requête est
+    # arrivée jusqu'à l'application ; seuls 502/503/504 et l'absence de réponse
+    # signalent un routage cassé.
+    - name: Vérifier le routage public à travers Traefik
+      ansible.builtin.shell:
+        cmd: |
+          set -u
+          command -v curl >/dev/null 2>&1 || { echo "curl absent de l'hote : verification ignoree"; exit 0; }
+          EN_ECHEC=""
+          CERTS=""
+          for url in {{ post_deploy_public_urls | join(' ') }}; do
+            hote=$(printf '%s' "$url" | sed -e 's|^https://||' -e 's|/.*$||')
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -m 10 \
+                   --resolve "$hote:443:127.0.0.1" "$url" 2>/dev/null || echo 000)
+            if [ "$code" = "000" ]; then
+              # Aucune réponse en TLS strict : certificat, ou rien du tout ?
+              relache=$(curl -sSk -o /dev/null -w '%{http_code}' -m 10 \
+                        --resolve "$hote:443:127.0.0.1" "$url" 2>/dev/null || echo 000)
+              if [ "$relache" != "000" ]; then
+                CERTS="$CERTS $hote(HTTP $relache)"
+                continue
+              fi
+            fi
+            case "$code" in
+              000|502|503|504) EN_ECHEC="$EN_ECHEC $url($code)" ;;
+            esac
+          done
+          if [ -n "$CERTS" ]; then
+            echo "CERTIFICAT NON VALIDE (le backend repond, la delivrance ACME est en cause) :$CERTS"
+          fi
+          if [ -n "$EN_ECHEC" ]; then
+            echo "ROUTAGE CASSE :$EN_ECHEC"
+            exit 1
+          fi
+          echo "Routage Traefik verifie sur {{ post_deploy_public_urls | length }} URL"
+        chdir: "{{ app_dir }}"
+      register: post_deploy_routage
+      changed_when: false
+      when: post_deploy_public_urls | default([]) | length > 0
+
+    - name: Résultat de la vérification
+      ansible.builtin.debug:
+        msg: >-
+          {{ (post_deploy_ready.stdout_lines if post_deploy_ready is defined else [])
+             + (post_deploy_routage.stdout_lines | default([])) }}
+
+  rescue:
+    # Sans ces journaux, il faut se reconnecter au serveur pour apprendre ce que le
+    # playbook savait déjà. On les affiche, PUIS on échoue.
+    - name: Récupérer les journaux des services applicatifs
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+          logs --tail=60 --no-color {{ post_deploy_health_services | join(' ') }}
+        chdir: "{{ app_dir }}"
+      register: post_deploy_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Afficher les journaux avant d'échouer
+      ansible.builtin.debug:
+        var: post_deploy_logs.stdout_lines
+
+    - name: Échouer — la pile déployée ne répond pas
+      ansible.builtin.fail:
+        msg: >-
+          Le déploiement a été appliqué mais la pile ne répond pas. Journaux ci-dessus.
+          Détail : {{ (post_deploy_ready.stdout if post_deploy_ready is defined else '')
+                      ~ ' '
+                      ~ (post_deploy_routage.stdout if post_deploy_routage is defined else '') }}

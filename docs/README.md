@@ -1,16 +1,16 @@
 # Documentation — HbaExpress Marketplace (backend)
 
 Cette documentation décrit le **backend** de la marketplace : un **monolithe modulaire** .NET 8
-(25 modules métier) exposé par **5 hôtes** (le monolithe `Marketplace.Api` + 4 BFF : Web, Mobile,
-Seller, Admin), derrière un reverse-proxy **Traefik**, adossé à **PostgreSQL** (un schéma par module)
-et **Redis**.
+(25 modules métier) exposé par **un hôte unique** (`Marketplace.Host`), qui sert trois surfaces
+par chemin — `/api/client`, `/api/sellers`, `/api/admin` —, derrière un reverse-proxy **Traefik**,
+adossé à **PostgreSQL** (un schéma par module) et **Redis**.
 
 ## Comment lire cette doc
 
 | Fichier | Contenu |
 |---------|---------|
 | [01-architecture.md](01-architecture.md) | Vue d'ensemble, principes, découpage en couches, cycle de vie d'une requête, arborescence. |
-| [02-data-flow.md](02-data-flow.md) | **Comment les données circulent des BFF vers les modules** : CQRS/MediatR, pattern Result, appels synchrones (Contracts), événements de domaine, outbox, événements d'intégration. Exemples de bout en bout. |
+| [02-data-flow.md](02-data-flow.md) | **Comment les données circulent des surfaces HTTP vers les modules** : CQRS/MediatR, pattern Result, appels synchrones (Contracts), événements de domaine, outbox, événements d'intégration. Exemples de bout en bout. |
 | [03-technology-stack.md](03-technology-stack.md) | Chaque technologie : rôle, **pourquoi** ce choix, **comment** elle est configurée (clés de config / variables d'env). |
 | [04-building-blocks.md](04-building-blocks.md) | Le noyau partagé (`BuildingBlocks`) documenté méthode par méthode : `Result`/`Error`, messagerie CQRS, behaviors du pipeline, événements de domaine, outbox, `ModuleDbContext`, installeurs. |
 | [05-bff-reference.md](05-bff-reference.md) | Les 5 hôtes en détail : groupes d'endpoints, routes, handlers, configuration `Program.cs`. |

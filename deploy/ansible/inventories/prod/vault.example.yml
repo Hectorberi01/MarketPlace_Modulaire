@@ -40,6 +40,11 @@ postgres_password: "CHANGE_ME_STRONG_DB_PASSWORD"
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
 
+# Chiffre les secrets des fournisseurs (PSP, Resend, Twilio, Meta) stockés en
+# base par la console admin. L'hôte refuse de démarrer sans elle.
+#   openssl rand -base64 32
+platform_secret_key: "CHANGE_ME_BASE64_32_OCTETS"
+
 # E-mails transactionnels (Resend) — OBLIGATOIRE en prod (sinon l'API ne démarre pas).
 resend_api_key: "re_CHANGE_ME"
 

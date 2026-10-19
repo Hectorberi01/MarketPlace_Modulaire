@@ -1,0 +1,25 @@
+---
+- name: Créer le répertoire de l'application
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+# `delete: true` efface sur l'hôte tout ce que la machine de contrôle ne connaît
+# pas. Les exclusions ci-dessous protègent ce qui ne vient pas du dépôt : les .env
+# générés, les dumps, les dépendances installées.
+- name: Synchroniser le code source vers l'hôte
+  ansible.posix.synchronize:
+    src: "{{ project_local_path }}/"
+    dest: "{{ app_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=bin"
+      - "--exclude=obj"
+      - "--exclude=node_modules"
+      - "--exclude=.env"
+      - "--exclude=.env.*"
+      - "--exclude=*.dump"
+      - "--exclude=TestResults"

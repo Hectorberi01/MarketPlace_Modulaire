@@ -51,9 +51,13 @@
     state: started
     enabled: true
 
-# Le Docker d'Ubuntu 26.04 refuse les API < 1.40, mais le provider Docker de
-# Traefik v3 parle en 1.24 (et n'honore pas DOCKER_API_VERSION). On abaisse la
-# version d'API minimale acceptée par le daemon pour rétablir la compatibilité.
+# Le Docker d'Ubuntu 26.04 refuse les API < 1.40, mais le provider Docker de Traefik
+# v3 parle en 1.24 (et n'honore pas DOCKER_API_VERSION). On abaisse la version d'API
+# minimale acceptée par le DAEMON.
+#
+# Ce dépôt n'installe plus de Traefik en production — celui du VPS est installé à
+# part. Le réglage reste néanmoins le sien : il lit le même socket, sur le même
+# daemon. Le redémarrage ci-dessous n'a lieu qu'au premier passage.
 - name: Créer le répertoire d'override systemd de Docker
   ansible.builtin.file:
     path: /etc/systemd/system/docker.service.d
@@ -83,7 +87,7 @@
     append: true
   when: (ansible_user | default(ansible_user_id)) != 'root'
 
-# Le build .NET (5 images) est gourmand en RAM. Si le serveur n'a pas de swap,
+# Le build .NET est gourmand en RAM. Si le serveur n'a pas de swap,
 # on en crée un pour éviter que le compilateur/restore soit tué (OOM).
 - name: Configurer un fichier de swap (aide au build .NET sur petit VPS)
   when: (ansible_swaptotal_mb | default(0) | int) == 0

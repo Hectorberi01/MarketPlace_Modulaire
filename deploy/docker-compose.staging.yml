@@ -30,7 +30,10 @@ x-app-env: &app-env
   Otel__Endpoint: "${OTEL_ENDPOINT:-}"
   # Base DÉDIÉE au staging (branche Neon de staging). Endpoint DIRECT (sans -pooler).
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:?MARKETPLACE_CONNECTION requis (chaine Npgsql Neon staging)}"
-  Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD requis},abortConnect=false"
+  # Redis : celui du compose ci-dessous. La chaîne est assemblée par Ansible, comme en
+  # production — une seule façon de la construire pour les deux environnements.
+  Redis__ConnectionString: "${REDIS_CONNECTION:?REDIS_CONNECTION requis (assemblé par Ansible)}"
+  Redis__InstanceName: "${REDIS_INSTANCE_NAME:-marketplace:}"
   Jwt__Issuer: "marketplace"
   Jwt__Audience: "marketplace"
   Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY requis}"
@@ -147,9 +150,8 @@ x-app-common: &app-common
   restart: unless-stopped
   logging: *logging
   networks: [marketplace-net]
-  # Compte de service Firebase (push FCM) monté en lecture seule dans TOUS les
-  # hôtes (api + BFF). Le bff-admin en a besoin pour envoyer le push de test au
-  # vendeur ; les autres pour les notifications déclenchées par leurs flux.
+  # Compte de service Firebase (push FCM) monté en lecture seule : l'hôte envoie les
+  # push, y compris celui de test déclenché depuis la console admin.
   volumes:
     - ./fcm:/run/secrets/fcm:ro
   healthcheck:
@@ -315,12 +317,38 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        PROJECT: src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj
-        APP_DLL: Marketplace.Api.dll
-    image: ${IMAGE_PREFIX:-marketplace}/api:${IMAGE_TAG:-staging}
+        PROJECT: src/Host/Marketplace.Host/Marketplace.Host.csproj
+        APP_DLL: Marketplace.Host.dll
+    # TAG PROPRE A L'HOTE : voir docker-compose.prod.yml.
+    image: ${IMAGE_PREFIX:-marketplace}/api:${API_IMAGE_TAG:-staging}
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "true"
+
+      # CORS — une liste par surface, jamais une liste commune : les trois consoles
+      # tapent la même origine serveur. VIDE = aucune origine acceptée.
+      Cors__Client__Origins: "${CLIENT_CORS_ORIGINS:-}"
+      Cors__Seller__Origins: "${SELLER_CORS_ORIGINS:-}"
+      Cors__Admin__Origins: "${ADMIN_CORS_ORIGINS:-}"
+
+      # Chiffrement des secrets des fournisseurs (console admin). SANS ELLE, L'HÔTE
+      # REFUSE DE DÉMARRER : écrire les clés d'API des PSP en clair dans la base
+      # serait une panne sans erreur ni symptôme, découverte à la première fuite de
+      # sauvegarde. openssl rand -base64 32.
+      Platform__SecretKey: "${PLATFORM_SECRET_KEY:?PLATFORM_SECRET_KEY requis (openssl rand -base64 32)}"
+
+      # Fiche App Store de l'app STAGING.
+      MobileApp__UpdateUrlIos: "https://apps.apple.com/app/id6793095820"
+      DeepLink__AppStoreUrl: "https://apps.apple.com/app/id6793095820"
+
+      # Supervision (page Système). Les indices sont positionnels : .NET arrête de
+      # lier un tableau au premier indice manquant.
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
+      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
+      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
+      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
+      Monitoring__LokiUrl: "${LOKI_URL:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -328,184 +356,14 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`)"
+      # api. est le nom canonique ; m., seller. et admin. restent acceptés tant que des
+      # builds mobiles les visent (API_BASE_URL est figé au build).
+      - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`) || Host(`m.${ROOT_DOMAIN}`) || Host(`seller.${ROOT_DOMAIN}`) || Host(`admin.${ROOT_DOMAIN}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.api.middlewares=edge-chain@file"
       - "traefik.http.services.api.loadbalancer.server.port=8080"
 
-  # ---------------- BFF ----------------
-  bff-client:
-    <<: *app-common
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Client/Marketplace.Bff.Client.csproj
-        APP_DLL: Marketplace.Bff.Client.dll
-    image: ${IMAGE_PREFIX:-marketplace}/bff-client:${IMAGE_TAG:-staging}
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      OUTBOX_ENABLED: "false"
-      # Origines du SITE (navigateur). VIDE = REPLI FERMÉ : aucune origine acceptée.
-      # Un repli ouvert avec AllowCredentials laisserait n'importe quel site agir au
-      # nom d'un acheteur connecté — panier, adresses, paiement.
-      Cors__Origins: "${CLIENT_WEB_ORIGINS:-}"
-
-      # Fiche App Store de l'app STAGING (fr.hbamarket.app.staging).
-      MobileApp__UpdateUrlIos: "https://apps.apple.com/app/id6793095820"
-      DeepLink__AppStoreUrl: "https://apps.apple.com/app/id6793095820"
-    depends_on:
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      # ─────────────────────────────────────────────────────────────────────
-      # « m. » EST UN NOM HISTORIQUE, ET IL RESTE.
-      #
-      # Cette surface ne sert plus seulement le mobile : depuis la fusion des BFF
-      # Mobile et Web, elle sert aussi le site. Le renommer coûterait un
-      # enregistrement DNS et un certificat, pour un gain cosmétique — et une
-      # migration ratée sur l'hôte du checkout se paie cher.
-      #
-      # LE SITE PUBLIC N'EST PAS ICI. Il vivra sur `www.` (image hbaexpress-site,
-      # pas encore déployée) et appellera ce BFF EN CROSS-ORIGIN : c'est ce que la
-      # politique CORS ci-dessus autorise, et c'est pour cela qu'elle existe.
-      # ─────────────────────────────────────────────────────────────────────
-      - "traefik.http.routers.client.rule=Host(`m.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.client.entrypoints=websecure"
-      - "traefik.http.routers.client.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.client.middlewares=edge-chain@file"
-      - "traefik.http.services.client.loadbalancer.server.port=8080"
-
-
-  bff-seller:
-    <<: *app-common
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj
-        APP_DLL: Marketplace.Bff.Seller.dll
-    image: ${IMAGE_PREFIX:-marketplace}/bff-seller:${IMAGE_TAG:-staging}
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      OUTBOX_ENABLED: "false"
-      # Origine CORS du dashboard vendeur hébergé séparément (Blazor WASM
-      # sur web-seller.hba-marketplace.fr → appels cross-origin vers ce BFF).
-      Cors__Origins: "${SELLER_CORS_ORIGINS:-https://web-seller.hba-marketplace.fr}"
-    depends_on:
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.seller.rule=Host(`seller.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.seller.entrypoints=websecure"
-      - "traefik.http.routers.seller.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.seller.middlewares=edge-chain@file"
-      - "traefik.http.services.seller.loadbalancer.server.port=8080"
-
-  bff-admin:
-    <<: *app-common
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj
-        APP_DLL: Marketplace.Bff.Admin.dll
-    image: ${IMAGE_PREFIX:-marketplace}/bff-admin:${IMAGE_TAG:-staging}
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      OUTBOX_ENABLED: "false"
-      # --- CORS ---
-      # La console d'administration est une application NAVIGATEUR servie depuis une
-      # autre origine que l'API : sans déclaration explicite, la politique reste
-      # FERMÉE (SetIsOriginAllowed(false)) et le navigateur bloque tout — pas de
-      # message côté serveur, juste un échec CORS côté client.
-      #
-      # Liste séparée par des virgules. En développement, on y ajoute l'origine
-      # locale de la console (ex. http://localhost:5318) — JAMAIS en production.
-      Cors__Origins: "${ADMIN_CORS_ORIGINS:-https://admin.${ROOT_DOMAIN}}"
-      # --- Supervision (page « Santé système ») ---
-      # Surfaces surveillées : URLs INTERNES (noms de services sur le réseau).
-      #
-      # LA LISTE SUIT LE DÉCOUPAGE PAR AUDIENCE. « BFF Mobile » et « BFF Web » ont
-      # fusionné en « BFF Client ». Une surface oubliée ici n'est pas surveillée — et
-      # son absence ne produit aucune erreur, juste une ligne manquante que personne
-      # ne cherche. Les indices sont POSITIONNELS : .NET arrête de lier le tableau au
-      # premier manquant, donc on renumérote toujours plutôt que de laisser un trou.
-      #
-      # Ces sondes ne dépendent PAS de la supervision retirée le 17/10/2026 : le BFF
-      # Admin interroge lui-même `/health` de chaque service par le réseau Docker.
-      Monitoring__Surfaces__0__Name: "API"
-      Monitoring__Surfaces__0__Url: "http://api:8080"
-      Monitoring__Surfaces__1__Name: "BFF Client"
-      Monitoring__Surfaces__1__Url: "http://bff-client:8080"
-      Monitoring__Surfaces__2__Name: "BFF Vendeur"
-      Monitoring__Surfaces__2__Url: "http://bff-seller:8080"
-      Monitoring__Surfaces__3__Name: "BFF Admin"
-      Monitoring__Surfaces__3__Url: "http://bff-admin:8080"
-      # ═══════════════════════════════════════════════════════════════════════════
-      # QUATRE URL QUI DÉSIGNENT DÉSORMAIS UNE AUTRE MACHINE.
-      #
-      # La supervision a quitté ce serveur le 17/10/2026 pour un VPS dédié. Vides, la
-      # console masque les panneaux KPIs, tableaux de bord et journaux — elle ne les
-      # affiche pas en erreur. À renseigner le jour où le VPS de supervision publie
-      # ses adresses.
-      #
-      # `Monitoring__PortainerUrl` est partie : le bouton qu'elle alimentait
-      # n'ouvrait qu'un Portainer local, qui n'existe plus.
-      # ═══════════════════════════════════════════════════════════════════════════
-      Monitoring__PrometheusUrl: "${PROMETHEUS_URL:-}"
-      Monitoring__GrafanaUrl: "${GRAFANA_URL:-}"
-      Monitoring__GrafanaEmbedUrl: "${GRAFANA_EMBED_URL:-}"
-      Monitoring__LokiUrl: "${LOKI_URL:-}"
-    depends_on:
-      api:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.admin.rule=Host(`admin.${ROOT_DOMAIN}`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.admin.middlewares=edge-chain@file"
-      - "traefik.http.services.admin.loadbalancer.server.port=8080"
-
-  # ---------------------------------------------------------------------------
-  # Console d'administration (Next.js) — le FRONT navigateur des administrateurs.
-  # C'est ici que sont servies les pages publiques /reinitialiser-mot-de-passe et
-  # /mot-de-passe-oublie (cibles des liens d'e-mail : EMAIL_APP_BASE_URL doit
-  # pointer sur https://console.${ROOT_DOMAIN}).
-  #
-  # Image construite depuis le dépôt Admin_MP_Next (Dockerfile fourni) et poussée
-  # au registre — la CI doit builder/pousser « console » comme les autres images.
-  # Le navigateur n'appelle QUE /api/* de cette console ; celle-ci relaie en
-  # interne vers le BFF Admin (ADMIN_BFF_URL=http://bff-admin:8080). Aucun jeton
-  # ne transite par le JavaScript client.
-  # ---------------------------------------------------------------------------
-  # ---------------- Console VENDEUR (Next.js) ----------------
-  # ORDRE DE MISE EN SERVICE — À LIRE AVANT LE PREMIER DÉPLOIEMENT.
-  #
-  # Ansible lance `docker compose up -d --no-build` sur TOUTE la pile. Si l'image
-  # `seller-console` n'existe pas encore sur GHCR, ce déploiement ÉCHOUE — et il
-  # emporte les autres services avec lui. C'est exactement le piège décrit plus bas
-  # pour le service « site ».
-  #
-  # La console doit donc être publiée EN PREMIER : pousser sur `develop_staging`
-  # (ou `develop`) dans HbaExpress_seller_dashboard, attendre que le workflow soit
-  # vert, et seulement ensuite déployer le backend.
-  # Image construite et poussée par le dépôt HbaExpress_seller_dashboard
-  # (.github/workflows/deploy.yml), puis tirée ici. Ce compose ne la construit pas :
-  # le backend et la console vivent dans deux dépôts distincts, avec deux cycles de
-  # publication distincts.
-  #
-  # Le vendeur ne parle JAMAIS au BFF directement : la console détient les jetons dans
-  # un cookie chiffré côté serveur et relaie les appels. D'où `SELLER_BFF_URL` sur
-  # l'adresse INTERNE du réseau Docker — passer par l'URL publique ferait sortir puis
-  # rentrer chaque requête par Traefik, et ferait perdre l'IP réelle du vendeur.
   seller-console:
     image: ${IMAGE_PREFIX:-marketplace}/seller-console:${IMAGE_TAG:-staging}
     restart: unless-stopped
@@ -513,7 +371,7 @@ services:
     networks: [marketplace-net]
     environment:
       NODE_ENV: "production"
-      SELLER_BFF_URL: "http://bff-seller:8080"
+      SELLER_BFF_URL: "http://api:8080"
       # `:?` et non `:-` : ce secret CHIFFRE LA SESSION VENDEUR. Vide ou trop faible,
       # il la rend forgeable — donc le jeton de rafraîchissement d'un vendeur, valable
       # trente jours, devient extractible. La console refuse de servir sans lui ; ce
@@ -522,7 +380,7 @@ services:
       SESSION_SECRET: "${SELLER_SESSION_SECRET:?SELLER_SESSION_SECRET requis (openssl rand -base64 32, 32 caracteres minimum, pas une valeur d'exemple)}"
       SESSION_COOKIE_SECURE: "true"
     depends_on:
-      bff-seller:
+      api:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
@@ -561,13 +419,13 @@ services:
     environment:
       NODE_ENV: "production"
       # Cible SERVEUR-à-SERVEUR (réseau interne), jamais exposée au navigateur.
-      ADMIN_BFF_URL: "http://bff-admin:8080"
+      ADMIN_BFF_URL: "http://api:8080"
       # Secret de chiffrement du cookie de session (vault → ADMIN_SESSION_SECRET).
       SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"
       # Derrière Traefik en HTTPS : cookie Secure obligatoire.
       SESSION_COOKIE_SECURE: "true"
     depends_on:
-      bff-admin:
+      api:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]

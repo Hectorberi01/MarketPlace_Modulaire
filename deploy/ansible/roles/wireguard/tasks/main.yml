@@ -1,5 +1,4 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE TUNNEL ENTRE LE VPS APPLICATIF ET LE VPS BASE.
 #
 # Il existait déjà, monté à la main, et n'apparaissait NULLE PART dans le dépôt :
@@ -15,7 +14,6 @@
 # déduit son rôle de son appartenance au groupe `marketplace` ou `database` : une
 # seule source de vérité, donc pas de configuration asymétrique par inadvertance —
 # la panne classique de WireGuard, où un côté a changé de clé et l'autre l'ignore.
-# ═════════════════════════════════════════════════════════════════════════════════
 
 - name: Installer WireGuard
   ansible.builtin.apt:

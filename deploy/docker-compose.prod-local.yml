@@ -1,0 +1,31 @@
+# Répétition de la PRODUCTION, en local.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up --build
+#
+# Ce fichier ne redéfinit qu'une chose : l'environnement. Tout le reste — base,
+# Redis, Traefik, réseau — reste celui du développement. Le but n'est pas de
+# reproduire le VPS, c'est de faire passer à l'hôte les GARDES DE DÉMARRAGE de
+# production sur un poste où l'échec ne coûte rien.
+#
+# CE QUE ÇA EXERCE :
+#   • JwtKeyGuard — refuse la clé de signature committée dans le dépôt ;
+#   • Platform:SecretKey — absente ou égale à la clé de dev = démarrage refusé ;
+#   • « production sans aucun PSP configuré » = démarrage refusé ;
+#   • « PSP réel sans secret de webhook » = démarrage refusé ;
+#   • la cohérence clé FedaPay / URL de base (sk_live_ contre sandbox) ;
+#   • les journaux au format JSON compact, comme Loki les recevra ;
+#   • Swagger ÉTEINT, et les passerelles de paiement simulées INDISPONIBLES.
+#
+# CE QUE ÇA N'EXERCE PAS, et qu'il ne faut pas croire validé pour autant :
+# la délivrance ACME, le DNS, les étiquettes Traefik du compose de production,
+# les trois images construites par les autres dépôts (console, seller-console,
+# site), et la base distante du VPS.
+#
+# UNE VARIABLE MANQUANTE DOIT FAIRE ÉCHOUER LE DÉMARRAGE ICI. Ne pas lui donner
+# de valeur de complaisance dans ce fichier : ce serait désactiver la répétition
+# au moment précis où elle sert.
+
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"

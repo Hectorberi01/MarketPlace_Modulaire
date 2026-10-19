@@ -33,8 +33,8 @@ Marketplace multi-vendeur pour le marché ouest-africain (Bénin en premier lieu
 
 ```mermaid
 flowchart TB
-    subgraph Edge["Bootstrap"]
-        API["Marketplace.Api<br/>(compose les 25 modules)"]
+    subgraph Edge["Host"]
+        API["Marketplace.Host<br/>(compose les 25 modules ;<br/>/api/client · /api/sellers · /api/admin)"]
     end
 
     subgraph Core["Cœur transactionnel"]
@@ -181,7 +181,7 @@ AUTORISÉ : Ordering.Application --OK--> Catalog.Contracts
 ```
 Marketplace.sln
 ├── src/
-│   ├── Bootstrap/Marketplace.Api/        <- SEUL point de déploiement ; ModuleRegistry
+│   ├── Host/Marketplace.Host/            <- SEUL point de déploiement ; ModuleRegistry
 │   ├── Modules/<Module>/                 <- 25 modules, 4 projets chacun :
 │   │     ...<Module>.Domain              entités, VOs, domain events
 │   │     ...<Module>.Application          commands/queries, handlers, validators
@@ -204,7 +204,7 @@ dotnet build                       # restaurer + compiler la solution
 
 dotnet test                        # unitaires + architecture + intégration (Docker requis)
 
-dotnet run --project src/Bootstrap/Marketplace.Api   # lancer l'API + Swagger
+dotnet run --project src/Host/Marketplace.Host   # lancer l'hôte + Swagger
 ```
 
 La chaîne de connexion se règle via `ConnectionStrings:Marketplace` (`appsettings.json`). Au démarrage, mettre `RunMigrationsAtStartup: true` applique automatiquement les migrations des 25 schémas ; sinon, appliquer par module :
@@ -212,7 +212,7 @@ La chaîne de connexion se règle via `ConnectionStrings:Marketplace` (`appsetti
 ```bash
 dotnet ef database update \
   --project src/Modules/Catalog/Marketplace.Modules.Catalog.Infrastructure \
-  --startup-project src/Bootstrap/Marketplace.Api
+  --startup-project src/Host/Marketplace.Host
 ```
 
 > **Sécurité** — `Jwt:SigningKey` dans `appsettings.json` est un **placeholder** : le remplacer par un secret réel (variable d'environnement / coffre) avant tout déploiement.

@@ -1,0 +1,86 @@
+---
+# Mode build : l'hôte compile. Séquentiel, parce que deux builds .NET en parallèle
+# saturent la RAM d'un VPS.
+- name: Construire les images sur l'hôte
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} build"
+    chdir: "{{ app_dir }}"
+  environment:
+    DOCKER_BUILDKIT: "1"
+    COMPOSE_PARALLEL_LIMIT: "1"
+  changed_when: true
+  when:
+    - compose_build | default(true)
+    - not (use_registry | default(false))
+
+# On NOMME les services à démarrer. Sans liste, `up` tenterait de créer aussi les
+# trois applications Next du dépôt web : une image absente ferait échouer le
+# démarrage de toute la pile.
+#
+# `--remove-orphans` ne retire que les conteneurs dont le service a disparu du
+# fichier compose. Les services présents mais non nommés ici restent en place —
+# c'est pourquoi les services Next restent DÉCLARÉS dans le compose : les en
+# retirer les ferait supprimer au prochain déploiement.
+- name: Démarrer la pile applicative
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      up -d --no-build --remove-orphans {{ backend_services | join(' ') }}
+    chdir: "{{ app_dir }}"
+  changed_when: true
+
+# STAGING SEULEMENT, et le `when` le dit : la production n'a pas de service `traefik`
+# dans son compose — le VPS en fait tourner un, installé à part, sur le réseau
+# `proxy`, et sa configuration ne nous appartient pas.
+#
+# Là où nous en faisons tourner un, sa configuration STATIQUE (points d'entrée,
+# métriques) n'est relue qu'à la RECRÉATION du conteneur : un `up -d` n'y suffit pas
+# quand seul le fichier monté a changé.
+- name: Recréer Traefik (recharge sa configuration statique)
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f deploy/{{ compose_file }}
+      --env-file deploy/.env.{{ target_env }}
+      up -d --no-build --force-recreate traefik
+    chdir: "{{ app_dir }}"
+  changed_when: true
+  when: "'traefik' in backend_services"
+
+- name: Statut des conteneurs
+  ansible.builtin.command:
+    cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} ps"
+    chdir: "{{ app_dir }}"
+  register: compose_ps
+  changed_when: false
+
+- name: Afficher le statut
+  ansible.builtin.debug:
+    var: compose_ps.stdout_lines
+
+# Un conteneur Postgres local peut encore TOURNER sur l'hôte après la bascule vers le
+# VPS base : il portait `restart: always`, Docker le relance au démarrage de la
+# machine, et retirer son service du compose n'arrête pas le conteneur qu'il avait
+# créé. `--remove-orphans` ne l'attrape pas davantage.
+#
+# Le risque est précis : une base VIDE qui répond au nom `postgres` sur le réseau
+# interne. Une variable mal résolue y renverrait l'application, qui appliquerait ses
+# migrations, sèmerait l'admin, et se déclarerait en bonne santé.
+#
+# `docker rm -f` ne touche pas aux volumes nommés : le retour arrière reste entier.
+# Un nom inconnu rend 1 sans rien casser, la tâche est donc idempotente.
+- name: Retirer les conteneurs Postgres locaux résiduels
+  ansible.builtin.command:
+    cmd: >-
+      docker rm -f
+      {{ compose_project }}-postgres-1
+      {{ compose_project }}-postgres-dispatch-1
+  register: retrait_postgres_local
+  changed_when: retrait_postgres_local.rc == 0
+  failed_when: false
+  when: use_external_database | default(false)
+
+- name: Ce qui a été retiré
+  ansible.builtin.debug:
+    var: retrait_postgres_local.stdout_lines
+  when: retrait_postgres_local.stdout_lines | default([]) | length > 0

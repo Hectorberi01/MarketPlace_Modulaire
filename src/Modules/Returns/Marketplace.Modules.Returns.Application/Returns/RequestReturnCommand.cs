@@ -58,9 +58,8 @@ internal sealed class RequestReturnCommandHandler : ICommandHandler<RequestRetur
         // Le refus était 403 `returns.not_owner`, juste après un 404
         // `returns.order.not_found` : deux réponses qui, mises côte à côte, disent si un
         // identifiant de commande correspond à quelque chose. La correction est ici et
-        // pas seulement au bord, parce que cette commande est envoyée depuis DEUX hôtes
-        // — le BFF client et Marketplace.Api — et qu'une garde posée dans l'un ne
-        // couvre pas l'autre.
+        // pas seulement au bord : la commande est envoyée depuis deux surfaces, et une
+        // garde posée dans l'une ne couvre pas l'autre.
         //
         // Les trois conflits qui suivent (statut, ligne, retour déjà ouvert) ne posent
         // pas le même problème : on ne les atteint qu'en étant propriétaire.

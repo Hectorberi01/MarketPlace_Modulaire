@@ -5,14 +5,14 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <!-- Marketplace.Api cible le framework partagé ASP.NET : on référence ce framework
+  <!-- Marketplace.Host cible le framework partagé ASP.NET : on référence ce framework
        pour pouvoir réutiliser ModuleRegistry (source unique des modules) depuis les tests. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Bootstrap\Marketplace.Api\Marketplace.Api.csproj" />
+    <ProjectReference Include="..\..\src\Host\Marketplace.Host\Marketplace.Host.csproj" />
     <ProjectReference Include="..\..\src\Modules\Ordering\Marketplace.Modules.Ordering.Infrastructure\Marketplace.Modules.Ordering.Infrastructure.csproj" />
   </ItemGroup>
 

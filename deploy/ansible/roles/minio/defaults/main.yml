@@ -1,5 +1,4 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
 # MINIO — STOCKAGE OBJET DES PIÈCES KYB, SUR LA MACHINE DES DONNÉES.
 #
 # POURQUOI SUR LE VPS BASE ET NON SUR L'APPLICATIF. On vient de séparer les deux
@@ -12,7 +11,6 @@
 # (`manage_docker: false`) et il n'y a aucune raison de l'y installer pour un binaire
 # unique : ce serait un démon, un réseau virtuel et une couche de stockage de plus
 # sous des fichiers qu'on veut justement au plus près du disque.
-# ═════════════════════════════════════════════════════════════════════════════════
 
 minio_version: "RELEASE.2024-10-13T13-34-11Z"
 minio_user: minio

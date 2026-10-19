@@ -1,7 +1,7 @@
 # Variables d'environnement — Production
 
-Référence des variables attendues par le backend en **production** (le monolithe
-`api` + les 4 BFF `mobile` / `web` / `seller` / `admin`).
+Référence des variables attendues par le backend en **production** : l'hôte unique
+`api` (`Marketplace.Host`), qui sert `/api/client`, `/api/sellers` et `/api/admin`.
 
 Sources de vérité : [`.env.prod.example`](.env.prod.example),
 [`docker-compose.prod.yml`](docker-compose.prod.yml) et le template Ansible
@@ -23,7 +23,7 @@ Sources de vérité : [`.env.prod.example`](.env.prod.example),
   Voir la section [Variables fixées par le compose](#variables-fixées-par-le-compose).
 
 **Légende :** ✅ obligatoire · ⬜ optionnel (dégradation propre si vide) ·
-🔐 secret → **vault** (`group_vars/marketplace/vault.yml`, chiffré).
+🔐 secret → **vault** (prod : `group_vars/all/vault.yml`, chiffré).
 
 Deux démarrages possibles côté conteneur :
 
@@ -37,13 +37,17 @@ Deux démarrages possibles côté conteneur :
 | Variable | Oblig. | Secret | Clé .NET | Description |
 |---|:---:|:---:|---|---|
 | `MARKETPLACE_CONNECTION` | ✅ | 🔐 | `ConnectionStrings__Marketplace` | Chaîne **Npgsql** de la base (Neon/Postgres managé). Endpoint **DIRECT** (sans `-pooler`) pour les migrations EF. Ex. `Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=…;SSL Mode=Require;Channel Binding=Require`. `:?` → bloque le démarrage si absente. |
-| `REDIS_PASSWORD` | ✅ | 🔐 | (compose) `Redis__ConnectionString=redis:6379,password=…` | Mot de passe Redis (backplane SignalR + cache distribué). Fort et aléatoire. Sert aussi à lancer le conteneur `redis`. `:?`. |
-| `JWT_SIGNING_KEY` | ✅ | 🔐 | `Jwt__SigningKey` | Clé de signature des JWT, **identique** sur l'API et les 4 BFF, ≥ 32 octets. `openssl rand -base64 48`. `:?`. |
-| `ROOT_DOMAIN` | ✅ | — | (labels Traefik) | Domaine racine. Les surfaces sont des sous-domaines : `api.` `m.` `web.` `seller.` `admin.` doivent pointer (DNS A/AAAA) vers l'IP du serveur. Sert au routage, au CORS admin par défaut et aux liens e-mail. |
-| `ACME_EMAIL` | ✅ | — | (Traefik) | E-mail Let's Encrypt (émission/renouvellement TLS). `:?`. |
+| `REDIS_CONNECTION` | ✅ | — | `Redis__ConnectionString` | Assemblée par Ansible depuis `redis_host`, `redis_port` et `redis_password`. En production, Redis est **celui du VPS** : ce dépôt n'en déploie plus. Renseigner `redis_host` et `redis_network` (group_vars) — vides, le déploiement est refusé. |
+| `REDIS_INSTANCE_NAME` | ⬜ | — | `Redis__InstanceName` | Préfixe des clés, `marketplace:` par défaut. Décisif sur un Redis **partagé** avec d'autres applications du VPS. |
+| `REDIS_PASSWORD` | ⬜ | 🔐 | (entre dans `REDIS_CONNECTION`) | Mot de passe du Redis de l'hôte. Clé absente du vault = chaîne sans `password=`. En staging, sert aussi à lancer son conteneur `redis`. |
+| `JWT_SIGNING_KEY` | ✅ | 🔐 | `Jwt__SigningKey` | Clé de signature des JWT, ≥ 32 octets. `openssl rand -base64 48`. `:?`. |
+| `PLATFORM_SECRET_KEY` | ✅ | 🔐 | `Platform__SecretKey` | Chiffre (AES-256-GCM) les secrets des fournisseurs — PSP, Resend, Twilio, Meta — que la console admin enregistre en base. **32 octets exactement** : `openssl rand -base64 32`. `:?`. L'hôte refuse de démarrer sans elle, et refuse la clé de développement. |
+| `ROOT_DOMAIN` | ✅ | — | (labels Traefik) | Domaine racine. Depuis la fusion des BFF, UN seul hôte sert les trois surfaces par chemin : seul `api.` doit pointer (DNS A/AAAA) vers l'IP du serveur. Les consoles et la vitrine ont leurs propres noms complets (`seller_console_domain`, `site_domain`, `admin_console_domain`). Sert au routage, au CORS admin par défaut et aux liens e-mail. |
+| `ACME_EMAIL` | ⬜ | — | (Traefik de staging) | E-mail Let's Encrypt. **Non utilisé en production** : le proxy du VPS obtient les certificats avec SON compte ACME, et ce dépôt n'y installe aucun Traefik. |
 
-> Note : `MARKETPLACE_CONNECTION`, `REDIS_PASSWORD`, `JWT_SIGNING_KEY` sont
-> secrets → **vault**. `ROOT_DOMAIN`/`ACME_EMAIL` sont non sensibles (group_vars).
+> Note : `MARKETPLACE_CONNECTION`, `REDIS_PASSWORD`, `JWT_SIGNING_KEY` et
+> `PLATFORM_SECRET_KEY` sont secrets → **vault**. `ROOT_DOMAIN` est non sensible
+> (group_vars).
 
 ---
 
@@ -204,8 +208,13 @@ stocké dans le **vault** (`fcm_service_account_json`), écrit par Ansible dans
 
 | Variable | Oblig. | Secret | Clé .NET | Description |
 |---|:---:|:---:|---|---|
-| `ADMIN_CORS_ORIGINS` | ⬜ | — | `Cors__Origins` (bff-admin) | Origines navigateur autorisées de la console admin. Défaut : `https://admin.${ROOT_DOMAIN}`. **Jamais `localhost` en prod.** |
-| `SELLER_CORS_ORIGINS` | ⬜ | — | (non câblé en prod) | Présent dans le `.env`, mais **non injecté** par `docker-compose.prod.yml` (le tableau de bord vendeur Blazor est décommissionné). Sans effet en prod. |
+| `CLIENT_CORS_ORIGINS` | ⬜ | — | `Cors__Client__Origins` | Origines navigateur autorisées sur `/api/client` (vitrine, hub de messagerie). Vide = aucune origine acceptée. |
+| `SELLER_CORS_ORIGINS` | ⬜ | — | `Cors__Seller__Origins` | Idem sur `/api/sellers`. Défaut Ansible : `https://${SELLER_CONSOLE_DOMAIN}`. |
+| `ADMIN_CORS_ORIGINS` | ⬜ | — | `Cors__Admin__Origins` | Idem sur `/api/admin`. Défaut Ansible : `https://${ADMIN_CONSOLE_DOMAIN}`. **Jamais `localhost` en prod.** |
+
+> **Trois listes, jamais une seule.** Les trois surfaces partagent l'origine serveur de
+> l'hôte : une liste commune autoriserait la vitrine à appeler `/api/admin` depuis le
+> navigateur d'un administrateur connecté.
 | `REQUIRE_APPROVAL_BUYERS` | ⬜ | — | `Identity__Registration__RequireApprovalForBuyers` | `true` (défaut) : toute inscription publique attend l'aval d'un admin. `false` : acheteurs actifs immédiatement. |
 | `REQUIRE_APPROVAL_ADMIN_CREATED` | ⬜ | — | `Identity__Registration__RequireApprovalForAdminCreated` | `false` (défaut) : comptes créés depuis la console admin actifs d'emblée. |
 
@@ -228,31 +237,35 @@ stocké dans le **vault** (`fcm_service_account_json`), écrit par Ansible dans
 Non à renseigner — posées automatiquement par `docker-compose.prod.yml`, avec des
 **valeurs par service** :
 
-| Clé .NET | api | bff-mobile | bff-web | bff-seller | bff-admin |
-|---|:---:|:---:|:---:|:---:|:---:|
-| `ASPNETCORE_ENVIRONMENT` | `Production` | `Production` | `Production` | `Production` | `Production` |
-| `Jwt__Issuer` / `Jwt__Audience` | `marketplace` | idem | idem | idem | idem |
-| `RunMigrationsAtStartup` | **`true`** | `false` | `false` | `false` | `false` |
-| `OUTBOX_ENABLED` | *(non posé → actif)* | `false` | `false` | `false` | `false` |
-| `Cors__Origins` | — | — | — | — | `ADMIN_CORS_ORIGINS` |
-| `Notifications__Fcm__ServiceAccountPath` | fichier monté | idem | idem | idem | idem |
+| Clé .NET | api |
+|---|:---:|
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `Jwt__Issuer` / `Jwt__Audience` | `marketplace` |
+| `RunMigrationsAtStartup` | **`true`** |
+| `OUTBOX_ENABLED` | *(non posé → actif)* |
+| `Cors__{Client,Seller,Admin}__Origins` | les trois variables de la section 7 |
+| `Monitoring__Surfaces__0__Url` | `http://api:8080` |
+| `Notifications__Fcm__ServiceAccountPath` | fichier monté |
 
 Points saillants :
 
-- **Seul `api` applique les migrations** au démarrage (`RunMigrationsAtStartup=true`) ;
-  les BFF attendent qu'il soit *healthy* (`depends_on`).
-- **Seul `api` draine l'outbox** ; les BFF ont `OUTBOX_ENABLED=false` (mais peuvent
-  lire/rejouer les *dead-letters* via la console admin).
-- L'**API n'est pas exposée entièrement** : Traefik ne route que
-  `/api/payments/webhooks` et `/api/payments/return` vers `api.${ROOT_DOMAIN}` ; le
-  reste répond 404 au bord (défense en profondeur). Un nouveau webhook PSP doit être
+- L'hôte applique les migrations au démarrage et draine l'outbox : un seul processus,
+  donc aucune concurrence sur l'outbox.
+- **La surface publique est réduite aux chemins qui ont un appelant externe** :
+  Traefik ne route que `/api/client`, `/api/sellers`, `/api/admin`,
+  `/api/payments/webhooks` et `/api/payments/return` ; le reste (`/api/catalog`,
+  `/api/identity`, `/api/shops`…) répond 404 au bord. Un nouveau webhook PSP doit être
   ajouté explicitement dans les labels Traefik.
+- **Noms d'hôte** : `api.${ROOT_DOMAIN}` est canonique ; `m.`, `seller.` et `admin.`
+  restent acceptés par le même routeur tant que des builds mobiles les visent
+  (`API_BASE_URL` est figé au build).
 
 ---
 
 ## Secrets à mettre dans le vault
 
-`group_vars/marketplace/vault.yml` (chiffré `ansible-vault encrypt`) :
+`group_vars/all/vault.yml` en prod, `group_vars/marketplace/vault.yml` en staging
+(chiffré par `ansible-vault encrypt`) :
 
 `marketplace_connection`, `jwt_signing_key`, `redis_password`, `fedapay_api_key`,
 `fedapay_webhook_secret`, `r2_account_id`, `r2_access_key_id`,
@@ -273,9 +286,10 @@ Ces variables sont **vides par défaut** mais **critiques** — à renseigner av
 - [ ] `FEDAPAY_WEBHOOK_SECRET` — sans lui, **aucun paiement n'est confirmé**.
 - [ ] `FEDAPAY_API_KEY` (`sk_live_…`) + `FEDAPAY_BASE_URL=https://api.fedapay.com/v1`.
 - [ ] `RESEND_API_KEY` + `EMAIL_FROM` (domaine vérifié SPF/DKIM) + `EMAIL_APP_BASE_URL` — **sinon l'API ne démarre pas**.
-- [ ] `ROOT_DOMAIN` réel (≠ `example.com`) + DNS des 5 sous-domaines → IP serveur.
-- [ ] Base : `POSTGRES_PASSWORD` (co-hébergé) **ou** `marketplace_connection` (externe) ; `REDIS_PASSWORD`, `JWT_SIGNING_KEY`, `ACME_EMAIL`.
-- [ ] Sauvegardes DB planifiées (`deploy/postgres/backup.sh` en cron) + bucket R2 `backups` privé.
+- [ ] `ROOT_DOMAIN` réel (≠ `example.com`) + DNS de `api.` → IP serveur, plus les noms complets des consoles et de la vitrine.
+- [ ] Base : `POSTGRES_PASSWORD` (co-hébergé) **ou** `marketplace_connection` (externe) ; `JWT_SIGNING_KEY`, `PLATFORM_SECRET_KEY`.
+- [ ] Redis : `redis_host` + `redis_network` (group_vars) renseignés avec le conteneur et le réseau du VPS ; `redis_password` dans le vault si ce Redis en a un.
+- [ ] Sauvegardes DB planifiées (rôle `backup` sur le VPS base) + bucket R2 `backups` privé.
 - [ ] `ADMIN_EMAIL` + `ADMIN_PASSWORD` — pour que le **premier admin** soit créé au 1er boot de l'API.
 - [ ] R2 renseigné si tu veux du vrai stockage images/KYB.
 - [ ] Vault **chiffré** ; rien de secret en clair dans `main.yml` ou un `.env` versionné.

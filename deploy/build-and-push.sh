@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  Build LOCAL des 4 images (API + 3 BFF) + push vers un registry, pour
-#  que le VPS ne fasse QUE « pull » (aucune compilation sur le serveur).
+#  Build LOCAL de l'image de l'hôte + push vers un registry, pour que le VPS ne
+#  fasse QUE « pull » (aucune compilation sur le serveur).
 #
-#  Le VPS est en linux/amd64 : on force cette plateforme (utile depuis un
-#  Mac Apple Silicon arm64) via docker buildx.
+#  La CI n'utilise PAS ce script : elle passe par docker/build-push-action pour
+#  bénéficier du cache GitHub Actions. Les deux construisent le même Dockerfile
+#  avec les mêmes arguments — s'ils changent, changer les deux
+#  (.github/workflows/deploy.yml).
 #
-#  Prérequis :
-#    - docker buildx (inclus dans Docker Desktop)
-#    - être connecté au registry :   docker login ghcr.io   (ou docker.io)
+#  Le VPS est en linux/amd64 : on force cette plateforme (utile depuis un Mac
+#  Apple Silicon arm64) via docker buildx.
+#
+#  Prérequis : docker buildx, et `docker login ghcr.io`.
 #
 #  Usage :
 #    IMAGE_PREFIX=ghcr.io/mon-user IMAGE_TAG=staging ./deploy/build-and-push.sh
-#    IMAGE_PREFIX=docker.io/mon-user IMAGE_TAG=staging ./deploy/build-and-push.sh
+#
+#  Variables :
+#    IMAGE_PREFIX  obligatoire
+#    IMAGE_TAG     tag mobile (défaut « staging »)
+#    IMAGE_SHA     tag immuable (défaut : sha-<12 car. du commit courant>).
+#                  IMAGE_SHA=- pour ne pousser que le tag mobile.
+#    PLATFORM      défaut linux/amd64
 # =====================================================================
 set -euo pipefail
 
@@ -21,33 +30,38 @@ IMAGE_TAG="${IMAGE_TAG:-staging}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# service | projet .csproj | dll d'entrée
-SERVICES="
-api|src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj|Marketplace.Api.dll
-bff-client|src/Bff/Marketplace.Bff.Client/Marketplace.Bff.Client.csproj|Marketplace.Bff.Client.dll
-bff-seller|src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj|Marketplace.Bff.Seller.dll
-bff-admin|src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj|Marketplace.Bff.Admin.dll
-"
+PROJECT="src/Host/Marketplace.Host/Marketplace.Host.csproj"
+APP_DLL="Marketplace.Host.dll"
+
+# DEUX ÉTIQUETTES, ET LA SECONDE EST CELLE QUI PERMET DE REVENIR EN ARRIÈRE.
+# `latest`/`staging` bougent à chaque livraison : elles ne désignent pas un commit.
+# `sha-…` est immuable, donc redéployable sans rebuild et sans revert.
+if [ -z "${IMAGE_SHA:-}" ]; then
+  IMAGE_SHA="sha-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null | cut -c1-12)"
+  [ "$IMAGE_SHA" = "sha-" ] && IMAGE_SHA="-"
+fi
+
+TAGS=(-t "${IMAGE_PREFIX}/api:${IMAGE_TAG}")
+[ "$IMAGE_SHA" != "-" ] && TAGS+=(-t "${IMAGE_PREFIX}/api:${IMAGE_SHA}")
 
 # Un builder buildx dédié (multi-plateforme).
 docker buildx inspect mp-builder >/dev/null 2>&1 || docker buildx create --name mp-builder >/dev/null
 docker buildx use mp-builder
 
-echo "$SERVICES" | while IFS='|' read -r svc proj dll; do
-  [ -z "${svc:-}" ] && continue
-  img="${IMAGE_PREFIX}/${svc}:${IMAGE_TAG}"
-  echo "==> Build+push  $img   ($PLATFORM)"
-  docker buildx build \
-    --platform "$PLATFORM" \
-    -f "$ROOT/deploy/Dockerfile" \
-    --build-arg PROJECT="$proj" \
-    --build-arg APP_DLL="$dll" \
-    -t "$img" \
-    --push \
-    "$ROOT"
-done
+echo "==> Build+push  ${IMAGE_PREFIX}/api   ($PLATFORM)"
+docker buildx build \
+  --platform "$PLATFORM" \
+  -f "$ROOT/deploy/Dockerfile" \
+  --build-arg PROJECT="$PROJECT" \
+  --build-arg APP_DLL="$APP_DLL" \
+  "${TAGS[@]}" \
+  --push \
+  "$ROOT"
 
 echo ""
-echo "OK — 4 images poussées : ${IMAGE_PREFIX}/{api,bff-client,bff-seller,bff-admin}:${IMAGE_TAG}"
+echo "OK — étiquettes poussées :"
+for t in "${TAGS[@]}"; do [ "$t" != "-t" ] && echo "  $t"; done
+echo ""
 echo "Déploie ensuite sur le serveur (mode pull) :"
-echo "  cd deploy/ansible && ansible-playbook -i inventories/staging/hosts.ini site.yml --tags deploy"
+echo "  cd deploy/ansible && ansible-playbook -i inventories/staging/hosts.ini site.yml \\"
+echo "    --tags deploy -e api_image_tag=${IMAGE_SHA}"

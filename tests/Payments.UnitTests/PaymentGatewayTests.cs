@@ -17,13 +17,13 @@ public class PaymentGatewayTests
         => new(new PayPalOptions());
 
     [Fact]
-    public void Resolver_trouve_les_psp_par_nom_insensible_a_la_casse()
+    public async Task Resolver_trouve_les_psp_par_nom_insensible_a_la_casse()
     {
         var resolver = new PaymentGatewayResolver(new IPaymentGateway[] { Stripe(), PayPal() });
 
-        resolver.Resolve("stripe").IsSuccess.Should().BeTrue();
-        resolver.Resolve("PAYPAL").IsSuccess.Should().BeTrue();
-        resolver.Resolve("MtnMoney").IsFailure.Should().BeTrue();
+        (await resolver.ResolveAsync("stripe")).IsSuccess.Should().BeTrue();
+        (await resolver.ResolveAsync("PAYPAL")).IsSuccess.Should().BeTrue();
+        (await resolver.ResolveAsync("MtnMoney")).IsFailure.Should().BeTrue();
     }
 
     [Fact]

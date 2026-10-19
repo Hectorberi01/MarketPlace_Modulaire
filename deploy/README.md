@@ -1,19 +1,16 @@
-# Déploiement — Traefik + monolithe + BFF
+# Déploiement — Traefik + hôte unique
 
-Traefik est le **point d'entrée unique** (edge). Il route le trafic vers les 4 BFF
-et vers le monolithe `Marketplace.Api`, tous adossés à Postgres et Redis. Chaque
-service est une composition in-process des 25 modules ; Traefik ne fait
-qu'aiguiller, terminer la compression et appliquer en-têtes de sécurité +
-limitation de débit.
+Traefik est le **point d'entrée unique** (edge). Il route le trafic vers `Marketplace.Host`,
+seul service applicatif, adossé à Postgres et Redis. L'hôte compose les 25 modules
+in-process et sert trois surfaces par chemin ; Traefik ne fait qu'aiguiller, terminer la
+compression et appliquer en-têtes de sécurité + limitation de débit.
 
 ```
                        ┌──────────── Traefik (:80) ────────────┐
-   navigateur / app ──▶│  host-based            path-based     │
-                       │  api.localhost         /api           │──▶ Marketplace.Api ─┐
-                       │  mobile.localhost      /mobile         │──▶ Bff.Mobile       │
-                       │  web.localhost         /web            │──▶ Bff.Web          ├─▶ Postgres
-                       │  seller.localhost      /seller         │──▶ Bff.Seller       │   Redis
-                       │  admin.localhost       /admin          │──▶ Bff.Admin        ┘
+   navigateur / app ──▶│  api.localhost     /api               │──▶ Marketplace.Host ─┬─▶ Postgres
+                       │                                       │    /api/client       │   Redis
+                       │                                       │    /api/sellers      │
+                       │                                       │    /api/admin        ┘
                        └───────────────────────────────────────┘
                           dashboard : http://traefik.localhost (ou :8080)
 ```
@@ -22,31 +19,102 @@ limitation de débit.
 
 ```bash
 cd deploy
-cp .env.example .env          # puis renseigne POSTGRES_PASSWORD et JWT_SIGNING_KEY
+cp .env.example .env          # puis renseigne JWT_SIGNING_KEY et PLATFORM_SECRET_KEY
 docker compose up --build
 ```
 
-Au démarrage, `api` applique les migrations de tous les modules (`RunMigrationsAtStartup=true`),
-puis les BFF démarrent une fois l'`api` saine.
+**Postgres ne démarre pas avec la pile.** Il tourne déjà dans un conteneur sur le
+poste ; en lancer un second échoue sur le port 5434, ou — quand le port est libre —
+ouvre une base VIDE à côté de celle qui porte les données, et les migrations
+s'appliquent au mauvais endroit.
+
+Il n'y a plus de service `postgres` ici : la base tourne dans son propre conteneur.
+Pour que l'hôte la joigne, le plus propre est de **partager un réseau Docker** — pas
+de republier le port sur l'hôte.
+
+Dans le compose de la base, ajouter trois lignes :
+
+```yaml
+services:
+  db:
+    networks: [marketplace-net]      # en plus de ses réseaux existants
+
+networks:
+  marketplace-net:
+    external: true
+```
+
+Puis dans `deploy/.env` :
+
+```
+MARKETPLACE_CONNECTION=Host=db;Port=5432;Database=marketplace;Username=…;Password=…
+```
+
+`Host=db` est le NOM DU SERVICE, résolu par le DNS interne de Docker. On ne passe
+donc plus par l'hôte du tout : ni `localhost` (qui désigne le conteneur lui-même),
+ni `host.docker.internal` (qui ne résout pas partout, et qu'un port publié sur
+`127.0.0.1` refuserait de toute façon). La base reste inaccessible depuis le réseau.
+
+Le réseau `marketplace-net` porte un nom fixe, indépendant du projet Compose :
+c'est ce qui permet à un autre compose de le déclarer `external`. Lancer la pile
+applicative au moins une fois le crée ; sinon, `docker network create marketplace-net`.
+
+**MinIO ne démarre pas non plus.** Son image n'est plus tirable depuis Docker Hub,
+et Compose abandonnait toute la pile pour un stockage objet dont l'API, Redis et
+Traefik ne dépendent pas. `KYB_ENDPOINT=` vide fait retomber le stockage des pièces
+KYB sur le stub hors-ligne. Pour l'exercer réellement :
+`docker compose --profile with-minio up`, en pointant au besoin `MINIO_IMAGE` sur
+`quay.io/minio/minio` — le registre que MinIO documente.
+
+> Avant de toucher au stockage KYB, réactiver le profil : c'est le seul endroit où
+> le chemin SigV4 et les URL présignées sont exercés hors production.
+
+L'hôte applique les migrations de tous les modules au démarrage
+(`RunMigrationsAtStartup=true`) — donc sur la base que désigne cette chaîne, et sur
+aucune autre.
+
+## Répéter la production, en local
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up --build
+```
+
+L'override ne change qu'`ASPNETCORE_ENVIRONMENT`. Base, Redis et Traefik restent
+ceux du développement : le but n'est pas de reproduire le VPS, c'est de faire passer
+à l'hôte les **gardes de démarrage de production** là où l'échec ne coûte rien —
+clé JWT du dépôt, `Platform:SecretKey`, « aucun PSP configuré », « PSP réel sans
+secret de webhook », cohérence clé FedaPay / URL de base.
+
+Un démarrage refusé ici est un succès : c'est une panne de déploiement trouvée avant
+le déploiement. Ne pas donner de valeur de complaisance aux variables manquantes dans
+l'override — ce serait désactiver la répétition au moment où elle sert.
+
+N'est PAS exercé : ACME, DNS, les étiquettes Traefik du compose de production, les
+trois images des autres dépôts, et la base distante.
 
 ## Accès
 
-Deux façons d'atteindre la même surface (les `*.localhost` pointent vers 127.0.0.1) :
+Trois façons d'atteindre la même surface (les `*.localhost` pointent vers 127.0.0.1) :
 
-| Surface | Par hôte (avec Swagger)        | Par préfixe (gateway unique)      |
-|---------|--------------------------------|-----------------------------------|
-| Monolithe | http://api.localhost/swagger | http://localhost/api/...          |
-| Mobile  | http://mobile.localhost/swagger | http://localhost/mobile/...      |
-| Web     | http://web.localhost/swagger   | http://localhost/web/...          |
-| Vendeur | http://seller.localhost/swagger | http://localhost/seller/...      |
-| Admin   | http://admin.localhost/swagger | http://localhost/admin/...        |
+| Entrée | URL |
+|--------|-----|
+| Par hôte, avec Swagger | http://api.localhost/swagger |
+| Par préfixe | http://localhost/api/... |
+| Depuis un téléphone sur le LAN | http://&lt;IP de la machine&gt;/api/... |
+
+Les trois surfaces se distinguent par le chemin : `/api/client`, `/api/sellers`,
+`/api/admin`. Les routes brutes des modules (`/api/catalog`, `/api/identity`…) existent
+aussi en développement ; en production, Traefik ne publie que les trois surfaces et les
+rappels des PSP.
 
 Dashboard Traefik : http://traefik.localhost ou http://localhost:8080.
 
 ## Déployer le backend (staging / prod)
 
-Le backend = **Marketplace.Api + 4 BFF** (mobile, web, seller, admin) + Postgres +
-Redis + Traefik, décrits dans `docker-compose.staging.yml` / `docker-compose.prod.yml`.
+Le backend = **Marketplace.Host** + Postgres + Redis + Traefik, décrits dans
+`docker-compose.staging.yml` / `docker-compose.prod.yml`. En production, seuls `api` et
+`rembg` sortent de ce dépôt : Postgres vit sur un VPS dédié, Redis et Traefik sont ceux
+de la machine.
 Deux voies : **Ansible** (recommandé) ou **registry** (build local → pull serveur).
 
 ### A. Via Ansible (recommandé)
@@ -64,8 +132,10 @@ FedaPay, R2 **et Cloudinary** :
 
 ```bash
 cd deploy/ansible/inventories/staging          # ou prod
+# prod : group_vars/all/ (le groupe `database` lit le même vault)
+# staging : group_vars/marketplace/
 cp vault.example.yml group_vars/marketplace/vault.yml
-#   → renseigner postgres/neon, jwt, fedapay, r2_*, cloudinary_* …
+#   → renseigner postgres/neon, jwt, platform_secret_key, fedapay, r2_*, cloudinary_* …
 ansible-vault encrypt group_vars/marketplace/vault.yml
 ```
 
@@ -93,8 +163,9 @@ docker compose -f docker-compose.<env>.yml --env-file .env.<env> up -d --build -
 
 ### B. Via registry (build local amd64 → pull serveur)
 
-Le VPS ne compile rien : on build+push les 5 images depuis un poste (utile depuis
-un Mac arm64, le serveur étant amd64).
+Le VPS ne compile rien : on build+push l'image depuis un poste (utile depuis un
+Mac arm64, le serveur étant amd64). Deux étiquettes sont poussées — l'étiquette
+mobile (`staging`/`latest`) et `sha-<commit>`, immuable, qui est celle à déployer.
 
 ```bash
 docker login ghcr.io                                   # ou docker.io
@@ -126,17 +197,17 @@ ansible-playbook -i inventories/staging/hosts.ini site.yml --tags deploy --ask-v
 # …ou en direct sur le serveur, en ciblant les services concernés
 cd deploy
 docker compose -f docker-compose.staging.yml --env-file .env \
-  up -d --build --force-recreate api bff-seller
+  up -d --build --force-recreate api
 ```
 
-> Le traitement d'image (Cloudinary) tourne dans `bff-seller` et `api` : ce sont
-> ces deux services qu'il faut recréer après avoir renseigné les clés `CLOUDINARY_*`.
+> Le traitement d'image (Cloudinary) tourne dans `api` : c'est ce service qu'il faut
+> recréer après avoir renseigné les clés `CLOUDINARY_*`.
 
 ### Vérifier / diagnostiquer
 
 ```bash
 docker compose -f docker-compose.staging.yml ps
-docker compose -f docker-compose.staging.yml logs -f --tail=100 api bff-seller
+docker compose -f docker-compose.staging.yml logs -f --tail=100 api
 ```
 
 ## Détourage des photos produit (rembg, local)
@@ -146,7 +217,7 @@ le modèle **u2net**. Il remplace Cloudinary : pas de quota, pas de facture à l
 et les photos des vendeurs ne quittent pas le serveur.
 
 **Rien à configurer dans le cas courant.** Le service est déclaré dans les compose
-staging et prod, et l'API comme les BFF pointent dessus par défaut.
+staging et prod, et l'hôte pointe dessus par défaut.
 
 ### Le commutateur d'arrêt
 
@@ -256,7 +327,7 @@ push sur le dépôt de la console redéploie ce seul service.
 `tsc --noEmit`, puis `next build`, **avant** de construire l'image : une erreur de type
 ne produit aucune image. Après le déploiement, il attend que le conteneur soit
 `healthy` et **échoue** sinon, en affichant les 80 dernières lignes de journal — sans
-cela, un démarrage raté (secret absent, BFF injoignable) remonterait en vert.
+cela, un démarrage raté (secret absent, backend injoignable) remonterait en vert.
 
 Chaque image porte deux étiquettes : `:staging`/`:latest` (mobiles) et `:<sha>` (fixe).
 La seconde permet de savoir quel commit tourne, et de revenir en arrière sans
@@ -275,25 +346,23 @@ sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.pro
 # État et santé du conteneur
 sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod ps seller-console
 
-# La console voit-elle le BFF ? (depuis le réseau interne)
+# La console voit-elle l'hôte ? (depuis le réseau interne)
 sudo docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod \
-  exec seller-console node -e "require('http').get('http://bff-seller:8080/health',r=>console.log(r.statusCode))"
+  exec seller-console node -e "require('http').get('http://api:8080/health',r=>console.log(r.statusCode))"
 ```
 
 ## Notes
 
-- **JWT** : `JWT_SIGNING_KEY` (dans `.env`) est injecté à l'identique dans les 5
-  services via `Jwt__SigningKey` — indispensable pour que les jetons émis par
-  l'Identity soient validés partout. Les variables d'environnement priment sur
-  les `appsettings.json`, donc tes secrets locaux ne sont pas utilisés ici.
+- **JWT** : `JWT_SIGNING_KEY` (dans `.env`) est injecté via `Jwt__SigningKey`. Les
+  variables d'environnement priment sur les `appsettings.json`, donc tes secrets
+  locaux ne sont pas utilisés ici.
 - **Base de données** : la chaîne de connexion est surchargée vers le service
   `postgres` (port interne 5432). Le volume `pgdata` persiste les données.
 - **Traefik** : `api.insecure: true` et le dashboard sur `:8080` sont réservés au
   développement. Avant un déploiement public : passer en HTTPS (entrypoint
   `websecure` + résolveur ACME), retirer l'accès insecure, et restreindre le CORS
-  de la console admin (`Cors:Origins`).
-- **Outbox** : chaque service (Api + 4 BFF) embarque les modules et leurs
-  processeurs d'arrière-plan. Faire tourner les 5 en parallèle sur la même base
-  est pratique en dev ; en production, dédier le traitement d'arrière-plan à un
-  seul processus (ou désactiver les workers dans les BFF) pour éviter la
-  concurrence sur l'outbox.
+  de la console admin (`Cors:Admin:Origins`).
+- **Outbox** : l'hôte embarque les modules et leurs processeurs d'arrière-plan. Un
+  seul processus traite donc l'outbox. Si l'hôte est répliqué un jour, dédier le
+  traitement d'arrière-plan à une réplique (`OUTBOX_ENABLED=false` sur les autres)
+  pour éviter la concurrence.

@@ -5,7 +5,7 @@ Module prévu par le dossier d'architecture, pas encore implémenté dans ce soc
 Il suivra exactement le patron du module **Catalog** : quatre projets en Clean
 Architecture — `Shipping.Domain`, `Shipping.Application`, `Shipping.Infrastructure`,
 `Shipping.Contracts` — un schéma PostgreSQL dédié (`shipping`),
-un `IModuleInstaller` enregistré dans `Marketplace.Api/Modules/ModuleRegistry.cs`,
+un `IModuleInstaller` enregistré dans `Marketplace.Host/Modules/ModuleRegistry.cs`,
 et une communication vers l'extérieur uniquement via `Contracts` (appel
 in-process) ou via les `IntegrationEvents` (bus).
 

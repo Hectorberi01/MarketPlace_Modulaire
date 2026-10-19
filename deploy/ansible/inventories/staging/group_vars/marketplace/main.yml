@@ -15,6 +15,14 @@ image_tag: staging
 registry_host: ghcr.io
 registry_username: hectorberi01   # (le token va dans vault.yml : registry_token)
 
+# Staging héberge SA base et SON reverse proxy, contrairement à la production.
+backend_services:
+  - api
+  - redis
+  - rembg
+  - postgres
+  - traefik
+
 # Edge / TLS — un sous-domaine par surface sous ce root :
 #   api.marketplace-staging.hba-marketplace.fr, m., web., seller., admin.
 # (underscore INTERDIT en DNS → tiret « marketplace-staging »)
@@ -26,8 +34,6 @@ acme_caserver: https://acme-v02.api.letsencrypt.org/directory
 # Décommenter si staging cohabite avec la prod sur le même hôte :
 # traefik_http_port: 8081
 # traefik_https_port: 8443
-
-traefik_network: marketplace-staging-net
 
 # Versements FedaPay réels pour les retraits vendeur (visibles sur la console FedaPay).
 # true = appel FedaPay réel (sandbox) ; false = payout simulé (le retrait réussit sans FedaPay).
@@ -46,18 +52,9 @@ fail2ban_sshd_maxretry: 4
 # risque de se verrouiller dehors. Le rôle autorise SSH + 80/443 avant d'activer.
 enable_ufw: false
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SUPERVISION, PORTAINER, TERMINAL WEB ET ADMIN BASE : RETIRÉS LE 17/10/2026.
-#
-# La supervision vit sur un VPS dédié, avec sa propre configuration ; les trois
-# autres n'ont plus de rôle dans ce dépôt. `otel_endpoint`, `prometheus_url`,
-# `loki_url`, `grafana_*`, `portainer_url` et le bloc Alertmanager sont partis avec.
-#
-# POUR REBRANCHER LA PAGE SYSTÈME de la console sur la nouvelle machine, renseigner
-# `otel_endpoint`, `prometheus_url`, `loki_url`, `grafana_url` et `grafana_embed_url`.
-# Vides, la console masque ces panneaux et garde ses propres sondes `/health`, qui
-# ne dépendent d'aucune machine tierce.
-# ═══════════════════════════════════════════════════════════════════════════════
+# SUPERVISION SUR UN VPS DÉDIÉ ; portainer, terminal web et admin base retirés. Pour
+# rebrancher la page Système de la console : otel_endpoint, prometheus_url, loki_url,
+# grafana_url, grafana_embed_url.
 
 
 # --- E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe ---
@@ -73,7 +70,7 @@ enable_ufw: false
 
 # Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
 # Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
-# admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
+# api.${ROOT_DOMAIN} = l'hôte applicatif (backend), PAS la console Next.
 # La console (Admin_MP_Next) n'est pas encore déployée en staging. Cible réservée
 # ci-dessous : il faut (1) un enregistrement DNS A pour ce sous-domaine, et
 # (2) déployer la console derrière (service compose + Traefik). Tant que ce n'est
@@ -112,7 +109,10 @@ admin_email: "hector.adjakpa@hbatechettrade.com"
 # Un 404 applicatif est un succès : il prouve que la requête est arrivée jusqu'à
 # l'application.
 post_deploy_public_urls:
-  - "https://m.{{ root_domain }}/"
-  - "https://seller.{{ root_domain }}/"
-  - "https://admin.{{ root_domain }}/"
+  # Une URL par surface de l'hôte unique. `/geo/communes` est anonyme : un 200 prouve
+  # que Traefik route ET que l'application répond. Le routeur ne publie que les trois
+  # préfixes et les rappels PSP — une URL hors de cette liste répondrait 404.
+  - "https://api.{{ root_domain }}/api/client/geo/communes"
+  - "https://api.{{ root_domain }}/api/sellers/geo/communes"
+  - "https://api.{{ root_domain }}/api/admin/geo/communes"
   - "https://api.{{ root_domain }}/api/payments/return"

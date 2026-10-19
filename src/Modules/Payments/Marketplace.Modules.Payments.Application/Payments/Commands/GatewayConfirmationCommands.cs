@@ -53,7 +53,7 @@ internal sealed class ProcessGatewayWebhookCommandHandler : ICommandHandler<Proc
 
     public async Task<Result> Handle(ProcessGatewayWebhookCommand command, CancellationToken cancellationToken)
     {
-        var gatewayResult = _gatewayResolver.Resolve(command.Provider);
+        var gatewayResult = await _gatewayResolver.ResolveAsync(command.Provider, cancellationToken);
         if (gatewayResult.IsFailure)
         {
             return Result.Failure(gatewayResult.Error);
@@ -120,7 +120,7 @@ internal sealed class ConfirmPaymentFromRedirectCommandHandler : ICommandHandler
             return Result.Failure(Error.Conflict("payments.no_session", "Aucune session PSP rattachée à ce paiement."));
         }
 
-        var gatewayResult = _gatewayResolver.Resolve(payment.Provider);
+        var gatewayResult = await _gatewayResolver.ResolveAsync(payment.Provider, cancellationToken);
         if (gatewayResult.IsFailure)
         {
             return Result.Failure(gatewayResult.Error);

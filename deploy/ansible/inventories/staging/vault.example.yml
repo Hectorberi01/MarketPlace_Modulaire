@@ -11,6 +11,11 @@ marketplace_connection: "Host=ep-xxxx.eu-west-2.aws.neon.tech;Database=neondb;Us
 redis_password: "CHANGE_ME_STRONG_RANDOM"
 jwt_signing_key: "CHANGE_ME_LONG_RANDOM"
 
+# Chiffre les secrets des fournisseurs (PSP, Resend, Twilio, Meta) stockés en
+# base par la console admin. L'hôte refuse de démarrer sans elle.
+#   openssl rand -base64 32
+platform_secret_key: "CHANGE_ME_BASE64_32_OCTETS"
+
 # Secret de chiffrement du cookie de session de la console admin (Next).
 # Générer : openssl rand -base64 32
 admin_session_secret: "CHANGE_ME_openssl_rand_base64_32"

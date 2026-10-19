@@ -1,0 +1,28 @@
+---
+# Ce dépôt ne publie qu'UNE image : `api` (voir deploy/build-and-push.sh). Redis,
+# rembg, Traefik et Postgres viennent de registres publics et `up` les tire lui-même.
+# Les trois applications Next (console, seller-console, site) viennent d'un AUTRE
+# dépôt : on ne les tire pas, on ne les démarre pas, on ne les arrête pas.
+- name: Déploiement par registry
+  when: use_registry | default(false)
+  block:
+    - name: Connexion au registry (image privée)
+      ansible.builtin.command:
+        cmd: "docker login {{ registry_host | default('ghcr.io') }} -u {{ registry_username }} --password-stdin"
+        stdin: "{{ registry_token }}"
+      no_log: true
+      changed_when: false
+      when:
+        - registry_username is defined
+        - registry_token is defined
+
+    # Échec BLOQUANT, et sans `--ignore-pull-failures` : une image absente doit
+    # arrêter le déploiement, pas laisser la pile redémarrer sur l'ancienne.
+    - name: Récupérer l'image applicative
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }}
+          --env-file deploy/.env.{{ target_env }}
+          pull {{ registry_images | join(' ') }}
+        chdir: "{{ app_dir }}"
+      changed_when: true

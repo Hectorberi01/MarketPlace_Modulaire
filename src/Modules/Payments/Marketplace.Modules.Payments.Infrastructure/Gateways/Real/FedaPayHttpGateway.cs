@@ -34,6 +34,7 @@ public sealed class FedaPayHttpGateway : HttpPaymentGatewayBase
 
     protected override string HttpClientName => ClientName;
     protected override string WebhookSecret => _options.WebhookSecret;
+    protected override string BaseUrl => _options.BaseUrl;
     protected override string EventTypeField => "status";
 
     public override Task<GatewaySession> CreateCheckoutAsync(GatewayChargeContext context, CancellationToken ct = default)

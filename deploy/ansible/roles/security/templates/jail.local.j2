@@ -5,7 +5,7 @@ bantime  = {{ fail2ban_bantime | default('1h') }}
 findtime = {{ fail2ban_findtime | default('10m') }}
 maxretry = {{ fail2ban_maxretry | default(5) }}
 
-# Jamais bannir la boucle locale ni le réseau Docker interne (BFF, exporters…).
+# Jamais bannir la boucle locale ni le réseau Docker interne (api, exporters…).
 ignoreip = 127.0.0.1/8 ::1 172.16.0.0/12
 
 # auto : utilise /var/log/auth.log si présent (rsyslog installé par ce rôle),

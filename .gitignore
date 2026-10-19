@@ -37,21 +37,13 @@ appsettings.Local.json
 # Sûr car chiffrés AES-256 — inutiles sans le mot de passe (secret GitHub).
 # NE COMMITTER QUE s'ils commencent bien par « $ANSIBLE_VAULT ».
 #
-# ─────────────────────────────────────────────────────────────────────────────
-# LES DEUX INVENTAIRES NE RANGENT PAS LEUR VAULT AU MÊME ENDROIT.
+# LES DEUX INVENTAIRES NE RANGENT PAS LEUR VAULT AU MÊME ENDROIT : staging sous
+# group_vars/marketplace/, prod sous group_vars/all/ (son groupe `database` doit lire
+# les mêmes secrets). Les quatre chemins sont dé-ignorés, y compris ceux qui n'existent
+# pas : une négation sur un chemin absent ne coûte rien, et un vault non couvert
+# disparaîtrait en silence le jour où il sortirait de l'index.
 #
-# Staging le met sous `group_vars/marketplace/`, prod sous `group_vars/all/`. La
-# seule exception écrite ici visait `prod/group_vars/marketplace/vault.yml`, un
-# chemin qui n'existe pas : le vault de PRODUCTION n'était donc couvert par aucune
-# négation. Il survit uniquement parce qu'il est déjà SUIVI — git ignore les règles
-# pour un fichier indexé. Le jour où il serait retiré de l'index puis rajouté, il
-# disparaîtrait en silence, et la CI déploierait sans secrets sans que rien ne le
-# dise avant l'échec.
-#
-# Les deux emplacements réels sont donc listés, plus celui qui n'existe pas encore
-# côté prod : une négation sur un chemin absent ne coûte rien, et couvre le jour où
-# l'un des deux inventaires s'aligne sur l'autre.
-# ─────────────────────────────────────────────────────────────────────────────
+# Le chiffrement, lui, est vérifié par scripts/verifier-vaults.sh (exécuté par la CI).
 !deploy/ansible/inventories/staging/group_vars/all/vault.yml
 !deploy/ansible/inventories/staging/group_vars/marketplace/vault.yml
 !deploy/ansible/inventories/prod/group_vars/all/vault.yml

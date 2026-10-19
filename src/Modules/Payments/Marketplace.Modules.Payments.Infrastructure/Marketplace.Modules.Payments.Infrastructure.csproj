@@ -5,6 +5,8 @@
     <ProjectReference Include="..\Marketplace.Modules.Payments.Application\Marketplace.Modules.Payments.Application.csproj" />
     <ProjectReference Include="..\Marketplace.Modules.Payments.Contracts\Marketplace.Modules.Payments.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Marketplace.BuildingBlocks.Infrastructure\Marketplace.BuildingBlocks.Infrastructure.csproj" />
+    <!-- Registre des fournisseurs : seuls les Contracts, jamais le domaine de Platform. -->
+    <ProjectReference Include="..\..\Platform\Marketplace.Modules.Platform.Contracts\Marketplace.Modules.Platform.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

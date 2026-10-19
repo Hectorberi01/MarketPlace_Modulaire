@@ -2,6 +2,11 @@
 name: marketplace
 
 x-app-env: &app-env
+
+  ASPNETCORE_ENVIRONMENT: "Development"
+
+  Platform__SecretKey: "${PLATFORM_SECRET_KEY:-}"
+
   ConnectionStrings__Marketplace: "${MARKETPLACE_CONNECTION:-Host=postgres;Port=5432;Database=${POSTGRES_DB:-marketplace};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}}"
   Redis__ConnectionString: "redis:6379"
   Jwt__Issuer: "marketplace"
@@ -13,18 +18,8 @@ x-app-env: &app-env
   Payments__FedaPay__WebhookSecret: "${FEDAPAY_WEBHOOK_SECRET:-}"
   # Versements réels FedaPay (retraits vendeur). true = payout FedaPay réel (clé requise) ; false = simulé.
   Payments__FedaPay__EnablePayouts: "${FEDAPAY_ENABLE_PAYOUTS:-false}"
-  # Cloudflare R2 : stockage des pièces KYB. Renseigné → adaptateur R2 réel ; vide → stub hors-ligne.
-  # ── Pièces KYB : le MinIO local, par défaut ────────────────────────────────
-  #
-  # Nouvelle section « Storage:KybStorage », qui ne nomme plus un fournisseur.
-  # L'ancienne « Storage:CloudflareR2 » reste lue en repli par l'installeur, le
-  # temps que tous les environnements aient migré.
-  #
-  # Les valeurs par défaut visent le conteneur `minio` : un `docker compose up`
-  # suffit désormais à exercer le vrai chemin de stockage, là où c'était le stub
-  # hors-ligne qui répondait. Pour viser R2 depuis un poste de développement,
-  # renseigner MINIO_ENDPOINT à vide et R2_ACCOUNT_ID.
-  Storage__KybStorage__ServiceUrl: "${KYB_ENDPOINT:-http://minio:9000}"
+
+  Storage__KybStorage__ServiceUrl: "${KYB_ENDPOINT-http://minio:9000}"
   Storage__KybStorage__AccountId: "${R2_ACCOUNT_ID:-}"
   Storage__KybStorage__AccessKeyId: "${KYB_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}"
   Storage__KybStorage__SecretAccessKey: "${KYB_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}"
@@ -39,16 +34,9 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__BucketName: "${R2_MEDIA_BUCKET_NAME:-}"
   Storage__CloudflareR2Media__PublicBaseUrl: "${R2_MEDIA_PUBLIC_BASE_URL:-}"
   Storage__CloudflareR2Media__KeyPrefix: "${R2_MEDIA_KEY_PREFIX:-}"
+
   # ── UN BUCKET PAR USAGE DE MÉDIA ───────────────────────────────────────────
-  #
-  # NOMMER un bucket suffit à le faire CRÉER au démarrage. Il ne reçoit des
-  # téléversements que le jour où son domaine public est renseigné LUI AUSSI :
-  # un bucket R2 fraîchement créé est PRIVÉ, et l'API S3 ne sait pas lui rattacher
-  # de domaine — c'est une étape manuelle du tableau de bord Cloudflare.
-  #
-  # Tant que l'URL manque, l'usage retombe sur le bucket par défaut ci-dessus, et
-  # les images continuent de s'afficher. C'est le point : la bascule se fait en
-  # renseignant une variable, pas en redéployant du code.
+
   Storage__CloudflareR2Media__AutoCreateBuckets: "${R2_MEDIA_AUTO_CREATE_BUCKETS:-true}"
   Storage__CloudflareR2Media__Buckets__CategoryImage__BucketName: "${R2_MEDIA_BUCKET_CATEGORIES:-}"
   Storage__CloudflareR2Media__Buckets__CategoryImage__PublicBaseUrl: "${R2_MEDIA_URL_CATEGORIES:-}"
@@ -62,24 +50,18 @@ x-app-env: &app-env
   Storage__CloudflareR2Media__Buckets__ShopBanner__PublicBaseUrl: "${R2_MEDIA_URL_SHOPS:-}"
   Storage__CloudflareR2Media__Buckets__Avatar__BucketName: "${R2_MEDIA_BUCKET_AVATARS:-}"
   Storage__CloudflareR2Media__Buckets__Avatar__PublicBaseUrl: "${R2_MEDIA_URL_AVATARS:-}"
+
   # PIÈCES JOINTES DE CONVERSATION ET DE LITIGE. Le bucket est séparé pour qu'on
-  # PUISSE lui retirer son domaine public le jour où la lecture passera en URL
-  # présignée — sans retoucher un seul appelant. Tant qu'un domaine y est rattaché,
-  # ces images restent lisibles par quiconque possède l'URL.
   Storage__CloudflareR2Media__Buckets__ChatAttachment__BucketName: "${R2_MEDIA_BUCKET_CHAT:-}"
   Storage__CloudflareR2Media__Buckets__ChatAttachment__PublicBaseUrl: "${R2_MEDIA_URL_CHAT:-}"
 
 x-app-depends: &app-depends
-  postgres:
-    condition: service_healthy
   redis:
     condition: service_healthy
-  # Le bucket KYB doit exister avant le premier téléversement, sinon l'erreur est
-  # « NoSuchBucket » — qu'on attribue longtemps à une signature fausse plutôt qu'à
-  # un bucket manquant. `service_completed_successfully` : minio-init crée le
-  # bucket puis s'arrête, il n'a pas d'état « sain » à attendre.
+
   minio-init:
     condition: service_completed_successfully
+    required: false
 
 x-healthcheck: &app-healthcheck
   test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
@@ -90,27 +72,6 @@ x-healthcheck: &app-healthcheck
 
 services:
   # ---------------- Infrastructure ----------------
-  postgres:
-    image: postgres:16-alpine
-    # Marge de connexions : plusieurs hôtes (API + 4 BFF) ouvrent des pools.
-    command: ["postgres", "-c", "max_connections=300"]
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      # Port hôte 5434 -> 5432 du conteneur (5434 pour ne pas heurter un Postgres
-      # local sur 5432/5433). Connexion client : localhost:5434.
-      - "5434:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [marketplace-net]
-
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
@@ -123,21 +84,9 @@ services:
       retries: 10
     networks: [marketplace-net]
 
-  # ---------------- Stockage objet (pièces KYB) ----------------
-  #
-  # POURQUOI IL EST ICI ALORS QU'IL N'Y ÉTAIT PAS.
-  #
-  # En développement, `IKybDocumentStorage` se résolvait vers le stub hors-ligne :
-  # aucun identifiant configuré, donc aucun stockage réel. Le chemin qui téléverse
-  # une pièce d'identité, signe une requête en SigV4 et relit par URL présignée
-  # n'était donc JAMAIS exercé ailleurs qu'en production — et c'est exactement le
-  # genre d'écart qui laisse survivre un défaut jusqu'à ce qu'il compte.
-  #
-  # Le même service tourne sur le VPS base en production, en systemd plutôt qu'en
-  # conteneur. Ce qui est identique, et c'est ce qui compte, c'est le protocole :
-  # SigV4 en path-style, sur un endpoint configurable.
   minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    profiles: [with-minio]
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-10-13T13-34-11Z}
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -165,7 +114,8 @@ services:
   # échoue sur « NoSuchBucket » — une erreur qu'on met du temps à attribuer à un
   # bucket manquant plutôt qu'à une signature fausse.
   minio-init:
-    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    profiles: [with-minio]
+    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2024-10-08T09-37-26Z}
     depends_on:
       minio:
         condition: service_healthy
@@ -194,82 +144,26 @@ services:
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks: [marketplace-net]
 
-  # ---------------- Monolithe modulaire ----------------
+  # ---------------- Monolithe modulaire (hôte unique) ----------------
   api:
     restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        PROJECT: src/Bootstrap/Marketplace.Api/Marketplace.Api.csproj
-        APP_DLL: Marketplace.Api.dll
+        PROJECT: src/Host/Marketplace.Host/Marketplace.Host.csproj
+        APP_DLL: Marketplace.Host.dll
     environment:
       <<: *app-env
-      # L'Api est le migrateur : elle applique les migrations de tous les modules
-      # au démarrage. Les BFF attendent qu'elle soit saine.
+      # L'hôte applique les migrations de tous les modules au démarrage.
       RunMigrationsAtStartup: "true"
+      # Origines navigateur en développement, une liste par surface.
+      Cors__Client__Origins: "${CLIENT_CORS_ORIGINS:-http://localhost:3002}"
+      Cors__Seller__Origins: "${SELLER_CORS_ORIGINS:-http://localhost:3001}"
+      Cors__Admin__Origins: "${ADMIN_CORS_ORIGINS:-http://localhost:3000}"
+      Monitoring__Surfaces__0__Name: "API"
+      Monitoring__Surfaces__0__Url: "http://api:8080"
     depends_on: *app-depends
-    healthcheck: *app-healthcheck
-    networks: [marketplace-net]
-
-  # ---------------- BFF ----------------
-  bff-client:
-    restart: unless-stopped
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Client/Marketplace.Bff.Client.csproj
-        APP_DLL: Marketplace.Bff.Client.dll
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
-      OUTBOX_ENABLED: "false"
-      # Origines du site en développement (Vite). Vide = repli FERMÉ.
-      Cors__Origins: "${CLIENT_WEB_ORIGINS:-http://localhost:5173}"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck: *app-healthcheck
-    networks: [marketplace-net]
-
-
-  bff-seller:
-    restart: unless-stopped
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Seller/Marketplace.Bff.Seller.csproj
-        APP_DLL: Marketplace.Bff.Seller.dll
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
-      OUTBOX_ENABLED: "false"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck: *app-healthcheck
-    networks: [marketplace-net]
-
-  bff-admin:
-    restart: unless-stopped
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        PROJECT: src/Bff/Marketplace.Bff.Admin/Marketplace.Bff.Admin.csproj
-        APP_DLL: Marketplace.Bff.Admin.dll
-    environment:
-      <<: *app-env
-      RunMigrationsAtStartup: "false"
-      # L'outbox ne tourne que dans l'API : évite N×hôtes connexions Postgres.
-      OUTBOX_ENABLED: "false"
-    depends_on:
-      api:
-        condition: service_healthy
     healthcheck: *app-healthcheck
     networks: [marketplace-net]
 
@@ -278,6 +172,5 @@ networks:
     name: marketplace-net
 
 volumes:
-  pgdata:
   redisdata:
   miniodata:

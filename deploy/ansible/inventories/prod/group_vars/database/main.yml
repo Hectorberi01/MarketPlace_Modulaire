@@ -1,103 +1,67 @@
 ---
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PLUS DE BASE SUPPLÉMENTAIRE À CRÉER.
-#
-# `postgres_extra_databases: [dispatch]` créait la base du service de dispatch, retiré
-# le 09/10/2026. La liste vide ne SUPPRIME rien : la base `dispatch` existe encore sur
-# cette machine avec ses données. Son abandon se décide après l'export de la phase 0 —
-# `DROP DATABASE dispatch`, à la main, voir docs/25-retrait-livraison.md.
-# ═══════════════════════════════════════════════════════════════════════════════
-postgres_extra_databases: []
-
-# La sauvegarde complète ne tourne pas à chaque passage du playbook : un pg_dump
-# des deux bases plus l'envoi vers R2 n'a rien d'idempotent. Le runbook la lance
-# explicitement, une fois :  -e backup_run_now=true
-backup_run_now: false
-
+# VPS base : PostgreSQL, MinIO (pièces KYB) et les sauvegardes. Rien d'applicatif.
 manage_docker: false
 
-# Le durcissement de l'hôte, lui, est OBLIGATOIRE ici plus qu'ailleurs.
+# `postgres_extra_databases: [dispatch]` créait la base du service de dispatch,
+# retiré le 09/10/2026. La liste vide ne SUPPRIME rien : la base `dispatch` existe
+# encore sur cette machine avec ses données. `DROP DATABASE dispatch` est une
+# décision manuelle — voir docs/25-retrait-livraison.md.
+postgres_extra_databases: []
+
+# Le durcissement de l'hôte est obligatoire ici plus qu'ailleurs.
 enable_security: true
 enable_ufw: true
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# ÉCOUTE : LE TUNNEL, ET RIEN D'AUTRE.
-#
-# `listen_addresses` ne contient ni `*` ni l'adresse publique. Une erreur de
-# pare-feu ne peut donc pas exposer la base : il n'y a pas de socket à atteindre.
-# `localhost` est conservé pour les tâches locales — pg_dump, psql d'astreinte —
-# qui n'ont aucune raison de passer par le réseau.
-# ─────────────────────────────────────────────────────────────────────────────────
+# ÉCOUTE : LE TUNNEL, ET RIEN D'AUTRE. Ni `*` ni l'adresse publique — une erreur de
+# pare-feu ne peut donc pas exposer la base, il n'y a pas de socket à atteindre.
+# `localhost` reste pour les tâches locales (pg_dump, psql d'astreinte).
 postgres_listen_addresses: "127.0.0.1,{{ wg_db_ip }}"
 
-# Seul le réseau du tunnel est autorisé dans pg_hba, en `scram-sha-256`.
-# Le chiffrement est celui de WireGuard ; l'authentification reste exigée, parce
-# qu'un tunnel dit d'où vient la connexion, pas qui la fait.
+# Seul le réseau du tunnel est autorisé dans pg_hba, en scram-sha-256 : un tunnel dit
+# d'où vient la connexion, pas qui la fait.
 postgres_allowed_cidr: "{{ wg_subnet }}"
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# DIMENSIONNEMENT
-#
-# À AJUSTER SELON LA MACHINE RÉELLE. Les valeurs ci-dessous visent un VPS de 8 Go
-# dédié à la base. Elles ne sont pas des constantes : `shared_buffers` à un quart
-# de la RAM et `effective_cache_size` à trois quarts sont les repères usuels, et
-# ils supposent que rien d'autre ne tourne sur la machine — ce qui est justement
-# l'intérêt de l'avoir séparée.
-#
-# `max_connections` : QUATRE pools depuis le 17/10/2026, et la marge reste.
-#
-# C'étaient six : l'api, les quatre BFF, plus le service `dispatch` sur SA base — or
-# `max_connections` est une limite de CLUSTER, pas de base. Le BFF livreur et le
-# dispatch sont partis avec le périmètre livraison, pgweb avec l'administration base.
-# Restent 4 × 15 = 60, plus le pg_dump toutes les six heures, les trois connexions
-# réservées au superutilisateur, et l'exporter de métriques du VPS de supervision
-# quand il sera rebranché (une connexion par base découverte).
-#
-# LA VALEUR N'EST PAS RÉDUITE POUR AUTANT. Descendre `max_connections` ne libère
-# presque rien — c'est `work_mem` × connexions qui coûte — et laisse sans marge le
-# jour où un service revient. 100 se dépassait sous charge à six pools ; à quatre, la
-# marge est confortable, et Npgsql renvoie des refus plutôt que des lenteurs quand
-# elle manque.
-# ─────────────────────────────────────────────────────────────────────────────────
+# DIMENSIONNEMENT — À AJUSTER SELON LA MACHINE RÉELLE. Valeurs pour un VPS de 8 Go
+# dédié à la base : shared_buffers au quart de la RAM, effective_cache_size aux trois
+# quarts. Ces repères supposent que rien d'autre ne tourne ici.
 postgres_ram_mb: 8192
 postgres_shared_buffers: "2GB"
 postgres_effective_cache_size: "6GB"
 postgres_work_mem: "8MB"
 postgres_maintenance_work_mem: "512MB"
+
+# `max_connections` est une limite de CLUSTER, pas de base. Depuis la fusion des BFF
+# dans un hôte unique, il n'y a plus qu'UN pool applicatif : 1 × npgsql_max_pool_size
+# (15), plus le pg_dump toutes les six heures, les trois connexions réservées au
+# superutilisateur, et l'exporter de métriques quand il sera rebranché.
+#
+# LA VALEUR N'EST PAS RÉDUITE POUR AUTANT : descendre max_connections ne libère
+# presque rien — c'est work_mem × connexions qui coûte — et laisse sans marge le jour
+# où un service revient.
 postgres_max_connections: 140
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# COLLATION — À TRANCHER AVANT LA PREMIÈRE MISE EN SERVICE, PAS APRÈS.
-#
-# `LC_COLLATE` est figé à la création du cluster et ne se change que par un
-# dump/restore complet. En `C`, le tri se fait en ordre d'octets : « Émile » passe
-# après « Zoé », et « é » n'est pas « e ». Sur une place de marché francophone,
-# c'est faux dans chaque liste de produits et de vendeurs.
-#
-# `fr_FR.UTF-8` trie correctement le français. `C.UTF-8` est un compromis : encodage
-# correct, tri toujours par octets. Le choix ci-dessous suppose que la locale est
-# générée sur l'hôte — le rôle s'en charge.
-# ─────────────────────────────────────────────────────────────────────────────────
+# COLLATION — À TRANCHER AVANT LA PREMIÈRE MISE EN SERVICE. `LC_COLLATE` est figé à la
+# création du cluster et ne se change que par un dump/restore complet. En `C`, le tri
+# est en ordre d'octets : « Émile » passe après « Zoé ». Sur une place de marché
+# francophone, c'est faux dans chaque liste de produits et de vendeurs. Le rôle génère
+# la locale sur l'hôte.
 postgres_locale: "fr_FR.UTF-8"
 postgres_encoding: "UTF8"
 
-# ─────────────────────────────────────────────────────────────────────────────────
-# SAUVEGARDE
-#
-# Hors de tout répertoire synchronisé par Ansible : `rsync --delete` du rôle
-# applicatif efface tout ce qu'il ne connaît pas, et il ne connaît pas les dumps.
-# ─────────────────────────────────────────────────────────────────────────────────
 # Stockage objet des pièces KYB, sur cette machine — voir roles/minio.
 enable_minio: true
 
+# SAUVEGARDE, hors de tout répertoire synchronisé par Ansible : le `rsync --delete`
+# du rôle applicatif efface ce qu'il ne connaît pas, et il ne connaît pas les dumps.
 enable_backup: true
 
-# Destinataire des messages de cron. Défini ICI et non repris d'`admin_email` :
-# celui-ci vit dans group_vars/marketplace/, donc invisible de ce groupe — la
-# variable serait « undefined » et le rôle échouerait sur la machine qui porte la
-# base. C'est exactement le piège qui a rendu nécessaire le déplacement du vault
-# vers group_vars/all/.
+# La sauvegarde complète ne tourne pas à chaque passage du playbook : un pg_dump plus
+# l'envoi vers R2 n'a rien d'idempotent. Le runbook la lance explicitement, une fois :
+#   -e backup_run_now=true
+backup_run_now: false
+
+# Destinataire des messages de cron. Défini ICI et non repris d'`admin_email`, qui
+# vit dans group_vars/marketplace/ et serait « undefined » sur cette machine.
 backup_alert_email: "hector.adjakpa@hbatechettrade.com"
 backup_dir: /var/backups/marketplace
 backup_retention_days: 7

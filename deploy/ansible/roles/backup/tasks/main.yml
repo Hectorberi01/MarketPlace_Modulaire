@@ -1,5 +1,4 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
 # LA SAUVEGARDE, ENFIN PLANIFIÉE.
 #
 # `backup.sh` existait, correct, depuis des mois — et n'était installé, appelé ni
@@ -8,7 +7,6 @@
 #
 # IL TOURNE SUR LE VPS BASE, pas sur l'applicatif : c'est là qu'est la base, et un
 # `pg_dump` local n'a besoin ni du réseau ni d'un mot de passe.
-# ═════════════════════════════════════════════════════════════════════════════════
 
 - name: Installer les outils nécessaires
   ansible.builtin.apt:
@@ -19,14 +17,12 @@
     update_cache: true
     cache_valid_time: 3600
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE RÉPERTOIRE DE SAUVEGARDE EST HORS DE `app_dir`, ET C'EST ESSENTIEL.
 #
 # Le défaut précédent le plaçait dans /opt/marketplace/backups. Or le rôle
 # applicatif y synchronise le dépôt avec `rsync --delete`, dont la liste
 # d'exclusions ne mentionne pas `backups` : chaque déploiement aurait effacé les
 # dumps — au moment précis où l'on a le plus besoin d'en avoir un.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Créer le répertoire de sauvegarde
   ansible.builtin.file:
     path: "{{ backup_dir }}"
@@ -96,7 +92,6 @@
     cron_file: marketplace-backup
     state: present
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # ET LA SURVEILLANCE DE LA SAUVEGARDE ELLE-MÊME.
 #
 # Une sauvegarde planifiée qui échoue en silence est indiscernable d'une sauvegarde
@@ -105,7 +100,6 @@
 # code non nul sinon. Cron envoie alors un e-mail à MAILTO, sans dépendre de
 # Prometheus ni d'Alertmanager, qui sont sur l'AUTRE machine et peuvent être en
 # panne au même moment.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Surveiller l'âge de la dernière sauvegarde
   ansible.builtin.cron:
     name: "controle age sauvegarde postgres"

@@ -3,7 +3,7 @@ namespace Marketplace.BuildingBlocks.Application.Observability;
 /// <summary>
 /// Abstractions de métriques métier, exposées ici (BuildingBlocks) pour que les
 /// modules puissent les émettre sans dépendre de l'hôte de composition
-/// (<c>Marketplace.Api</c>), où vivent les implémentations concrètes basées sur
+/// (<c>Marketplace.Host</c>), où vivent les implémentations concrètes basées sur
 /// <see cref="System.Diagnostics.Metrics.Meter"/>.
 ///
 /// Règle : jamais de donnée personnelle en paramètre destiné à devenir un label

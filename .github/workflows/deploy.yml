@@ -1,62 +1,147 @@
 name: Backend · build & deploy
 
-# CI/CD du backend (API + BFF) :
-#   push sur develop_staging → environnement STAGING (tag d'image « staging »)
-#   push sur develop         → environnement PROD    (tag d'image « latest »)
+# CI/CD de l'hôte unique (Marketplace.Host, une seule image : `api`).
 #
-# Enchaînement : garde-fou .NET (build + tests) → build & push des 5 images sur
-# GHCR → déploiement Ansible sur le VPS (le serveur ne fait que PULL, use_registry).
+#   push sur develop_staging → STAGING
+#   push sur develop         → PROD
+#   workflow_dispatch        → cible choisie, et REDÉPLOIEMENT d'un tag existant
+#                              (champ « image_tag ») sans recompiler : c'est le
+#                              chemin de retour arrière.
 #
-# Secrets requis (Settings → Secrets and variables → Actions, environnement « deploy ») :
-#   DEPLOY_SSH_KEY_STAGING  clé privée SSH autorisée sur le VPS de recette
-#   DEPLOY_SSH_KEY_PROD     clé privée SSH autorisée sur le VPS de production
-#   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible (commun aux deux)
+# Enchaînement : contexte → garde-fou .NET (build + tests) → build & push de
+# l'image sur GHCR → déploiement Ansible (le serveur ne fait que PULL).
 #
-# UNE CLÉ PAR ENVIRONNEMENT, ET C'EST DÉLIBÉRÉ.
+# DEUX ÉTIQUETTES PAR IMAGE. `latest`/`staging` bougent à chaque livraison et ne
+# désignent donc aucun commit. `sha-<12>` est immuable : c'est elle qui est
+# DÉPLOYÉE, et elle seule permet de revenir en arrière sans revert ni rebuild.
 #
-# Un secret unique `DEPLOY_SSH_KEY` servait auparavant aux deux cibles. Deux
-# serveurs, deux hébergeurs (Hetzner pour la recette, OVH pour la production),
-# deux utilisateurs (`root:22` et `ubuntu:8022`) : rien ne garantissait qu'une même
-# clé soit installée sur les deux. Réparer l'accès à l'un cassait silencieusement
-# l'autre, et la panne n'apparaissait qu'à la livraison suivante — sur la mauvaise
-# branche, au mauvais moment.
+# Secrets attendus dans l'environnement GitHub « deploy » :
+#   GHCR_TOKEN              PAT write:packages
+#   DEPLOY_SSH_KEY_STAGING  clé privée SSH du VPS de recette
+#   DEPLOY_SSH_KEY_PROD     clé privée SSH du VPS de production
+#   DEPLOY_SSH_KEY          clé commune, utilisée en repli
+#   ANSIBLE_VAULT_PASSWORD  mot de passe du vault Ansible
 #
-# Séparer les clés supprime ce couplage : toucher à la recette ne peut plus
-# atteindre la production.
+# UNE CLÉ PAR ENVIRONNEMENT : deux serveurs, deux hébergeurs, deux utilisateurs.
+# Avec un secret unique, réparer l'accès à la recette cassait la production en
+# silence, et la panne n'apparaissait qu'à la livraison suivante.
 
 on:
   push:
     branches: [develop_staging, develop]
+    # Un push qui ne touche QUE de la documentation ne redéploie pas.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".editorconfig"
   workflow_dispatch:
+    inputs:
+      environnement:
+        description: Cible du déploiement
+        type: choice
+        default: staging
+        options: [staging, prod]
+      image_tag:
+        description: "Redéployer une image DÉJÀ publiée (ex. sha-1a2b3c4d5e6f). Vide = construire depuis ce commit."
+        required: false
+        default: ""
 
 concurrency:
-  group: backend-deploy-${{ github.ref_name }}
+  group: backend-deploy-${{ github.event.inputs.environnement || github.ref_name }}
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   IMAGE_PREFIX: ghcr.io/hectorberi01
-  # develop → prod (latest) ; sinon staging.
-  IMAGE_TAG: ${{ github.ref_name == 'develop' && 'latest' || 'staging' }}
-  ENV_NAME: ${{ github.ref_name == 'develop' && 'prod' || 'staging' }}
 
 jobs:
+  contexte:
+    name: Contexte
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.calcul.outputs.env_name }}
+      tag_mobile: ${{ steps.calcul.outputs.tag_mobile }}
+      tag_deploye: ${{ steps.calcul.outputs.tag_deploye }}
+      construire: ${{ steps.calcul.outputs.construire }}
+    steps:
+      - name: Déduire cible, étiquettes et mode
+        id: calcul
+        env:
+          ENV_ENTREE: ${{ github.event.inputs.environnement }}
+          TAG_ENTREE: ${{ github.event.inputs.image_tag }}
+          BRANCHE: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+
+          # La cible vient du formulaire si le déclenchement est manuel, de la
+          # branche sinon. Aucun repli de prod sur staging ou l'inverse.
+          if [ -n "${ENV_ENTREE:-}" ]; then
+            env_name="$ENV_ENTREE"
+          elif [ "$BRANCHE" = "develop" ]; then
+            env_name="prod"
+          else
+            env_name="staging"
+          fi
+
+          if [ "$env_name" = "prod" ]; then tag_mobile="latest"; else tag_mobile="staging"; fi
+          tag_commit="sha-$(printf '%s' "$COMMIT" | cut -c1-12)"
+
+          # Un tag saisi à la main désigne une image déjà sur GHCR : on ne compile
+          # rien, on ne construit rien, on redéploie. Sinon on construit ce commit
+          # et on déploie son étiquette immuable, pas l'étiquette mobile.
+          if [ -n "${TAG_ENTREE:-}" ]; then
+            tag_deploye="$TAG_ENTREE"
+            construire="false"
+          else
+            tag_deploye="$tag_commit"
+            construire="true"
+          fi
+
+          {
+            echo "env_name=$env_name"
+            echo "tag_mobile=$tag_mobile"
+            echo "tag_deploye=$tag_deploye"
+            echo "construire=$construire"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Cible            : $env_name"
+          echo "Image déployée   : api:$tag_deploye"
+          if [ "$construire" = "true" ]; then
+            echo "Étiquette mobile : api:$tag_mobile (poussée, non déployée)"
+          else
+            echo "REDÉPLOIEMENT d'une image existante — ni compilation ni build."
+          fi
+
   build-test:
     name: Garde-fou .NET (build + tests)
+    needs: contexte
+    if: needs.contexte.outputs.construire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
       - run: dotnet restore Marketplace.sln
       - run: dotnet build Marketplace.sln -c Release --no-restore
+      # Les tests d'intégration utilisent Testcontainers : Docker est présent sur
+      # le runner ubuntu-latest, aucune étape n'est nécessaire pour l'activer.
       - run: dotnet test Marketplace.sln -c Release --no-build --verbosity minimal
 
-  images:
-    name: Build & push images (GHCR)
-    needs: build-test
+  image:
+    name: Build & push de l'image (GHCR)
+    needs: [contexte, build-test]
+    if: needs.contexte.outputs.construire == 'true'
     runs-on: ubuntu-latest
-    # Secrets stockés dans l'environnement « deploy » (GHCR_TOKEN, etc.).
     environment: deploy
     permissions:
       contents: read
@@ -64,6 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+
       - name: Préflight — GHCR_TOKEN présent ?
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -73,6 +159,7 @@ jobs:
             exit 1
           fi
           echo "GHCR_TOKEN présent (longueur ${#GHCR_TOKEN})."
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -80,61 +167,68 @@ jobs:
           # PAT (write:packages) si défini, sinon le token intégré. Le PAT évite le
           # 403 quand les packages existent déjà hors du dépôt.
           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
-      - name: build-and-push.sh (api + 4 BFF, linux/amd64)
-        run: |
-          chmod +x deploy/build-and-push.sh
-          ./deploy/build-and-push.sh
-        env:
-          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-          PLATFORM: linux/amd64
+
+      # Mêmes arguments que deploy/build-and-push.sh (build local) : s'ils
+      # changent, changer les deux.
+      - name: api — linux/amd64, deux étiquettes
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            PROJECT=src/Host/Marketplace.Host/Marketplace.Host.csproj
+            APP_DLL=Marketplace.Host.dll
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/api:${{ needs.contexte.outputs.tag_mobile }}
+            ${{ env.IMAGE_PREFIX }}/api:${{ needs.contexte.outputs.tag_deploye }}
+          # Cache partagé entre exécutions : la restauration NuGet et la
+          # publication dominent le temps de build.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
-    name: Déploiement Ansible (${{ github.ref_name == 'develop' && 'prod' || 'staging' }})
-    needs: images
+    name: Déploiement Ansible (${{ needs.contexte.outputs.env_name }})
+    needs: [contexte, image]
+    # `image` est volontairement SAUTÉ lors d'un redéploiement : on accepte
+    # « skipped », jamais « failure ».
+    if: ${{ !cancelled() && needs.contexte.result == 'success' && needs.image.result != 'failure' }}
     runs-on: ubuntu-latest
-    # Secrets stockés dans l'environnement « deploy » : DEPLOY_SSH_KEY_STAGING,
-    # DEPLOY_SSH_KEY_PROD et ANSIBLE_VAULT_PASSWORD.
     environment: deploy
+    env:
+      ENV_NAME: ${{ needs.contexte.outputs.env_name }}
+      TAG_DEPLOYE: ${{ needs.contexte.outputs.tag_deploye }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # Un vault déchiffré par mégarde part en clair au commit suivant : .gitignore
+      # exempte nommément les vaults de staging et de prod, et ne vérifie rien.
+      - name: Garde-fou — aucun vault suivi en clair
+        run: ./scripts/verifier-vaults.sh
+
       - name: Installer Ansible + collections
         run: |
           pip install --upgrade ansible
           ansible-galaxy collection install -r deploy/ansible/requirements.yml
+
       - name: Clé SSH + fichier vault
         env:
-          # Passées par l'environnement, jamais interpolées dans le script : une
-          # clé privée injectée directement dans le shell finirait dans les traces
-          # d'exécution au premier `set -x`.
+          # Passés par l'environnement, jamais interpolés dans le script : un
+          # secret injecté dans le shell finit dans les traces au premier `set -x`.
           SSH_KEY_STAGING: ${{ secrets.DEPLOY_SSH_KEY_STAGING }}
           SSH_KEY_PROD: ${{ secrets.DEPLOY_SSH_KEY_PROD }}
-          # Clé COMMUNE, utilisée en repli quand aucune clé propre à l'environnement
-          # n'est définie. Voir le commentaire du script.
           SSH_KEY_COMMON: ${{ secrets.DEPLOY_SSH_KEY }}
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
 
-          # ─────────────────────────────────────────────────────────────────────
-          # DEUX CONVENTIONS ACCEPTÉES, DANS CET ORDRE.
-          #
-          #   1. DEPLOY_SSH_KEY_STAGING / DEPLOY_SSH_KEY_PROD — une clé par cible.
-          #      Préférable : révoquer l'accès à la recette ne touche pas à la
-          #      production, et une clé compromise n'ouvre qu'un seul serveur.
-          #
-          #   2. DEPLOY_SSH_KEY — une clé commune aux deux.
-          #
-          # Le repli existe parce que le second cas est celui qui est en place, et
-          # qu'imposer un renommage de secrets pour faire passer un déploiement est
-          # une friction inutile. Poser un jour les clés spécifiques suffira à les
-          # faire prendre : aucune modification de ce fichier ne sera nécessaire.
-          #
-          # Aucun repli d'un environnement SUR L'AUTRE, en revanche : livrer en
-          # production avec la clé de recette n'aurait aucun sens.
-          # ─────────────────────────────────────────────────────────────────────
+          # Deux conventions acceptées, dans cet ordre : une clé par cible
+          # (DEPLOY_SSH_KEY_STAGING / _PROD), sinon la clé commune
+          # DEPLOY_SSH_KEY. Aucun repli d'un environnement sur l'autre.
           if [ "$ENV_NAME" = "prod" ]; then
             DEPLOY_KEY="${SSH_KEY_PROD:-$SSH_KEY_COMMON}"
             SECRET_NAME="DEPLOY_SSH_KEY_PROD (ou DEPLOY_SSH_KEY)"
@@ -151,55 +245,38 @@ jobs:
           fi
 
           if [ -z "$DEPLOY_KEY" ]; then
-            # ─────────────────────────────────────────────────────────────────
-            # On rapporte l'état des DEUX secrets, jamais leur contenu.
-            #
-            # « Absent » seul ne distingue pas les trois causes réelles : secret
-            # jamais créé, créé sous un autre nom, ou créé dans un autre
-            # environnement que « deploy » — ce dernier cas étant le plus fréquent,
-            # GitHub proposant l'onglet « Environments » à côté des secrets du dépôt.
-            #
-            # Si l'AUTRE secret est visible, l'environnement est bien appliqué et le
-            # problème se réduit à un nom. S'ils sont tous deux absents, ils ont été
-            # déposés ailleurs.
-            # ─────────────────────────────────────────────────────────────────
+            # On rapporte l'état des TROIS secrets, jamais leur contenu :
+            # « absent » seul ne distingue pas un secret jamais créé, créé sous un
+            # autre nom, ou créé dans un autre environnement que « deploy ».
             echo "::error::Secret $SECRET_NAME absent ou vide pour l'environnement « $ENV_NAME »."
             echo "État des secrets vus par ce job (environnement « deploy ») :"
             echo "  DEPLOY_SSH_KEY_STAGING : $([ -n "$SSH_KEY_STAGING" ] && echo 'présent' || echo 'ABSENT')"
             echo "  DEPLOY_SSH_KEY_PROD    : $([ -n "$SSH_KEY_PROD" ] && echo 'présent' || echo 'ABSENT')"
             echo "  DEPLOY_SSH_KEY         : $([ -n "$SSH_KEY_COMMON" ] && echo 'présent' || echo 'ABSENT')"
             echo ""
-            echo "Si les deux sont ABSENTS, ils ne sont pas dans le bon périmètre."
             echo "Les secrets d'un ENVIRONNEMENT ne sont lisibles que par les jobs qui le déclarent :"
             echo "ce job déclare « deploy ». Un secret rangé sous « staging » ou « prod » ne sera pas vu."
-            echo ""
-            echo "Le plus simple : les créer comme secrets DU DÉPÔT —"
-            echo "  Settings → Secrets and variables → Actions → onglet « Secrets » → New repository secret"
-            echo "Ils sont alors visibles quel que soit l'environnement du job."
+            echo "Le plus simple : Settings → Secrets and variables → Actions → New repository secret."
             echo "Vérifier aussi qu'il s'agit d'un « secret » et non d'une « variable »."
             exit 1
           fi
 
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > "$RUNNER_TEMP/vault.pass"
+
+          if [ -z "${VAULT_PASSWORD:-}" ]; then
+            echo "::error::Secret ANSIBLE_VAULT_PASSWORD absent — toutes les variables du vault seraient « undefined »."
+            exit 1
+          fi
+          printf '%s' "$VAULT_PASSWORD" > "$RUNNER_TEMP/vault.pass"
           chmod 600 "$RUNNER_TEMP/vault.pass"
 
-          # ─────────────────────────────────────────────────────────────────────
-          # CONTRÔLE DE LA CLÉ — l'échec doit se produire ICI, pas 30 secondes plus
-          # tard sous la forme d'un « Permission denied (publickey) » d'Ansible.
-          #
-          # Ce message est le même que la clé soit ILLISIBLE (secret tronqué, collé
-          # avec des retours chariot Windows, en-tête manquant) ou simplement ABSENTE
-          # du `authorized_keys` du serveur. Deux causes très différentes, un seul
-          # symptôme : on perd un temps considérable à chercher du mauvais côté.
-          #
-          # `ssh-keygen -y` échoue si la clé privée n'est pas exploitable, ce qui
-          # tranche immédiatement entre les deux. L'EMPREINTE affichée n'est pas un
-          # secret : elle se compare directement à la sortie de
-          #     ssh-keygen -lf /root/.ssh/authorized_keys
-          # exécutée sur le serveur.
-          # ─────────────────────────────────────────────────────────────────────
+          # L'ÉCHEC DOIT SE PRODUIRE ICI, pas 30 secondes plus tard sous la forme
+          # d'un « Permission denied (publickey) » d'Ansible — message identique
+          # que la clé soit illisible (tronquée, CRLF, en-tête manquant) ou
+          # simplement absente du authorized_keys du serveur. `ssh-keygen -y`
+          # tranche entre les deux. L'empreinte n'est pas un secret : elle se
+          # compare à `ssh-keygen -lf /root/.ssh/authorized_keys` sur le serveur.
           if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub 2>/dev/null; then
             echo "::error::$SECRET_NAME illisible — clé privée tronquée, mal collée ou protégée par passphrase."
             echo "Le secret doit contenir la clé ENTIÈRE, lignes BEGIN/END comprises, sans passphrase."
@@ -209,30 +286,62 @@ jobs:
           echo "Empreinte de la clé de déploiement :"
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
           echo "Elle doit figurer dans ~/.ssh/authorized_keys du serveur cible."
+
+      - name: Vérifier que l'image à déployer existe sur GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Un tag saisi à la main peut être faux. Sans ce contrôle, Ansible part,
+          # tire une référence inexistante, et la pile s'arrête à mi-chemin.
+          jeton=$(printf '%s' "$GHCR_TOKEN" | base64 -w0)
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                 -H "Authorization: Bearer $jeton" \
+                 "https://ghcr.io/v2/${IMAGE_PREFIX#ghcr.io/}/api/manifests/${TAG_DEPLOYE}" \
+                 -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json")
+          case "$code" in
+            200)
+              echo "${IMAGE_PREFIX}/api:${TAG_DEPLOYE} présent sur GHCR." ;;
+            404)
+              echo "::error::${IMAGE_PREFIX}/api:${TAG_DEPLOYE} introuvable sur GHCR."
+              exit 1 ;;
+            *)
+              # Un 401/403/5xx ne dit RIEN sur l'existence de l'image : c'est le
+              # contrôle qui a échoué, pas le déploiement. Bloquer ici
+              # transformerait une panne du registre en panne de livraison.
+              echo "::warning::Contrôle du registre non concluant (HTTP $code) — on continue." ;;
+          esac
+
       - name: ansible-playbook (tags deploy)
         working-directory: deploy/ansible
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
           # docker,setup : installe Docker si absent (idempotent).
-          # deploy : synchronise le code, génère l'env, pull les images, up la stack.
-          # La supervision, Portainer, le terminal web et dbadmin ont été retirés du
-          #   dépôt le 17/10/2026 : la supervision vit sur un VPS dédié, avec sa propre
-          #   configuration. Il n'y a plus de tag annexe à passer ici.
-          # --limit : LE VPS BASE N'EST PAS ENCORE DANS LE PÉRIMÈTRE DE LA CI.
+          # deploy : synchronise le code, génère l'env, pull l'image, up la pile.
           #
-          # L'inventaire de production déclare désormais deux groupes,
-          # `marketplace` et `database`. Le second n'a pas la clé de déploiement de
-          # la CI dans ses authorized_keys : sans cette limite, chaque exécution
-          # se termine par « unreachable=1 » sur prod-db-1 et un code de sortie non
-          # nul, alors que le déploiement applicatif s'est bien passé.
+          # `api_image_tag` surcharge le tag de l'hôte SEUL : les consoles et la
+          # vitrine, construites par d'autres dépôts, gardent leur tag mobile.
           #
-          # Le VPS base se pilote pour l'instant depuis un poste, avec
+          # --limit : le VPS base n'est pas dans le périmètre de la CI. Sa clé de
+          # déploiement n'y est pas posée ; sans cette limite chaque exécution finit
+          # en « unreachable=1 » alors que le déploiement applicatif a réussi. Le VPS
+          # base se pilote depuis un poste :
           #   ansible-playbook -i inventories/prod/hosts.ini site.yml --limit database
-          # Retirer cette ligne le jour où la clé de la CI y sera posée — et pas
-          # avant, sinon on troque une erreur franche contre un déploiement rouge
-          # que plus personne ne regardera.
           ansible-playbook -i "inventories/${ENV_NAME}/hosts.ini" site.yml \
             --limit marketplace \
             --tags docker,setup,security,deploy \
+            -e "api_image_tag=${TAG_DEPLOYE}" \
             --vault-password-file "$RUNNER_TEMP/vault.pass"
+
+      - name: Récapitulatif
+        if: always()
+        run: |
+          {
+            echo "### Déploiement ${ENV_NAME}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image déployée | \`${IMAGE_PREFIX}/api:${TAG_DEPLOYE}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Retour arrière | Actions → ce workflow → *Run workflow* → \`image_tag\` = l'étiquette \`sha-…\` précédente |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Marketplace.Api.Modules;
+using Marketplace.Host.Modules;
 using Marketplace.BuildingBlocks.Application;
 using Marketplace.BuildingBlocks.Infrastructure;
 using Marketplace.Modules.Fraud.Contracts;

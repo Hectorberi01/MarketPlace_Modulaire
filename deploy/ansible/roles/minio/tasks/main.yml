@@ -1,10 +1,8 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
 # MINIO SUR LE VPS BASE — pièces KYB.
 #
 # Ce rôle installe un binaire, pose un service, crée un bucket, et programme un
 # miroir vers R2. Il ne publie rien : ni Traefik, ni port ouvert sur Internet.
-# ═════════════════════════════════════════════════════════════════════════════════
 
 - name: Créer le compte de service
   ansible.builtin.user:
@@ -126,14 +124,12 @@
   register: minio_mb
   changed_when: "'Bucket created' in minio_mb.stdout"
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE BUCKET RESTE PRIVÉ, ET ON LE VÉRIFIE PLUTÔT QUE DE LE SUPPOSER.
 #
 # `mc anonymous set none` est idempotent et c'est le défaut de MinIO — mais c'est
 # aussi le réglage dont dépend le fait qu'une pièce d'identité ne soit pas lisible
 # par qui devine son nom. Un défaut sur lequel on compte sans l'écrire est un défaut
 # qu'un `mc anonymous set download` posé un soir de débogage effacera en silence.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Interdire tout accès anonyme au bucket
   ansible.builtin.command: "mc anonymous set none local/{{ minio_bucket_kyb }}"
   changed_when: false
@@ -148,7 +144,6 @@
     - minio_version_out.rc != 0
     - "'already' not in (minio_version_out.stderr | default(''))"
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # UN COMPTE POUR L'APPLICATION, DISTINCT DU COMPTE RACINE.
 #
 # L'application téléverse et relit des pièces KYB. Elle n'a aucune raison de pouvoir
@@ -159,7 +154,6 @@
 # La politique se limite au bucket KYB, en lecture et écriture. La suppression est
 # volontairement absente : `RemoveKybDocument` refuse déjà d'effacer une pièce
 # vérifiée, et il n'y a pas de raison que le droit existe au niveau du stockage.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Décrire la politique de l'application
   ansible.builtin.copy:
     dest: "{{ minio_config_dir }}/politique-kyb.json"

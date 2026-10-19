@@ -1,7 +1,5 @@
-# ═════════════════════════════════════════════════════════════════════════════════
 # Fichier généré par Ansible (rôle wireguard) — NE PAS ÉDITER À LA MAIN.
 # Machine : {{ inventory_hostname }} ({{ 'applicatif' if wg_is_app else 'base' }})
-# ═════════════════════════════════════════════════════════════════════════════════
 
 [Interface]
 Address = {{ wg_self_ip }}/{{ wg_prefix | default(24) }}

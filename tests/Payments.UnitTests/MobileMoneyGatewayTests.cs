@@ -19,7 +19,7 @@ public class MobileMoneyGatewayTests
     }
 
     [Fact]
-    public void Le_resolveur_trouve_momo_et_moov()
+    public async Task Le_resolveur_trouve_momo_et_moov()
     {
         var resolver = new PaymentGatewayResolver(new IPaymentGateway[]
         {
@@ -28,8 +28,8 @@ public class MobileMoneyGatewayTests
             Moov()
         });
 
-        resolver.Resolve("mtnmomo").IsSuccess.Should().BeTrue();
-        resolver.Resolve("MOOV").IsSuccess.Should().BeTrue();
+        (await resolver.ResolveAsync("mtnmomo")).IsSuccess.Should().BeTrue();
+        (await resolver.ResolveAsync("MOOV")).IsSuccess.Should().BeTrue();
     }
 
     [Fact]

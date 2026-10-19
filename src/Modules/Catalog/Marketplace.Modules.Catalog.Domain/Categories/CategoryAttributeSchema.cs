@@ -46,82 +46,33 @@ public sealed record CategoryAttributeDefinition(
     decimal? Max);
 
 /// <summary>
-/// ═════════════════════════════════════════════════════════════════════════════════
-/// LE SCHÉMA D'ATTRIBUTS D'UNE CATÉGORIE, ENFIN LU.
+/// Schéma d'attributs d'une catégorie : lu, validé à l'écriture, et appliqué aux
+/// attributs dynamiques de chaque produit de la catégorie.
 ///
-/// `Category.AttributeSchema` existait depuis l'origine : une colonne `jsonb`, une
-/// entrée dans les formulaires d'administration, un champ transporté par les commandes
-/// de création et de modification. Quinze occurrences dans le dépôt, TOUTES en
-/// écriture ou en transport. Aucune lecture. Aucune validation. Le champ n'était même
-/// pas vérifié comme JSON avant d'atteindre la colonne — une saisie fautive donnait un
-/// 500 opaque.
-///
-/// Les attributs dynamiques des produits n'étaient donc contraints par rien : deux
-/// vendeurs de la même catégorie livraient des clés incompatibles (« couleur »,
-/// « Couleur », « color »), et les facettes de recherche ne pouvaient s'appuyer sur
-/// aucune garantie.
-///
-/// CE TYPE REND LE SCHÉMA EXÉCUTOIRE : il le lit, le valide à l'écriture, et contrôle
-/// les attributs de chaque produit contre celui de SA catégorie.
-///
-/// ─────────────────────────────────────────────────────────────────────────────────
-/// POURQUOI PAS JSON SCHEMA.
-///
-/// JSON Schema saurait tout exprimer, au prix d'une dépendance, d'un vocabulaire que
-/// l'administrateur devrait apprendre, et de messages d'erreur écrits pour des
-/// développeurs (« #/properties/couleur: does not match pattern »). Le besoin ici est
-/// étroit et connu : une liste de champs typés, requis ou non, avec des valeurs
-/// admises. Un format explicite tient en trente lignes, se saisit dans un formulaire,
-/// et produit des messages qu'un vendeur comprend.
-///
-/// FORMAT ATTENDU (jsonb de la colonne `attribute_schema`) :
+/// Format du jsonb `attribute_schema` :
 ///
 ///   {
 ///     "allowUnknown": false,
 ///     "attributes": [
-///       { "key": "couleur",  "label": "Couleur", "type": "enum",
-///         "required": true,  "values": ["rouge", "bleu", "noir"] },
-///       { "key": "poids",    "label": "Poids",   "type": "number",
-///         "required": false, "unit": "g", "min": 0, "max": 50000 },
-///       { "key": "bio",      "label": "Issu de l'agriculture biologique", "type": "boolean" }
+///       { "key": "couleur", "label": "Couleur", "type": "enum",
+///         "required": true, "values": ["rouge", "bleu"] },
+///       { "key": "poids", "label": "Poids", "type": "number",
+///         "required": false, "unit": "g", "min": 0, "max": 50000 }
 ///     ]
 ///   }
 ///
-/// ─────────────────────────────────────────────────────────────────────────────────
-/// CHAQUE CATÉGORIE DÉFINIT LE SIEN, ET HÉRITE DE CEUX DE SES ANCÊTRES.
+/// Format explicite plutôt que JSON Schema : le besoin est étroit, et les messages
+/// d'erreur doivent rester lisibles par un vendeur.
 ///
-/// ─────────────────────────────────────────────────────────────────────────────────
-/// CE PARAGRAPHE DISAIT L'INVERSE, ET IL A ÉTÉ VRAI. Il annonçait « il n'y a pas
-/// d'héritage », et l'argumentait : un schéma qu'on lit d'un seul endroit vaut mieux
-/// qu'un schéma qu'on déduit, et le prix — « couleur » redéfini dans dix catégories —
-/// était accepté.
+/// Une catégorie hérite des schémas de ses ancêtres, et LA COMPOSITION SE FAIT À LA
+/// LECTURE, jamais en base : chaque catégorie ne stocke que ce qu'elle déclare, et
+/// <see cref="ResolvedCategorySchema"/> recompose la branche depuis le chemin
+/// matérialisé.
 ///
-/// Le prix s'est révélé plus lourd que prévu. Une place de marché pose ses attributs
-/// COMMUNS en haut de l'arbre — marque, garantie, pays de fabrication — et la
-/// répétition ne tenait pas : soit on les recopiait dans chaque feuille, avec des
-/// libellés et des bornes qui divergeaient dès la deuxième, soit on ne les posait nulle
-/// part. C'est la seconde qui s'est produite.
-///
-/// LA COMPOSITION SE FAIT À LA LECTURE, JAMAIS EN BASE. Chaque catégorie ne stocke que
-/// ce qu'elle déclare ; <see cref="ResolvedCategorySchema"/> recompose la branche
-/// depuis le chemin matérialisé. Un attribut posé sur un parent est donc attendu, à
-/// l'instant même, dans toutes les feuilles dessous — sans repasser sur aucune d'elles.
-///
-/// L'OBJECTION DE L'ANCIEN PARAGRAPHE RESTE VALABLE, ET ELLE EST TRAITÉE. Ajouter un
-/// attribut haut dans l'arbre rendrait d'un coup invalides tous les produits des
-/// branches en dessous, sans qu'aucun vendeur n'ait rien fait. C'est exactement ce que
-/// `CategorySchemaCompatibilityGuard` refuse : un schéma ne peut plus se durcir contre
-/// les fiches qui existent déjà sous lui.
-/// ─────────────────────────────────────────────────────────────────────────────────
-///
-/// ─────────────────────────────────────────────────────────────────────────────────
-/// LE SCHÉMA VIDE N'INTERDIT RIEN.
-///
-/// Toutes les catégories existantes portent `{}`. Un schéma vide laisse donc passer
-/// n'importe quels attributs, et aucun produit déjà en base ne devient invalide le
-/// jour où ce contrôle entre en service. C'est en renseignant le schéma d'une
-/// catégorie qu'un administrateur décide d'y appliquer une contrainte.
-/// ═════════════════════════════════════════════════════════════════════════════════
+/// Un schéma VIDE n'interdit rien — toutes les catégories existantes portent `{}`,
+/// donc aucun produit en base ne devient invalide. Et
+/// `CategorySchemaCompatibilityGuard` refuse qu'un schéma se durcisse contre les
+/// fiches déjà publiées sous lui.
 /// </summary>
 public sealed class CategoryAttributeSchema
 {

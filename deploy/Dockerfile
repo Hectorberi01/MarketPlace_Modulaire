@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Dockerfile unique paramétré : sert à construire le monolithe (Marketplace.Api)
-# comme chacun des 4 BFF. Le projet à publier et son DLL d'entrée sont passés en
-# arguments de build (PROJECT / APP_DLL) depuis docker-compose.
+# Dockerfile paramétré : construit l'hôte (Marketplace.Host). Le projet à publier
+# et son DLL d'entrée sont passés en arguments de build (PROJECT / APP_DLL) par le
+# compose, par deploy/build-and-push.sh et par le workflow de CI.
 #
 # Contexte de build attendu : la RACINE du dépôt (pour disposer de
 # Directory.Build.props / Directory.Packages.props et de tous les modules).
@@ -16,15 +16,14 @@ WORKDIR /src
 # Copie de toute la solution (gestion centralisée des packages + graphe de projets).
 COPY . .
 
-# Cache NuGet partagé (BuildKit) : les 5 images et les rebuilds réutilisent les
-# packages déjà téléchargés → restores quasi instantanés après la 1re fois.
+# Cache NuGet partagé (BuildKit) : les rebuilds réutilisent les packages déjà
+# téléchargés → restores quasi instantanés après la 1re fois.
 #
-# sharing=locked : `docker compose build` construit les 5 images EN PARALLÈLE
-# (BuildKit bake), or le cache par défaut est en accès CONCURRENT (sharing=shared).
-# Cinq `dotnet restore` écrivant ensemble dans le même cache se marchent dessus et
-# NuGet échoue sur « Could not find file .../xxxxx.tmp ». `locked` sérialise l'accès
-# au cache (un restore à la fois), sans le désactiver — la compilation, elle, reste
-# parallèle.
+# sharing=locked, et ce n'est pas devenu inutile avec l'hôte unique : `docker
+# compose build` peut encore construire plusieurs images en parallèle (BuildKit
+# bake), et deux `dotnet restore` écrivant ensemble dans le même cache font
+# échouer NuGet sur « Could not find file .../xxxxx.tmp ». `locked` sérialise
+# l'accès au cache sans le désactiver ; la compilation reste parallèle.
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "${PROJECT}"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \

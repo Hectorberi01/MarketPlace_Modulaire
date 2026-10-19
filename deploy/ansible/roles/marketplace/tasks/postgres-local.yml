@@ -1,0 +1,61 @@
+---
+# pg_stat_statements sur le Postgres CO-HÉBERGÉ uniquement. Sur le VPS base, c'est le
+# rôle postgres_host qui s'en charge par sa configuration.
+#
+# L'attente vient AVANT le test, et le test est bloquant : si le psql tombait pendant
+# le démarrage de Postgres, sa sortie vide faisait conclure « non préchargé » et
+# Ansible redémarrait la base — sous les pieds d'une API en train de migrer.
+- name: Activer pg_stat_statements
+  when: postgres_password is defined
+  block:
+    - name: Attendre que Postgres réponde
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+          exec -T postgres pg_isready -U {{ postgres_user | default('postgres') }}
+        chdir: "{{ app_dir }}"
+      register: pg_ready
+      retries: 12
+      delay: 5
+      until: pg_ready.rc == 0
+      changed_when: false
+
+    - name: Vérifier si pg_stat_statements est déjà préchargé
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+          exec -T postgres psql -U {{ postgres_user | default('postgres') }} -tAc "SHOW shared_preload_libraries;"
+        chdir: "{{ app_dir }}"
+      register: pg_preload
+      changed_when: false
+
+    # shared_preload_libraries n'est lu qu'au démarrage du conteneur.
+    - name: Redémarrer Postgres pour charger shared_preload_libraries
+      ansible.builtin.command:
+        cmd: "docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }} restart postgres"
+        chdir: "{{ app_dir }}"
+      when: "'pg_stat_statements' not in pg_preload.stdout"
+      changed_when: true
+
+    - name: Réattendre après le redémarrage
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+          exec -T postgres pg_isready -U {{ postgres_user | default('postgres') }}
+        chdir: "{{ app_dir }}"
+      register: pg_ready_apres
+      retries: 12
+      delay: 5
+      until: pg_ready_apres.rc == 0
+      changed_when: false
+
+    - name: Créer l'extension pg_stat_statements
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -f deploy/{{ compose_file }} --env-file deploy/.env.{{ target_env }}
+          exec -T postgres psql -U {{ postgres_user | default('postgres') }}
+          -d {{ postgres_db | default('marketplace') }}
+          -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+        chdir: "{{ app_dir }}"
+      register: pg_ext
+      changed_when: "'CREATE EXTENSION' in pg_ext.stdout"

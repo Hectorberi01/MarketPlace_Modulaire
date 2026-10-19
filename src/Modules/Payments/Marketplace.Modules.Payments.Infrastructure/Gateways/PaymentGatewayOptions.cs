@@ -188,3 +188,39 @@ public sealed class MoovOptions
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(MerchantId) && !string.IsNullOrWhiteSpace(ApiKey);
 }
+
+/// <summary>
+/// Réglages KkiaPay (section « Payments:Kkiapay »). KkiaPay ne publie PAS d'API
+/// REST : l'acheteur paie dans un widget JavaScript, et le serveur n'apprend le
+/// résultat que par rappel. D'où l'absence de BaseUrl — il n'y a rien à appeler.
+/// </summary>
+public sealed class KkiapayOptions
+{
+    /// <summary>Clé publique, transmise au navigateur dans les paramètres du widget.</summary>
+    public string PublicKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Secret du tableau de bord KkiaPay, renvoyé TEL QUEL dans l'en-tête
+    /// x-kkiapay-secret. Ce n'est pas une signature HMAC du corps : on le compare.
+    /// </summary>
+    public string WebhookSecret { get; set; } = string.Empty;
+
+    /// <summary>Devise du compte marchand (UEMOA : XOF).</summary>
+    public string Currency { get; set; } = "XOF";
+
+    /// <summary>
+    /// Widget en bac à sable. VRAI PAR DÉFAUT : en sandbox aucun argent ne bouge,
+    /// alors que le rappel de succès arrive quand même. Le défaut inverse ferait
+    /// d'un oubli de configuration un encaissement fictif réputé réussi.
+    /// </summary>
+    public bool Sandbox { get; set; } = true;
+
+    /// <summary>URL où renvoyer l'acheteur après le widget, optionnelle.</summary>
+    public string CallbackUrl { get; set; } = string.Empty;
+
+    /// <summary>Vrai si la clé publique est renseignée (sinon on reste en stub).</summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(PublicKey);
+
+    /// <summary>Vrai si cette configuration peut encaisser de l'argent RÉEL.</summary>
+    public bool CanCollectRealMoney => IsConfigured && !Sandbox;
+}

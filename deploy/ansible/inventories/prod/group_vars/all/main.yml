@@ -4,8 +4,17 @@ target_env: prod
 app_db_name: HbaExpressDb
 app_db_user: HbaExpressUser
 
+npgsql_max_pool_size: 15
+
+# Stockage objet des pièces KYB sur le VPS base — voir roles/minio.
 minio_region: "us-east-1"
 minio_api_port: 9000
 minio_bucket_kyb: hbaexpress-kyb
 
 use_minio_for_kyb: false
+
+wg_db_ip: "10.10.0.2"
+wg_app_ip: "10.10.0.1"
+wg_subnet: "10.20.0.0/24"
+
+enable_wireguard: false

@@ -79,7 +79,17 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SLN="$REPO_ROOT/Marketplace.sln"
 ANSIBLE_DIR="$REPO_ROOT/deploy/ansible"
 INVENTORY="$ANSIBLE_DIR/inventories/$ENV_NAME/hosts.ini"
-VAULT="$ANSIBLE_DIR/inventories/$ENV_NAME/group_vars/marketplace/vault.yml"
+# Les deux inventaires ne rangent pas leur vault au même endroit : prod sous
+# group_vars/all/ (le groupe `database` doit le lire aussi), staging sous
+# group_vars/marketplace/. On prend celui qui existe.
+VAULT=""
+for candidat in \
+  "$ANSIBLE_DIR/inventories/$ENV_NAME/group_vars/all/vault.yml" \
+  "$ANSIBLE_DIR/inventories/$ENV_NAME/group_vars/marketplace/vault.yml"; do
+  [ -f "$candidat" ] && { VAULT="$candidat"; break; }
+done
+# Aucun des deux : on nomme le chemin attendu pour le message d'erreur plus bas.
+[ -n "$VAULT" ] || VAULT="$ANSIBLE_DIR/inventories/$ENV_NAME/group_vars/all/vault.yml"
 
 # --------------------------- pré-vérifs ------------------------------
 step "Pré-vérifications ($ENV_NAME)"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# ═════════════════════════════════════════════════════════════════════════════════
 # Généré par Ansible (rôle minio) — NE PAS ÉDITER À LA MAIN.
 #
 # MIROIR DU BUCKET KYB VERS R2.
@@ -13,7 +12,6 @@
 # objet effacé ici ne doit pas disparaître de la copie. Une suppression accidentelle
 # de pièce KYB doit rester rattrapable, et c'est précisément ce qu'un miroir
 # symétrique détruirait.
-# ═════════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 log() { printf '%s  %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }

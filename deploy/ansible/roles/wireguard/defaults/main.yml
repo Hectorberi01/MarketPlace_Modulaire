@@ -8,7 +8,6 @@ wg_prefix: 24
 wg_app_ip: "10.20.0.1"
 wg_db_ip: "10.20.0.2"
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE RELANCE-CONNEXION, ET POURQUOI IL N'EST POSÉ QUE D'UN CÔTÉ.
 #
 # `PersistentKeepalive` envoie un paquet vide toutes les N secondes pour maintenir
@@ -20,5 +19,4 @@ wg_db_ip: "10.20.0.2"
 # Le poser d'aucun côté donne des tunnels qui « marchent » puis se taisent après
 # quelques minutes d'inactivité : la panne la plus difficile à diagnostiquer, parce
 # qu'elle disparaît dès qu'on teste.
-# ═════════════════════════════════════════════════════════════════════════════════
 wg_keepalive: 25

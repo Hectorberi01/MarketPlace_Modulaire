@@ -52,6 +52,11 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         var mtnOptions = BindMtnMomoOptions(configuration);
         var moovOptions = BindMoovOptions(configuration);
         var fedapayOptions = BindFedaPayOptions(configuration);
+        var kkiapayOptions = BindKkiapayOptions(configuration);
+        // Ces singletons ne servent plus aux ENCAISSEMENTS (le résolveur passe les
+        // options qu'il vient de lire). Ils restent pour FedaPayPayoutGateway, qui
+        // injecte FedaPayOptions et dont le choix est encore fait au démarrage —
+        // voir plus bas.
         services.AddSingleton(stripeOptions);
         services.AddSingleton(paypalOptions);
         services.AddSingleton(mtnOptions);
@@ -59,84 +64,47 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         services.AddSingleton(fedapayOptions);
 
         // ─────────────────────────────────────────────────────────────────────────
-        // LE GARDE-FOU LE PLUS IMPORTANT DE TOUT LE PROJET.
+        // LE CHOIX DE LA PASSERELLE A QUITTÉ LE CONTENEUR, PAS LE GARDE-FOU.
         //
-        // AVANT : chaque PSP non configuré retombait SILENCIEUSEMENT sur une passerelle
-        // SIMULÉE. Or les clés sont vides par défaut dans appsettings.json. Un
-        // déploiement qui oubliait d'injecter les secrets démarrait donc normalement…
-        // et simulait TOUS les paiements :
+        // Les passerelles étaient choisies ICI, au démarrage : en production, une
+        // passerelle SIMULÉE n'était jamais enregistrée. Ce mécanisme ne peut plus
+        // tenir dès que les clés se règlent depuis la console — le conteneur ne
+        // décide pas de ce qui changera après son démarrage.
         //
-        //   • SimulatedPaymentGateway.GetStatusAsync() renvoie TOUJOURS « Captured » ;
-        //   • RefundAsync() renvoie TOUJOURS « Success » ;
-        //   • la vérification de signature des webhooks est court-circuitée.
-        //
-        // Autrement dit : la plateforme encaissait des commandes marquées PAYÉES sans
-        // qu'un seul franc ne bouge, et acceptait n'importe quel faux webhook. Aucune
-        // erreur, aucun log, aucun symptôme — jusqu'à ce qu'un vendeur réclame l'argent
-        // d'une vente qui n'a jamais été payée.
-        //
-        // DÉSORMAIS : en PRODUCTION, une passerelle simulée n'est JAMAIS enregistrée.
-        // Un PSP non configuré est simplement ABSENT du conteneur, et le résolveur
-        // renvoie une erreur franche (« Prestataire de paiement non pris en charge »).
-        // Un paiement impossible vaut infiniment mieux qu'un paiement imaginaire.
-        //
-        // Et si AUCUNE passerelle réelle n'est configurée en production, on refuse de
-        // démarrer (voir plus bas). Une plateforme qui ne boote pas se répare en cinq
-        // minutes ; une plateforme qui simule ses encaissements, jamais tout à fait.
+        // La garantie vit désormais dans RegistryPaymentGatewayResolver, qui refuse
+        // de construire une passerelle simulée en production. Ce qui reste ici :
+        // les clients HTTP nommés, enregistrés INCONDITIONNELLEMENT et SANS adresse
+        // de base — elle vient maintenant des réglages lus à l'appel.
         // ─────────────────────────────────────────────────────────────────────────
         var isProduction = IsProduction(configuration);
+
+        services.AddHttpClient(StripeHttpGateway.ClientName);
+        services.AddHttpClient(PayPalHttpGateway.ClientName);
+        services.AddHttpClient(MtnMomoHttpGateway.ClientName);
+        services.AddHttpClient(MoovHttpGateway.ClientName);
+        services.AddHttpClient(FedaPayHttpGateway.ClientName);
+
+        // Ce que la CONFIGURATION contient, pour les gardes de démarrage ci-dessous.
+        // Le registre peut en contenir davantage ; ces listes ne décrivent donc que
+        // le repli, et c'est suffisant : elles servent à refuser un démarrage
+        // manifestement cassé, pas à décrire l'état courant.
         var realGateways = new List<string>();
         var simulatedGateways = new List<string>();
-
-        RegisterGateway(
-            services, isProduction, stripeOptions.IsConfigured, "Stripe", realGateways, simulatedGateways,
-            registerReal: () =>
-            {
-                services.AddHttpClient(StripeHttpGateway.ClientName, client =>
-                    client.BaseAddress = new Uri(EnsureTrailingSlash(stripeOptions.BaseUrl)));
-                services.AddSingleton<IPaymentGateway, StripeHttpGateway>();
-            },
-            registerSimulated: () => services.AddSingleton<IPaymentGateway, StripePaymentGateway>());
-
-        RegisterGateway(
-            services, isProduction, paypalOptions.IsConfigured, "PayPal", realGateways, simulatedGateways,
-            registerReal: () =>
-            {
-                services.AddHttpClient(PayPalHttpGateway.ClientName, client =>
-                    client.BaseAddress = new Uri(EnsureTrailingSlash(paypalOptions.BaseUrl)));
-                services.AddSingleton<IPaymentGateway, PayPalHttpGateway>();
-            },
-            registerSimulated: () => services.AddSingleton<IPaymentGateway, PayPalPaymentGateway>());
-
-        RegisterGateway(
-            services, isProduction, mtnOptions.IsConfigured, "MtnMomo", realGateways, simulatedGateways,
-            registerReal: () =>
-            {
-                services.AddHttpClient(MtnMomoHttpGateway.ClientName, client =>
-                    client.BaseAddress = new Uri(EnsureTrailingSlash(mtnOptions.BaseUrl)));
-                services.AddSingleton<IPaymentGateway, MtnMomoHttpGateway>();
-            },
-            registerSimulated: () => services.AddSingleton<IPaymentGateway, MtnMomoPaymentGateway>());
-
-        RegisterGateway(
-            services, isProduction, moovOptions.IsConfigured, "Moov", realGateways, simulatedGateways,
-            registerReal: () =>
-            {
-                services.AddHttpClient(MoovHttpGateway.ClientName, client =>
-                    client.BaseAddress = new Uri(EnsureTrailingSlash(moovOptions.BaseUrl)));
-                services.AddSingleton<IPaymentGateway, MoovHttpGateway>();
-            },
-            registerSimulated: () => services.AddSingleton<IPaymentGateway, MoovPaymentGateway>());
-
-        RegisterGateway(
-            services, isProduction, fedapayOptions.IsConfigured, "FedaPay", realGateways, simulatedGateways,
-            registerReal: () =>
-            {
-                services.AddHttpClient(FedaPayHttpGateway.ClientName, client =>
-                    client.BaseAddress = new Uri(EnsureTrailingSlash(fedapayOptions.BaseUrl)));
-                services.AddSingleton<IPaymentGateway, FedaPayHttpGateway>();
-            },
-            registerSimulated: () => services.AddSingleton<IPaymentGateway, FedaPayPaymentGateway>());
+        foreach (var (nom, configure) in new (string, bool)[]
+                 {
+                     ("Stripe", stripeOptions.IsConfigured),
+                     ("PayPal", paypalOptions.IsConfigured),
+                     ("MtnMomo", mtnOptions.IsConfigured),
+                     ("Moov", moovOptions.IsConfigured),
+                     ("FedaPay", fedapayOptions.IsConfigured),
+                     // KkiaPay « configuré » ne suffit pas : en bac à sable le widget
+                     // accepte des paiements fictifs et envoie quand même un rappel de
+                     // succès. Il ne compte donc comme réel que hors sandbox.
+                     ("Kkiapay", kkiapayOptions.CanCollectRealMoney)
+                 })
+        {
+            (configure ? realGateways : simulatedGateways).Add(nom);
+        }
 
         // ─────────────────────────────────────────────────────────────────────────
         // UNE PASSERELLE RÉELLE SANS SECRET DE WEBHOOK N'EST PAS CONFIGURÉE.
@@ -164,6 +132,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
             if (mtnOptions.IsConfigured && string.IsNullOrWhiteSpace(mtnOptions.WebhookSecret)) unverifiable.Add("Payments:MtnMomo:WebhookSecret");
             if (moovOptions.IsConfigured && string.IsNullOrWhiteSpace(moovOptions.WebhookSecret)) unverifiable.Add("Payments:Moov:WebhookSecret");
             if (fedapayOptions.IsConfigured && string.IsNullOrWhiteSpace(fedapayOptions.WebhookSecret)) unverifiable.Add("Payments:FedaPay:WebhookSecret");
+            if (kkiapayOptions.IsConfigured && string.IsNullOrWhiteSpace(kkiapayOptions.WebhookSecret)) unverifiable.Add("Payments:Kkiapay:WebhookSecret");
 
             if (unverifiable.Count > 0)
             {
@@ -247,7 +216,9 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
 
         services.AddScoped<IPayoutModuleApi, PayoutModuleApi>();
 
-        services.AddSingleton<IPaymentGatewayResolver, PaymentGatewayResolver>();
+        // SCOPED, et non singleton : il lit le registre des fournisseurs, lui-même
+        // scoped (il tient un DbContext). Un singleton capturerait ce scope.
+        services.AddScoped<IPaymentGatewayResolver, RegistryPaymentGatewayResolver>();
 
         services.AddScoped<IDomainEventHandler<PaymentCapturedDomainEvent>, PaymentCapturedDomainEventHandler>();
         services.AddScoped<IDomainEventHandler<PaymentFailedDomainEvent>, PaymentFailedDomainEventHandler>();
@@ -261,7 +232,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         services.AddOutboxProcessor<PaymentsDbContext>();
     }
 
-    private static StripeOptions BindStripeOptions(IConfiguration configuration)
+    internal static StripeOptions BindStripeOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection("Payments:Stripe");
         var options = new StripeOptions
@@ -282,7 +253,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         return options;
     }
 
-    private static PayPalOptions BindPayPalOptions(IConfiguration configuration)
+    internal static PayPalOptions BindPayPalOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection("Payments:PayPal");
         var options = new PayPalOptions
@@ -305,7 +276,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         return options;
     }
 
-    private static MtnMomoOptions BindMtnMomoOptions(IConfiguration configuration)
+    internal static MtnMomoOptions BindMtnMomoOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection("Payments:MtnMomo");
         var options = new MtnMomoOptions
@@ -331,7 +302,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         return options;
     }
 
-    private static FedaPayOptions BindFedaPayOptions(IConfiguration configuration)
+    internal static FedaPayOptions BindFedaPayOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection("Payments:FedaPay");
         var options = new FedaPayOptions
@@ -361,45 +332,6 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
     }
 
     // BaseAddress doit finir par « / » pour que les URI relatifs des requêtes se concatènent correctement.
-    private static string EnsureTrailingSlash(string url) => url.EndsWith('/') ? url : url + "/";
-
-    /// <summary>
-    /// Enregistre un PSP : l'adaptateur RÉEL s'il est configuré ; sinon la simulation —
-    /// et UNIQUEMENT hors production.
-    ///
-    /// En production, un PSP non configuré n'est pas remplacé : il est ABSENT. Le
-    /// résolveur renverra alors « Prestataire de paiement non pris en charge », ce qui
-    /// est une erreur honnête. Le remplacer par une simulation produirait, à l'inverse,
-    /// un encaissement fictif — un mensonge silencieux, et le pire bug possible pour
-    /// une plateforme qui manipule de l'argent.
-    /// </summary>
-    private static void RegisterGateway(
-        IServiceCollection services,
-        bool isProduction,
-        bool isConfigured,
-        string providerName,
-        List<string> realGateways,
-        List<string> simulatedGateways,
-        Action registerReal,
-        Action registerSimulated)
-    {
-        if (isConfigured)
-        {
-            registerReal();
-            realGateways.Add(providerName);
-            return;
-        }
-
-        if (isProduction)
-        {
-            // Non configuré ET en production : on n'enregistre RIEN. Ce prestataire
-            // n'existe tout simplement pas pour cette instance.
-            return;
-        }
-
-        registerSimulated();
-        simulatedGateways.Add(providerName);
-    }
 
     /// <summary>
     /// Sommes-nous en production ?
@@ -424,7 +356,7 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         return string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static MoovOptions BindMoovOptions(IConfiguration configuration)
+    internal static MoovOptions BindMoovOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection("Payments:Moov");
         var options = new MoovOptions
@@ -449,6 +381,25 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
         if (!string.IsNullOrWhiteSpace(section["PaymentPath"]))
         {
             options.PaymentPath = section["PaymentPath"]!;
+        }
+        return options;
+    }
+
+    internal static KkiapayOptions BindKkiapayOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("Payments:Kkiapay");
+        var options = new KkiapayOptions
+        {
+            PublicKey = section["PublicKey"] ?? string.Empty,
+            WebhookSecret = section["WebhookSecret"] ?? string.Empty,
+            CallbackUrl = section["CallbackUrl"] ?? string.Empty,
+            // Bac à sable ACTIF sauf « false » explicite : une clé lue de travers ne
+            // doit pas faire basculer en encaissement réel.
+            Sandbox = !string.Equals(section["Sandbox"], "false", StringComparison.OrdinalIgnoreCase)
+        };
+        if (!string.IsNullOrWhiteSpace(section["Currency"]))
+        {
+            options.Currency = section["Currency"]!;
         }
         return options;
     }

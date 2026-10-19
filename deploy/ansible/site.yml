@@ -1,27 +1,15 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
-# PLAYBOOK PRINCIPAL — DEUX JEUX DE RÔLES, POUR DEUX MACHINES.
+# Playbook principal — deux jeux de rôles, pour deux machines.
 #
 #   ansible-playbook -i inventories/prod/hosts.ini    site.yml --ask-vault-pass
 #   ansible-playbook -i inventories/staging/hosts.ini site.yml --ask-vault-pass
-#   ansible-playbook -i inventories/dev/hosts.ini     site.yml
 #
-# Ne relancer que le déploiement applicatif :
-#   ansible-playbook -i inventories/prod/hosts.ini site.yml --tags deploy --ask-vault-pass
+# Ne relancer que le déploiement applicatif :  --tags deploy
+# Ne toucher qu'au VPS base :                  --limit database
 #
-# Ne toucher qu'au VPS base :
-#   ansible-playbook -i inventories/prod/hosts.ini site.yml --limit database --ask-vault-pass
-#
-# ─────────────────────────────────────────────────────────────────────────────────
-# L'ORDRE DES DEUX PLAYS N'EST PAS ARBITRAIRE.
-#
-# La base d'abord. L'application ne peut pas démarrer sans elle, et la première
-# chose que fait l'API au démarrage est d'appliquer ses vingt-six migrations. Un
-# ordre inverse donnerait, à chaque première installation, une pile applicative qui
-# boucle en attendant une base qu'Ansible n'a pas encore configurée.
-#
-# Le tunnel avant tout, des deux côtés : c'est le seul chemin entre les machines.
-# ═════════════════════════════════════════════════════════════════════════════════
+# L'ORDRE DES PLAYS N'EST PAS ARBITRAIRE. La base d'abord : l'application applique
+# ses migrations au démarrage et ne peut pas démarrer sans elle. Le tunnel avant
+# tout, des deux côtés — c'est le seul chemin entre les machines.
 
 - name: Tunnel privé entre les machines ({{ target_env | default('?') }})
   hosts: marketplace,database

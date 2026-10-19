@@ -284,93 +284,29 @@ public class WalletLedgerInvariantTests
         AssertLedgerMatchesBalances(wallets, ledger);
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════
-    // COURSIER : payer une course, et ne jamais la payer deux fois.
-    // ═════════════════════════════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task Payer_une_course_credite_le_coursier_ET_debite_les_frais_encaisses()
-    {
-        var (mutations, ledger, wallets) = Harness();
-        var courierId = Guid.NewGuid();
-        var orderId = Guid.NewGuid();
-
-        // La plateforme a encaissé le forfait de livraison à la commande.
-        await mutations.CreditPlatformShippingAsync(1_500m, Xof, orderId, default);
-
-        await mutations.PayCourierForDeliveryAsync(courierId, 1_200m, Xof, Guid.NewGuid(), default);
-
-        wallets.Get(WalletOwnerType.Courier, courierId)!
-            .Balance(WalletAccount.Available).Should().Be(1_200m);
-
-        // LES DEUX ÉCRITURES VONT ENSEMBLE. Créditer le coursier sans toucher au compte
-        // « Shipping » ferait grossir un solde de frais de livraison que la plateforme
-        // dépense pourtant réellement.
-        wallets.Get(WalletOwnerType.Platform, Wallet.PlatformOwnerId)!
-            .Balance(WalletAccount.Shipping).Should().Be(300m);
-
-        AssertLedgerMatchesBalances(wallets, ledger);
-    }
-
-    [Fact]
-    public async Task Une_course_plus_chere_que_le_forfait_fait_passer_les_frais_en_NEGATIF()
-    {
-        var (mutations, ledger, wallets) = Harness();
-        var orderId = Guid.NewGuid();
-
-        await mutations.CreditPlatformShippingAsync(1_500m, Xof, orderId, default);
-        await mutations.PayCourierForDeliveryAsync(Guid.NewGuid(), 2_000m, Xof, Guid.NewGuid(), default);
-
-        // CE NÉGATIF EST UNE INFORMATION, PAS UNE PANNE : il dit que les forfaits
-        // facturés aux acheteurs ne couvrent pas ce que coûtent les courses. C'est le
-        // seul endroit du système où cette vérité devient visible, et la masquer
-        // reviendrait à la découvrir en fin d'exercice.
-        wallets.Get(WalletOwnerType.Platform, Wallet.PlatformOwnerId)!
-            .Balance(WalletAccount.Shipping).Should().Be(-500m);
-
-        AssertLedgerMatchesBalances(wallets, ledger);
-    }
-
-    [Fact]
-    public async Task Le_rejeu_d_une_course_livree_est_detectable_par_sa_reference()
-    {
-        var (mutations, ledger, wallets) = Harness();
-        var jobId = Guid.NewGuid();
-
-        await mutations.PayCourierForDeliveryAsync(Guid.NewGuid(), 1_000m, Xof, jobId, default);
-
-        // Le service de dispatch est un système distinct : son appel peut être rejoué
-        // sur coupure réseau sans qu'il sache si le premier a abouti. C'est ce verrou
-        // qui empêche de payer deux fois une course qu'on ne peut plus reprendre.
-        (await mutations.HasLedgerEntryAsync(WalletMutations.CourierDeliveryReferenceType, jobId, default))
-            .Should().BeTrue();
-
-        AssertLedgerMatchesBalances(wallets, ledger);
-    }
-
     [Fact]
     public async Task Un_retrait_ne_peut_JAMAIS_depasser_le_solde_disponible()
     {
         var (mutations, _, wallets) = Harness();
-        var courierId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
 
-        await mutations.PayCourierForDeliveryAsync(courierId, 5_000m, Xof, Guid.NewGuid(), default);
-        var wallet = wallets.Get(WalletOwnerType.Courier, courierId)!;
+        // Alimenté par un gain de vente libéré à la livraison. Ce test passait par le
+        // portefeuille coursier ; la garde testée est la même pour le vendeur, et c'est
+        // le vendeur qui retire aujourd'hui.
+        await mutations.CreditSellerPendingAsync(sellerId, 5_000m, Xof, orderId, default);
+        await mutations.ReleaseSellerAsync(sellerId, 5_000m, Xof, orderId, default);
+        var wallet = wallets.Get(WalletOwnerType.Seller, sellerId)!;
 
         var excessive = Withdrawal.Create(wallet, 500_000m);
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // LE BUG QUE CE TEST FERME, ET IL VALAIT AUSSI POUR LES VENDEURS.
-        //
-        // La politique autorise le solde disponible d'un vendeur ou d'un livreur à
-        // passer sous zéro — c'est nécessaire aux CONTRE-PASSATIONS, pour reprendre
+        // LE BUG QUE CE TEST FERME. La politique autorise le solde disponible d'un
+        // vendeur à passer sous zéro — nécessaire aux CONTRE-PASSATIONS, pour reprendre
         // son gain à quelqu'un déjà payé sur une vente remboursée.
         //
-        // Mais le retrait s'appuyait sur ce même débit : demander 500 000 avec 5 000
-        // au solde passait, la demande était créée, et à la validation admin le
-        // versement partait pour de bon. Il n'y a aucun moyen de reprendre de l'argent
-        // arrivé sur un Mobile Money.
-        // ═══════════════════════════════════════════════════════════════════════
+        // Le retrait s'appuyait sur ce même débit : demander 500 000 avec 5 000 au solde
+        // passait, et à la validation admin le versement partait pour de bon. On ne
+        // reprend pas de l'argent arrivé sur un Mobile Money.
         excessive.IsFailure.Should().BeTrue();
         excessive.Error.Code.Should().Be("wallet.insufficient_funds");
 

@@ -3,84 +3,49 @@
 app_dir: /opt/marketplace
 # Fichier compose à utiliser (surchargé par environnement).
 compose_file: docker-compose.yml
-# Si vrai, on NE synchronise PAS le code (cas dev local : app_dir = dépôt courant).
-skip_sync: false
-# Reconstruire les images au déploiement.
+# Nom de projet Compose, tel que le déclare l'en-tête `name:` du fichier compose.
+compose_project: "marketplace-{{ target_env }}"
+# Reconstruire les images sur l'hôte (ignoré quand use_registry est vrai).
 compose_build: true
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# QUELLES IMAGES CE DÉPÔT A-T-IL LE DROIT D'EXIGER ?
+# Images publiées par CE dépôt, donc à tirer explicitement. Il n'y en a qu'une :
+# deploy/build-and-push.sh pousse `api` et rien d'autre. Redis, rembg, Traefik et
+# Postgres viennent de registres publics, `up` les tire lui-même.
+registry_images:
+  - api
+
+# Services que ce dépôt démarre. Les trois applications Next (console,
+# seller-console, site) viennent du dépôt web : elles restent DÉCLARÉES dans le
+# compose — les en retirer les ferait supprimer par `--remove-orphans` — mais
+# Ansible ne les tire pas, ne les démarre pas et ne les arrête pas.
 #
-# `docker compose pull` sans argument tire TOUS les services du fichier compose.
-# Or `console` et `seller-console` sont deux applications Next.js construites par
-# un AUTRE dépôt : deploy/build-and-push.sh n'en pousse aucune des deux. Le pull
-# global échouait donc sur « failed to resolve reference » et prenait en otage le
-# déploiement des six images backend, pourtant parfaitement publiées.
-#
-# La réponse n'est PAS `--ignore-pull-failures` : elle rendrait tolérable l'absence
-# de l'image `api` elle-même, et la pile redémarrerait en silence sur l'ancienne.
-# Deux listes, deux niveaux d'exigence :
-#   - registry_pull_required : absence = déploiement en échec.
-#   - registry_pull_optional : absence = avertissement, on continue.
-#
-# Le jour où les consoles seront publiées par la CI de ce dépôt, il suffira de les
-# déplacer d'une liste à l'autre.
-# ═══════════════════════════════════════════════════════════════════════════════
-registry_pull_required:
-  - traefik
+# Staging ajoute `postgres` et `traefik`, qu'il héberge ; la production ne les a pas
+# (base sur le VPS dédié, reverse proxy installé à part sur le réseau `proxy`).
+backend_services:
+  - api
   - redis
   - rembg
-  - api
-  - bff-client
-  - bff-seller
-  - bff-admin
-registry_pull_optional:
-  - console
-  - seller-console
-  # `site` — LA VITRINE, OUBLIÉE ICI ALORS QUE SON SERVICE EXISTE.
-  #
-  # Le service `site` a été ajouté au compose sans être inscrit dans cette liste. Un
-  # déploiement du backend ne récupérait donc jamais sa nouvelle image : la vitrine
-  # restait sur celle du jour où son conteneur avait été créé, pendant que les deux
-  # consoles, elles, se mettaient à jour. Le symptôme — « je publie et rien ne
-  # change » — ne désignait rien, puisque le déploiement se terminait en vert.
-  #
-  # Dans la liste OPTIONNELLE et non la requise : son image vit dans le dépôt de la
-  # vitrine, qui a sa propre CI. Si elle n'a jamais été publiée, le déploiement du
-  # backend doit le SIGNALER et continuer, pas s'arrêter.
-  - site
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# VÉRIFICATION APRÈS DÉPLOIEMENT.
+# REDIS. Par défaut, celui du compose de l'environnement (staging) : le service
+# s'appelle `redis` sur le réseau interne de la pile.
 #
-# Jusqu'ici le playbook se terminait sur un `docker compose ps` affiché à l'écran :
-# une API qui plante au démarrage — variable manquante, migration en échec, base
-# injoignable — laissait le déploiement en SUCCÈS. Le vert du pipeline ne voulait
-# rien dire.
-#
-# Deux vérifications complémentaires, et elles ne se remplacent pas :
-#
-#   - readiness INTERNE (`/health/ready`) : le service et ses dépendances. Le
-#     healthcheck du conteneur, lui, n'interroge que `/health` (liveness), qui
-#     répond même quand la base est morte.
-#   - routage TRAEFIK : depuis l'hôte, en forçant la résolution vers 127.0.0.1 pour
-#     ne dépendre ni du DNS public ni du hairpin NAT. Un backend en parfaite santé
-#     derrière un routeur mal étiqueté était totalement invisible.
-# ═══════════════════════════════════════════════════════════════════════════════
+# `use_external_redis` dit que le Redis vit AILLEURS — en production, un conteneur du
+# VPS sur un réseau Docker partagé. Il faut alors `redis_host` (son nom de service) et
+# `redis_network` (le réseau à déclarer en externe), et le compose de l'environnement
+# ne doit plus déclarer de service `redis`.
+use_external_redis: false
+redis_host: redis
+redis_port: 6379
+# Préfixe des clés, décisif sur un Redis PARTAGÉ.
+redis_instance_name: "marketplace:"
+
+# Vérification après déploiement : readiness interne + routage public.
 enable_post_deploy_check: true
-# Services interrogés en readiness. `console`/`seller-console` n'y figurent pas :
-# elles n'exposent pas /health/ready et ne sont pas construites par ce dépôt.
 post_deploy_health_services:
   - api
-  - bff-client
-  - bff-seller
-  - bff-admin
 post_deploy_health_path: /health/ready
 post_deploy_health_retries: 10
 post_deploy_health_delay: 15
-# URL publiques testées à travers Traefik. VIDE par défaut, et volontairement : ces
-# URL se construisent sur `root_domain`, que seuls prod et staging définissent. Une
-# liste par défaut y aurait fait échouer tout run en dev sur « root_domain is
-# undefined » — la vérification aurait cassé les environnements qu'elle ne concerne
-# même pas. Chaque inventaire qui a des domaines publics déclare la sienne.
+# VIDE par défaut : ces URL se construisent sur `root_domain`, que seuls prod et
+# staging définissent. Chaque inventaire déclare la sienne.
 post_deploy_public_urls: []

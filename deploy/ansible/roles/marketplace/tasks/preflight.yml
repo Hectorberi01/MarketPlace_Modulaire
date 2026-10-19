@@ -1,0 +1,67 @@
+---
+# Ces contrôles échouent AVANT la synchronisation et avant toute commande docker :
+# rien n'a encore été touché sur l'hôte.
+
+# Le garde-fou vivait dans le compose, sous la forme `${POSTGRES_PASSWORD:?}`. Compose
+# interpole le fichier entier avant de filtrer par profil : l'exigence portait donc
+# aussi sur des services désactivés et faisait échouer jusqu'au `pull`.
+- name: Exiger un mot de passe Postgres quand la base est CO-HÉBERGÉE
+  ansible.builtin.assert:
+    that:
+      - postgres_password is defined
+      - (postgres_password | default('') | trim | length) > 0
+    fail_msg: >-
+      La base de {{ target_env }} est co-hébergée (use_external_database est faux) mais
+      aucun postgres_password n'est défini dans le vault. Renseigner postgres_password,
+      ou basculer use_external_database si la base vit désormais sur le VPS dédié.
+    quiet: true
+  when: not (use_external_database | default(false))
+
+# env.j2 écrit ces deux valeurs SANS repli, et l'application refuse de démarrer sans
+# elles. Sans cet assert, l'échec arrive soit à la génération du gabarit (« variable
+# is undefined »), soit au démarrage du conteneur — deux messages qui ne nomment pas
+# le vault.
+- name: Exiger les secrets sans lesquels l'application ne démarre pas
+  ansible.builtin.assert:
+    that:
+      - (jwt_signing_key | default('') | trim | length) > 0
+      - (platform_secret_key | default('') | trim | length) > 0
+    fail_msg: >-
+      jwt_signing_key et platform_secret_key doivent être renseignés dans le vault de
+      {{ target_env }}. Le premier signe les jetons, le second chiffre les clés des
+      fournisseurs de paiement et de notification en base. Générer :
+      openssl rand -base64 32
+    quiet: true
+  no_log: true
+
+# La chaîne de connexion externe interpole npgsql_max_pool_size. Non défini, le
+# gabarit échoue sur « variable is undefined » sans dire laquelle manque.
+- name: Exiger un plafond de pool quand la base est EXTERNE
+  ansible.builtin.assert:
+    that:
+      - npgsql_max_pool_size is defined
+    fail_msg: >-
+      npgsql_max_pool_size doit être défini (group_vars/all) : il entre dans
+      marketplace_connection_external et dans le dimensionnement de max_connections
+      côté VPS base.
+    quiet: true
+  when:
+    - use_external_database | default(false)
+    - marketplace_connection is not defined
+
+# Redis est optionnel côté application : une adresse fausse ou vide ne casse rien, elle
+# fait retomber le cache en mémoire et SignalR sans backplane, SANS erreur. C'est
+# précisément pourquoi ce contrôle existe : la panne serait invisible.
+- name: Exiger l'adresse du Redis EXTERNE
+  ansible.builtin.assert:
+    that:
+      - (redis_host | default('') | trim | length) > 0
+      - (redis_network | default('') | trim | length) > 0
+    fail_msg: >-
+      use_external_redis est vrai pour {{ target_env }} mais redis_host et/ou
+      redis_network ne sont pas renseignés. redis_host = le nom du service Redis sur le
+      VPS, redis_network = le réseau Docker partagé par lequel l'api le joint. Les lire
+      sur l'hôte :  docker ps --format '{{ '{{' }}.Names{{ '}}' }}'  et
+      docker network ls
+    quiet: true
+  when: use_external_redis | default(false)

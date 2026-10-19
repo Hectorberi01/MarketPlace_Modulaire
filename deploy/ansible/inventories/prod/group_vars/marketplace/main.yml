@@ -4,137 +4,41 @@ target_env: prod
 compose_file: docker-compose.prod.yml
 app_dir: /opt/marketplace
 
-# --- Mode déploiement : le serveur ne fait que PULL depuis GHCR (pas de build). ---
-# La CI build+push les images (tag « latest » pour prod). Images privées → le token
-# de pull va dans vault.yml : registry_token (login auto avant le pull).
 use_registry: true
 image_prefix: ghcr.io/hectorberi01
 image_tag: latest
 registry_host: ghcr.io
 registry_username: hectorberi01
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# OÙ VIT LA BASE — LE SEUL INTERRUPTEUR DE LA MIGRATION.
-#
-# `false` : la base est le conteneur `postgres` du compose, sur cette machine.
-#           C'est l'état actuel de la production.
-# `true`  : la base est le VPS dédié, joint par le tunnel WireGuard.
-#
-# CE DRAPEAU NE MIGRE RIEN. Il dit seulement où l'application doit se connecter.
-# Le retourner sans avoir restauré les données sur le VPS base ferait démarrer
-# l'API sur une base VIDE — et comme elle applique ses migrations au démarrage,
-# elle créerait les 26 schémas, sèmerait l'admin, et se déclarerait en bonne santé.
-# La plateforme remonterait vide, sans une seule erreur, pendant que les vraies
-# données dormiraient intactes sur l'autre machine.
-#
-# La procédure de bascule est dans docs/RUNBOOK_Bascule_Base.md. Elle se termine
-# par ce drapeau, elle ne commence pas par lui.
-# ═══════════════════════════════════════════════════════════════════════════════
-# BASCULÉ LE 14/09/2026, après restauration vérifiée sur le VPS base.
-#
-# La bascule n'a PAS consisté à retourner ce drapeau : les données ont d'abord été
-# dumpées, transférées et restaurées, et le chemin complet — tunnel, pare-feu,
-# listen_addresses, pg_hba, rôle, mot de passe — a été éprouvé depuis l'applicatif
-# avant que cette ligne ne change. Voir docs/RUNBOOK_Bascule_Base.md.
+
 use_external_database: true
 
-# Construite à partir de `postgres_db` / `postgres_user` (group_vars/all), pour que
-# l'identité de la base soit écrite à UN seul endroit. `marketplace_connection`
-# défini à la main dans le vault reste prioritaire — voir env.j2.
-#
-# PAS DE `SSL Mode` : la confidentialité vient du tunnel, qui chiffre déjà tout ce
-# qui passe entre les deux machines. Exiger TLS par-dessus imposerait de gérer des
-# certificats côté Postgres pour rechiffrer un flux qui l'est déjà. En revanche, si
-# la base cessait un jour de passer par le tunnel, cette ligne devrait changer avant
-# tout le reste.
+use_external_redis: true
+redis_host: "redis"
+redis_network: "backend"
+
+# Sans service `redis` dans le compose de production, la liste des services que ce
+# dépôt démarre se réduit à deux.
+backend_services:
+  - api
+  - rembg
+
 marketplace_connection_external: >-
   Host={{ wg_db_ip }};Port=5432;Database={{ app_db_name }};Username={{ app_db_user }};Password={{ postgres_password }};Maximum Pool Size={{ npgsql_max_pool_size }}
 
-#postgresql://postgres:[YOUR-PASSWORD]@db.ajvnzrrbekltnjgzmzxl.supabase.co:5432/postgres
-# Edge / TLS — ACME PRODUCTION (certificats fiables) par défaut : pas de acme_caserver.
 root_domain: hba-express.org
 
-# Console vendeur : nom d'hôte COMPLET, sur une AUTRE racine que root_domain.
-# `consolevendeur.{{ root_domain }}` aurait donné « consolevendeur.hba-express.org »
-# — un nom que personne n'utilise, et pour lequel Let's Encrypt aurait quand même
-# émis un certificat, donnant l'illusion que tout va bien.
-#
-# LE FRONT SUR .COM, LE BACK SUR .ORG. Ce découpage ne coûte rien : le navigateur ne
-# parle jamais au BFF, il n'appelle que la console, qui relaie côté serveur. Aucune
-# requête inter-origines, donc aucun CORS à ouvrir, et le cookie de session est posé
-# par Next sur sa propre origine.
-#
-# C'EST ICI QUE LE NOM SE CHANGE, ET NULLE PART AILLEURS. Ansible regénère le
-# `.env.prod` du VPS à chaque déploiement : une valeur corrigée à la main sur le
-# serveur tient jusqu'au prochain `deploy-prod.sh`, puis disparaît sans bruit.
 seller_console_domain: consolevendeur.hba-express.com
 
-# ═════════════════════════════════════════════════════════════════════════════════
-# TROIS SURFACES WEB SUR UNE AUTRE RACINE QUE LES BFF.
-#
-# Les API et les BFF restent sur `root_domain` (.org) ; ce que le PUBLIC voit vit sur
-# le .com. Ce sont donc des noms d'hôte COMPLETS, et non des sous-domaines dérivés :
-# écrire `www.{{ root_domain }}` produirait `www.hba-express.org`, c'est-à-dire un
-# domaine qui n'est pas celui qu'on sert — et silencieusement.
-#
-# Le certificat est émis par NOM D'HÔTE (challenge TLS-ALPN) : chacun de ces noms doit
-# résoudre vers le VPS AVANT le premier démarrage, sinon Traefik échoue à l'émettre et
-# le service reste injoignable en HTTPS.
-# ═════════════════════════════════════════════════════════════════════════════════
-
-# Vitrine acheteur. L'apex est servi aussi, pour qui tape le domaine sans « www ».
 site_domain: www.hba-express.com
 site_domain_apex: hba-express.com
 
 # Console d'administration.
 admin_console_domain: console.hba-express.com
-acme_email: hector.adjakpa@hbatechettrade.com
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# LE REVERSE PROXY EST CELUI DU VPS, PAS LE NÔTRE (17/10/2026).
-#
-# `docker-compose.prod.yml` n'embarque plus Traefik : un Traefik installé sur la
-# machine sert déjà plusieurs piles, sur le réseau Docker `proxy`. Nos sept services
-# le rejoignent et portent leurs routeurs en labels, comme avant.
-#
-# LES TROIS VALEURS CI-DESSOUS SONT LES SIENNES, ET ELLES SONT À CONFIRMER. Ce sont
-# pour l'instant les noms de l'ancien Traefik embarqué — un report, pas une lecture.
-# Voir l'encadré de `roles/marketplace/templates/env.j2` pour les commandes qui
-# donnent les vrais noms, et ce que coûte chaque erreur.
 traefik_entrypoint: websecure
 traefik_certresolver: letsencrypt
 traefik_proxy_network: proxy
-
-# `traefik_network` ne sert plus à rien ici : il nommait le réseau que créait NOTRE
-# Traefik, et les trois rôles qui le lisaient (portainer, webterminal, dbadmin) sont
-# partis le 17/10/2026. Conservé le temps de vérifier qu'aucun playbook hors dépôt ne
-# s'y réfère, puis à supprimer.
-traefik_network: marketplace-prod-net
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# LA SUPERVISION A QUITTÉ CE SERVEUR LE 17/10/2026.
-#
-# Grafana, Prometheus, Loki, Tempo, Alertmanager, les exportateurs et leur canal
-# d'alerte vivaient ici, dans `deploy/monitoring/` et le rôle `monitoring`. Ils sont
-# désormais sur un VPS dédié, avec sa propre configuration — ce dépôt n'en déploie
-# plus rien, et `enable_monitoring`, `grafana_*`, `prometheus_url`, `loki_url`,
-# `otel_endpoint`, `smtp_*` et `alert_*` ont disparu avec eux.
-#
-# CE QUE LE VPS DE SUPERVISION DEVRA VENIR CHERCHER ICI, et qui est resté en place
-# exprès :
-#   - Les métriques de Traefik ne sont PLUS de notre ressort : depuis le même jour,
-#     le reverse proxy est celui du VPS. Son point d'entrée de métriques, s'il en a
-#     un, se règle dans SA configuration — pas ici.
-#   - L'API et les BFF exportent leurs traces dès qu'`OTEL_ENDPOINT` est renseigné.
-#     Vide, l'instrumentation tourne sans exporter — c'est l'état actuel.
-#   - La page Système de la console affiche KPIs, tableaux de bord et journaux dès
-#     que `PROMETHEUS_URL`, `GRAFANA_URL`, `GRAFANA_EMBED_URL` et `LOKI_URL` pointent
-#     quelque part. Vides, elle masque ces panneaux ; elle garde ses propres sondes
-#     `/health`, qui ne dépendent de personne.
-#
-# Renseigner ces quatre variables et `otel_endpoint` le jour où le VPS de supervision
-# publie ses adresses, en les joignant par le tunnel plutôt que par Internet.
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # R2 — noms de buckets (non sensibles)
 r2_bucket_name: hbaexpress-documents-pdf
@@ -142,16 +46,7 @@ r2_public_base_url: ""
 r2_media_bucket_name: habexpress-images
 r2_media_key_prefix: products-images
 
-# ── UN BUCKET PAR USAGE DE MÉDIA ─────────────────────────────────────────────
-#
-# Le NOM fait créer le bucket au démarrage ; l'URL y aiguille le trafic. Les deux
-# ne se renseignent PAS en même temps : on nomme d'abord, on déploie, on rattache
-# le domaine dans le tableau de bord Cloudflare, puis on renseigne l'URL au
-# déploiement suivant. Entre les deux, l'usage retombe sur `r2_media_bucket_name`
-# et rien ne casse.
-#
-# Les quatre premiers buckets existent déjà ; les deux derniers seront créés au
-# premier démarrage après ce déploiement.
+#UN BUCKET PAR USAGE DE MÉDIA
 r2_media_auto_create_buckets: "true"
 
 r2_media_bucket_categories: "categories"
@@ -178,27 +73,15 @@ email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
 email_app_base_url: "https://www.hba-express.com"
 
 admin_email: "hector.adjakpa@hbatechettrade.com"
-# ═══════════════════════════════════════════════════════════════════════════════
-# LE TERMINAL WEB ET L'ADMINISTRATION BASE ONT ÉTÉ RETIRÉS LE 17/10/2026.
-#
-# `wetty` ouvrait un shell SSH sur l'hôte depuis un navigateur, `pgweb` une console
-# SQL en lecture seule sur la base. Les deux étaient les surfaces les plus sensibles
-# de ce déploiement — un shell root et la base qui tient l'argent, derrière une liste
-# blanche d'IP et une authentification HTTP.
-#
-# À LIRE AVANT DE LES FAIRE REVENIR : la clé SSH `terminal_ssh_public_key` reste
-# peut-être dans `~/.ssh/authorized_keys` de l'hôte. Elle n'ouvre plus rien tant que
-# le conteneur n'existe pas, mais une clé qui traîne dans un authorized_keys est une
-# porte dont on a juste rangé la poignée. À retirer de l'hôte.
-# ═══════════════════════════════════════════════════════════════════════════════
+
 fail2ban_findtime: "1h"
 fail2ban_bantime: "24h"
 fail2ban_sshd_maxretry: 3
 
 post_deploy_public_urls:
-  - "https://m.{{ root_domain }}/"
-  - "https://seller.{{ root_domain }}/"
-  - "https://admin.{{ root_domain }}/"
+  - "https://api.{{ root_domain }}/api/client/geo/communes"
+  - "https://api.{{ root_domain }}/api/sellers/geo/communes"
+  - "https://api.{{ root_domain }}/api/admin/geo/communes"
   - "https://api.{{ root_domain }}/api/payments/return"
   - "https://{{ seller_console_domain }}/api/health"
   - "https://{{ site_domain }}/api/health"

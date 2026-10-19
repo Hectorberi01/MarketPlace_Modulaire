@@ -1,5 +1,4 @@
 ---
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE VPS BASE — CONFIGURATION, PAS INSTALLATION.
 #
 # PostgreSQL est déjà en place sur cette machine : ce rôle ne l'installe pas et ne
@@ -9,7 +8,6 @@
 # TOUT EST IDEMPOTENT. Relancé sur une machine déjà conforme, il ne change rien et
 # ne redémarre rien — c'est ce qui permet de le passer sans crainte pendant que la
 # production tourne.
-# ═════════════════════════════════════════════════════════════════════════════════
 
 - name: Vérifier que PostgreSQL est bien présent
   ansible.builtin.command: pg_lsclusters --no-header
@@ -96,7 +94,6 @@
     mode: "0644"
   notify: restart postgresql
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE REDÉMARRAGE MAINTENANT, PAS À LA FIN.
 #
 # `shared_preload_libraries` ne se charge qu'au démarrage du serveur. Tant que le
@@ -107,7 +104,6 @@
 # pire forme de bug, celle qui disparaît quand on rejoue.
 #
 # C'est exactement la faute d'ordonnancement corrigée dans le rôle `marketplace`.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Appliquer la configuration avant de continuer
   ansible.builtin.meta: flush_handlers
 
@@ -141,7 +137,6 @@
   become_user: postgres
   no_log: true
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LA COLLATION SE CHOISIT ICI, ET NULLE PART AILLEURS.
 #
 # Le cluster existe déjà : SA collation est figée depuis son `initdb` et ne se
@@ -157,7 +152,6 @@
 # `template0` et non `template1` : `template1` peut avoir été modifié (extensions,
 # objets), et une base ne peut être créée avec une collation différente que depuis
 # un modèle vierge et non connecté.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Créer la base applicative, avec la collation française
   community.postgresql.postgresql_db:
     name: "{{ app_db_name }}"
@@ -221,7 +215,6 @@
   become_user: postgres
   when: db_admin_readonly_password is defined
 
-# ═════════════════════════════════════════════════════════════════════════════════
 # LE PARE-FEU DOIT LAISSER ENTRER LE TUNNEL.
 #
 # Sans cette règle, UFW — actif sur cette machine — jette les paquets décapsulés à
@@ -232,7 +225,6 @@
 #
 # La source est le RÉSEAU DU TUNNEL, pas l'adresse publique du pair : les paquets
 # arrivent avec 10.20.0.1 comme source, l'encapsulation ayant déjà été retirée.
-# ═════════════════════════════════════════════════════════════════════════════════
 - name: Ouvrir PostgreSQL au seul réseau du tunnel
   community.general.ufw:
     rule: allow

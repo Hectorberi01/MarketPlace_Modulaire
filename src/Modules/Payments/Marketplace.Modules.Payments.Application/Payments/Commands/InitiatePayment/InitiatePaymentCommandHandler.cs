@@ -49,7 +49,7 @@ internal sealed class InitiatePaymentCommandHandler : ICommandHandler<InitiatePa
             return Result.Failure<InitiatePaymentResult>(Error.Validation("payments.flow_invalid", "Flux de paiement inconnu (HostedCheckout / PaymentIntent)."));
         }
 
-        var gatewayResult = _gatewayResolver.Resolve(command.Provider);
+        var gatewayResult = await _gatewayResolver.ResolveAsync(command.Provider, cancellationToken);
         if (gatewayResult.IsFailure)
         {
             return Result.Failure<InitiatePaymentResult>(gatewayResult.Error);
@@ -171,7 +171,7 @@ internal sealed class InitiatePaymentCommandHandler : ICommandHandler<InitiatePa
     {
         try
         {
-            var previousGateway = _gatewayResolver.Resolve(existing.Provider);
+            var previousGateway = await _gatewayResolver.ResolveAsync(existing.Provider, cancellationToken);
             if (previousGateway.IsFailure)
             {
                 // Prestataire retiré de la configuration depuis la tentative : on ne
