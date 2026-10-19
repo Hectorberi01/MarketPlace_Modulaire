@@ -287,6 +287,43 @@ jobs:
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
           echo "Elle doit figurer dans ~/.ssh/authorized_keys du serveur cible."
 
+      # Un hôte injoignable se découvre sinon après la poignée de main SSH, sous la
+      # forme d'un « UNREACHABLE » noyé dans la sortie du playbook. On tranche ici, en
+      # dix secondes, et on nomme les trois causes.
+      #
+      # Le DIAGNOSTIC TIENT AU VERBE : « refused » = l'hôte répond, rien n'écoute sur ce
+      # port. « timed out » = les paquets sont jetés en silence — pare-feu, bannissement
+      # fail2ban, ou machine éteinte.
+      - name: Garde-fou — l'hôte applicatif répond-il sur son port SSH ?
+        working-directory: deploy/ansible
+        run: |
+          # --vault-password-file : les group_vars de prod contiennent un vault CHIFFRÉ ;
+          # sans le mot de passe, ansible-inventory refuse de lire l'inventaire.
+          ansible-inventory -i "inventories/${ENV_NAME}/hosts.ini" --list \
+            --vault-password-file "$RUNNER_TEMP/vault.pass" > inventaire.json
+          python3 - <<'PY'
+          import json, socket, sys, os
+          inv = json.load(open("inventaire.json"))
+          vars_ = inv.get("_meta", {}).get("hostvars", {})
+          echecs = []
+          for nom in inv.get("marketplace", {}).get("hosts", []):
+              v = vars_.get(nom, {})
+              hote = v.get("ansible_host", nom)
+              port = int(v.get("ansible_port", 22))
+              try:
+                  with socket.create_connection((hote, port), timeout=10):
+                      print(f"{nom} ({hote}:{port}) : joignable")
+              except Exception as e:
+                  echecs.append(f"{nom} ({hote}:{port}) : {e}")
+          if echecs:
+              for e in echecs:
+                  print(f"::error::{e}")
+              print("Causes habituelles, dans cet ordre : bannissement fail2ban de l'IP du runner "
+                    "(bantime 24h, maxretry 3), regle de pare-feu UFW ou fournisseur, machine arretee. "
+                    "Depuis un poste autorise :  sudo fail2ban-client status sshd  |  sudo ufw status numbered")
+              sys.exit(1)
+          PY
+
       - name: Vérifier que l'image à déployer existe sur GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}

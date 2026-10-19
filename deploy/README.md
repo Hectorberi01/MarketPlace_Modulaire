@@ -309,9 +309,10 @@ autres services**. Dans cet ordre, donc :
    certificat. Le domaine sert déjà le site vitrine sur Cloudflare Pages et les e-mails
    Resend — vérifier de ne pas toucher aux enregistrements existants (`@`, `www`, DKIM,
    SPF).
-2. **Secrets GitHub** — dans `HbaExpress_seller_dashboard`, environnements `staging`
-   et `prod` : `GHCR_TOKEN`, `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`
-   (et `DEPLOY_SSH_PORT` si ce n'est pas 8022).
+2. **Secrets GitHub** — environnement `deploy` : `DEPLOY_SSH_KEY_PROD` /
+   `DEPLOY_SSH_KEY_STAGING` (ou `DEPLOY_SSH_KEY` en repli), `ANSIBLE_VAULT_PASSWORD`,
+   `GHCR_TOKEN`. L'hôte, l'utilisateur et le port SSH ne sont pas des secrets : ils
+   sont dans `inventories/<env>/hosts.ini`.
 3. **Secret de session** — `seller_session_secret` dans le vault Ansible :
    `openssl rand -base64 32`. **Jamais celui de la console admin** : deux surfaces
    distinctes, deux compromissions indépendantes. Vide, le compose échoue sur un `:?`

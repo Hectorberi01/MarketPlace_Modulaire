@@ -90,10 +90,17 @@ production en silence. Aucun repli d'un environnement sur l'autre n'est prévu.
 
 **Admin_MP_Next**, **HbaExpress_seller_dashboard** et **hbaexpress-site**
 
-Secrets dans **deux environnements GitHub**, `staging` et `prod` (les jobs
-déclarent `environment: <staging|prod>` selon la branche). Chacun contient :
-`GHCR_TOKEN`, `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, et
-éventuellement `DEPLOY_SSH_PORT` (défaut **8022**).
+Secrets de l'environnement GitHub **deploy**, que le job de déploiement déclare :
+
+| Secret | Rôle |
+|---|---|
+| `DEPLOY_SSH_KEY_PROD` / `DEPLOY_SSH_KEY_STAGING` | clé privée de déploiement, une par cible. `DEPLOY_SSH_KEY` sert de repli commun. |
+| `ANSIBLE_VAULT_PASSWORD` | déchiffre le vault de l'inventaire. |
+| `GHCR_TOKEN` | lecture de GHCR ; `GITHUB_TOKEN` prend le relais s'il est absent. |
+
+Plus de `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER` ni `DEPLOY_SSH_PORT` : l'hôte,
+l'utilisateur et le port vivent dans `inventories/<env>/hosts.ini`, à un seul
+endroit, lu aussi bien par la CI que depuis un poste.
 
 Pas de `DEPLOY_PATH` : le workflow calcule le dossier tout seul —
 `/opt/marketplace` (prod) ou `/opt/marketplace-staging` (staging), là où Ansible
