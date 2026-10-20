@@ -131,6 +131,16 @@ services:
     image: ${IMAGE_PREFIX:-marketplace}/api:${API_IMAGE_TAG:-latest}
     # Trois réseaux, et seul l'api a le troisième : les fronts Next ne parlent pas à Redis.
     networks: [marketplace-net, proxy, redis-net]
+    # PLAFOND PROPRE À L'API, qui surcharge celui de l'ancre. Depuis la fusion des
+    # BFF, ce processus charge les 26 modules et applique leurs migrations au
+    # démarrage : son empreinte n'est plus celle d'un `api` accompagné de trois BFF
+    # séparés. Trop bas, le runtime .NET échoue à s'initialiser — pas une exception,
+    # un arrêt brutal.
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-1.0}"
+          memory: "${API_MEMORY:-640M}"
     environment:
       <<: *app-env
       RunMigrationsAtStartup: "true"
@@ -160,6 +170,10 @@ services:
       Identity__Bootstrap__AdminPhone: "${ADMIN_PHONE:-+22900000000}"
     labels:
       - "traefik.enable=true"
+      # api. est le nom canonique. m., seller. et admin. RESTENT ACCEPTÉS : les
+      # applications Flutter figent API_BASE_URL au build (--dart-define), et un build
+      # déjà publié sur les stores ne se reconfigure pas. Ne retirer ces hôtes qu'une
+      # fois vérifié qu'aucune version installée ne les vise encore.
       - "traefik.http.routers.api.rule=(Host(`api.${ROOT_DOMAIN}`) || Host(`m.${ROOT_DOMAIN}`) || Host(`seller.${ROOT_DOMAIN}`) || Host(`admin.${ROOT_DOMAIN}`)) && (PathPrefix(`/api/client`) || PathPrefix(`/api/sellers`) || PathPrefix(`/api/admin`) || PathPrefix(`/api/payments/webhooks`) || PathPrefix(`/api/payments/return`))"
       - "traefik.http.routers.api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
       - "traefik.http.routers.api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
@@ -189,6 +203,11 @@ services:
     networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
+      # API_BASE_URL remplace SELLER_BFF_URL. LES DEUX SONT POSÉS le temps d'un cycle :
+      # les images web et ce compose ne se déploient pas ensemble, et une image restée
+      # sur l'ancien nom retomberait sur son défaut — la STAGING, sans un mot. Retirer
+      # l'ancienne ligne une fois les trois images reconstruites et déployées.
+      API_BASE_URL: "http://api:8080"
       SELLER_BFF_URL: "http://api:8080"
       SESSION_SECRET: "${SELLER_SESSION_SECRET:?SELLER_SESSION_SECRET requis (openssl rand -base64 32, 32 caracteres minimum, pas une valeur d'exemple)}"
       SESSION_COOKIE_SECURE: "true"
@@ -232,6 +251,11 @@ services:
     networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
+      # API_BASE_URL remplace ADMIN_BFF_URL. LES DEUX SONT POSÉS le temps d'un cycle :
+      # les images web et ce compose ne se déploient pas ensemble, et une image restée
+      # sur l'ancien nom retomberait sur son défaut — la STAGING, sans un mot. Retirer
+      # l'ancienne ligne une fois les trois images reconstruites et déployées.
+      API_BASE_URL: "http://api:8080"
       ADMIN_BFF_URL: "http://api:8080"
       SESSION_SECRET: "${ADMIN_SESSION_SECRET:?ADMIN_SESSION_SECRET requis (openssl rand -base64 32, minimum 32 caracteres)}"
       SESSION_COOKIE_SECURE: "true"
@@ -275,6 +299,11 @@ services:
     networks: [marketplace-net, proxy]
     environment:
       NODE_ENV: "production"
+      # API_BASE_URL remplace CLIENT_BFF_URL. LES DEUX SONT POSÉS le temps d'un cycle :
+      # les images web et ce compose ne se déploient pas ensemble, et une image restée
+      # sur l'ancien nom retomberait sur son défaut — la STAGING, sans un mot. Retirer
+      # l'ancienne ligne une fois les trois images reconstruites et déployées.
+      API_BASE_URL: "http://api:8080"
       CLIENT_BFF_URL: "http://api:8080"
       SESSION_SECRET: "${CLIENT_SESSION_SECRET:?CLIENT_SESSION_SECRET requis (openssl rand -base64 48)}"
       SESSION_COOKIE_SECURE: "true"

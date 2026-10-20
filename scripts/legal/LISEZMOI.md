@@ -47,14 +47,14 @@ c'est le mode de panne contre lequel tout ce fichier est écrit.
 ### 2. Publier
 
 ```sh
-export ADMIN_BFF_URL=http://bff-admin:8080      # depuis le VPS, réseau Docker
+export API_BASE_URL=http://api:8080              # depuis le VPS, réseau Docker
 export ADMIN_TOKEN=<jeton JWT d'un administrateur>
 
 python3 publier_textes_legaux.py                # SIMULATION, n'écrit rien
 python3 publier_textes_legaux.py --publier      # publie ce qui manque
 ```
 
-L'adresse est celle du **BFF admin**, pas de la console : la passerelle web
+L'adresse est celle de l'**hôte applicatif**, pas de la console : la passerelle web
 s'authentifie par cookie de session et ignorerait le jeton porteur.
 
 Sans `--publier`, le script simule. Ce qui part devient le texte opposable aux vendeurs

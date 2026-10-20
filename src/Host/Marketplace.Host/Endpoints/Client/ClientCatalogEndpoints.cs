@@ -57,25 +57,6 @@ public static class ClientCatalogEndpoints
             sellerNames[sid] = s?.ShopName ?? "Vendeur";
         }
 
-        // ═══════════════════════════════════════════════════════════════════════════
-        // LA DISPONIBILITÉ, ANNONCÉE AVANT LE PANIER ET NON APRÈS.
-        //
-        // Rien n'indiquait qu'un article était en rupture : l'acheteur le découvrait au
-        // moment d'ajouter au panier, c'est-à-dire APRÈS avoir décidé d'acheter. C'est
-        // la pire place pour une mauvaise nouvelle.
-        //
-        // ON N'EXPOSE PAS LE CHIFFRE EXACT, ET C'EST DÉLIBÉRÉ. Cette route est ANONYME :
-        // publier « 47 en stock » livre à quiconque l'état des stocks de chaque vendeur,
-        // renseigne la concurrence et permet de suivre les ventes par différence entre
-        // deux relevés. On publie donc un signal à trois états — disponible, bientôt
-        // épuisé, indisponible — et le compte exact UNIQUEMENT sous le seuil, là où il
-        // sert l'acheteur (« plus que 2 ») plutôt qu'un observateur.
-        //
-        // SÉQUENTIEL, comme les noms de boutique juste au-dessus : les DbContext sont
-        // « scoped » et ne supportent pas les accès concurrents. Une offre ne portant
-        // qu'un SKU, on interroge une fois par SKU DISTINCT — plusieurs offres du même
-        // article ne déclenchent pas plusieurs requêtes.
-        // ═══════════════════════════════════════════════════════════════════════════
         const int seuilStockFaible = 5;
         var disponibilites = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var sku in productOffers.Select(o => o.Sku).Distinct(StringComparer.Ordinal))

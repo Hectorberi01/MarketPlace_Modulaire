@@ -37,7 +37,7 @@ authentifié ». Ce script parle donc au BFF lui-même, avec un jeton porteur.
 
 Usage :
 
-    export ADMIN_BFF_URL=http://bff-admin:8080
+    export API_BASE_URL=http://api:8080
     export ADMIN_TOKEN=<jeton JWT d'un compte administrateur>
 
     python3 publier_textes_legaux.py                # simulation, n'écrit rien
@@ -119,10 +119,11 @@ def main():
     publier = "--publier" in sys.argv
     remplacer = "--remplacer" in sys.argv
 
-    base = os.environ.get("ADMIN_BFF_URL")
+    # ADMIN_BFF_URL reste lu en repli : l'hôte unique a remplacé les BFF.
+    base = os.environ.get("API_BASE_URL") or os.environ.get("ADMIN_BFF_URL")
     jeton = os.environ.get("ADMIN_TOKEN")
     if not base or not jeton:
-        raise Echec("ADMIN_BFF_URL et ADMIN_TOKEN sont requis. Voir l'en-tête.")
+        raise Echec("API_BASE_URL et ADMIN_TOKEN sont requis. Voir l'en-tête.")
 
     if not publier:
         print("SIMULATION — rien ne sera écrit. Ajoutez --publier pour agir.\n")

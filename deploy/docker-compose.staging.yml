@@ -356,8 +356,10 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      # api. est le nom canonique ; m., seller. et admin. restent acceptés tant que des
-      # builds mobiles les visent (API_BASE_URL est figé au build).
+      # api. est le nom canonique. m., seller. et admin. RESTENT ACCEPTÉS : les
+      # applications Flutter figent API_BASE_URL au build (--dart-define), et un build
+      # déjà publié sur les stores ne se reconfigure pas. Ne retirer ces hôtes qu'une
+      # fois vérifié qu'aucune version installée ne les vise encore.
       - "traefik.http.routers.api.rule=Host(`api.${ROOT_DOMAIN}`) || Host(`m.${ROOT_DOMAIN}`) || Host(`seller.${ROOT_DOMAIN}`) || Host(`admin.${ROOT_DOMAIN}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
@@ -371,6 +373,11 @@ services:
     networks: [marketplace-net]
     environment:
       NODE_ENV: "production"
+      # API_BASE_URL remplace SELLER_BFF_URL. LES DEUX SONT POSÉS le temps d'un cycle :
+      # les images web et ce compose ne se déploient pas ensemble, et une image restée
+      # sur l'ancien nom retomberait sur son défaut — la STAGING, sans un mot. Retirer
+      # l'ancienne ligne une fois les trois images reconstruites et déployées.
+      API_BASE_URL: "http://api:8080"
       SELLER_BFF_URL: "http://api:8080"
       # `:?` et non `:-` : ce secret CHIFFRE LA SESSION VENDEUR. Vide ou trop faible,
       # il la rend forgeable — donc le jeton de rafraîchissement d'un vendeur, valable
@@ -419,6 +426,11 @@ services:
     environment:
       NODE_ENV: "production"
       # Cible SERVEUR-à-SERVEUR (réseau interne), jamais exposée au navigateur.
+      # API_BASE_URL remplace ADMIN_BFF_URL. LES DEUX SONT POSÉS le temps d'un cycle :
+      # les images web et ce compose ne se déploient pas ensemble, et une image restée
+      # sur l'ancien nom retomberait sur son défaut — la STAGING, sans un mot. Retirer
+      # l'ancienne ligne une fois les trois images reconstruites et déployées.
+      API_BASE_URL: "http://api:8080"
       ADMIN_BFF_URL: "http://api:8080"
       # Secret de chiffrement du cookie de session (vault → ADMIN_SESSION_SECRET).
       SESSION_SECRET: "${ADMIN_SESSION_SECRET:-}"

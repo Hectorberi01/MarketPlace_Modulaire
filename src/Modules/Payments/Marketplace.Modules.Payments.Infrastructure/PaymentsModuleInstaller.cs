@@ -160,17 +160,27 @@ public sealed class PaymentsModuleInstaller : IModuleInstaller
                 "Vérifiez l'injection des secrets (vault Ansible / variables d'environnement du conteneur).");
         }
 
-        // Bruyant, et volontairement. En production ce cas est impossible (voir
-        // ci-dessus) ; ailleurs, il faut qu'un développeur qui teste un paiement sache
-        // qu'il teste une FICTION — sans quoi il conclura que « ça marche ».
+        // CE MESSAGE DÉCRIT LE FICHIER DE CONFIGURATION, PAS L'ÉTAT COURANT. Depuis que
+        // les clés se règlent depuis la console, un prestataire configuré en BASE
+        // apparaît ici comme non configuré — c'est normal, ces listes ne servent qu'aux
+        // gardes de démarrage ci-dessus.
+        //
+        // Et en production, « non configuré » ne veut pas dire « simulé » : le résolveur
+        // refuse de construire une passerelle simulée. Dire l'inverse ferait craindre un
+        // encaissement fictif là où il y a un refus franc.
         if (simulatedGateways.Count > 0)
         {
+            var consequence = isProduction
+                ? "En production, le résolveur REFUSE de les simuler : une tentative d'encaissement "
+                  + "sur l'un d'eux échoue avec un message explicite."
+                : "Hors production, ils acceptent TOUT paiement sans qu'aucun argent ne bouge.";
+
             Console.WriteLine(
-                $"[Payments] PASSERELLES SIMULÉES ACTIVES : {string.Join(", ", simulatedGateways)}. " +
-                "Ces prestataires acceptent TOUT paiement sans qu'aucun argent ne bouge. " +
-                (realGateways.Count > 0
-                    ? $"Passerelles réelles : {string.Join(", ", realGateways)}."
-                    : "AUCUNE passerelle réelle configurée."));
+                $"[Payments] ABSENTS DU FICHIER DE CONFIGURATION : {string.Join(", ", simulatedGateways)}. "
+                + consequence + " Vérifier la console d'administration pour l'état réel. "
+                + (realGateways.Count > 0
+                    ? $"Configurés par fichier : {string.Join(", ", realGateways)}."
+                    : "AUCUN prestataire configuré par fichier."));
         }
 
         // Une clé et une URL qui ne désignent pas le même monde, c'est le pire des

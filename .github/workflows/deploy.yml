@@ -210,6 +210,11 @@ jobs:
       - name: Garde-fou — aucun vault suivi en clair
         run: ./scripts/verifier-vaults.sh
 
+      # Un module sans migration démarre sans erreur puis échoue à la première requête
+      # sur « relation ... does not exist ». Le contrôle coûte une seconde.
+      - name: Garde-fou — chaque module a ses migrations
+        run: ./scripts/verifier-migrations.sh
+
       - name: Installer Ansible + collections
         run: |
           pip install --upgrade ansible

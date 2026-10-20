@@ -175,7 +175,30 @@ public static class ObservabilityExtensions
             .AllowAnonymous();
 
         // Readiness : dépendances taguées « ready » (Postgres / Redis).
-        app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") })
+        //
+        // LA RÉPONSE NOMME CHAQUE SONDE. Sans cela, l'endpoint rend « Unhealthy » et
+        // rien d'autre : une pile non prête oblige à deviner laquelle des dépendances
+        // est tombée, puis à fouiller les journaux. Le détail des EXCEPTIONS, lui, reste
+        // dehors — il contiendrait hôtes et identifiants de connexion.
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("ready"),
+            ResponseWriter = async (contexte, rapport) =>
+            {
+                contexte.Response.ContentType = "application/json";
+                await contexte.Response.WriteAsJsonAsync(new
+                {
+                    statut = rapport.Status.ToString(),
+                    duree_ms = (int)rapport.TotalDuration.TotalMilliseconds,
+                    sondes = rapport.Entries.Select(e => new
+                    {
+                        nom = e.Key,
+                        statut = e.Value.Status.ToString(),
+                        duree_ms = (int)e.Value.Duration.TotalMilliseconds
+                    })
+                });
+            }
+        })
             .WithTags("System")
             .AllowAnonymous();
 

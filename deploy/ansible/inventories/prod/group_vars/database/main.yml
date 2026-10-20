@@ -2,11 +2,6 @@
 # VPS base : PostgreSQL, MinIO (pièces KYB) et les sauvegardes. Rien d'applicatif.
 manage_docker: false
 
-# `postgres_extra_databases: [dispatch]` créait la base du service de dispatch,
-# retiré le 09/10/2026. La liste vide ne SUPPRIME rien : la base `dispatch` existe
-# encore sur cette machine avec ses données. `DROP DATABASE dispatch` est une
-# décision manuelle — voir docs/25-retrait-livraison.md.
-postgres_extra_databases: []
 
 # Le durcissement de l'hôte est obligatoire ici plus qu'ailleurs.
 enable_security: true

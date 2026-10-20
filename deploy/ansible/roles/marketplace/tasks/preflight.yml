@@ -34,6 +34,26 @@
     quiet: true
   no_log: true
 
+# UNE ADRESSE HORS DE SON PROPRE SOUS-RÉSEAU NE PEUT PAS RÉPONDRE, et rien ne le dit
+# avant le démarrage : l'application part en TimeoutException sur la base. Le contrôle
+# suppose un /24, comme tout le rôle wireguard.
+- name: Les adresses du tunnel doivent appartenir à son sous-réseau
+  ansible.builtin.assert:
+    that:
+      - wg_db_ip.split('.')[0:3] == wg_subnet.split('/')[0].split('.')[0:3]
+      - wg_app_ip.split('.')[0:3] == wg_subnet.split('/')[0].split('.')[0:3]
+    fail_msg: >-
+      Adresses de tunnel incohérentes : wg_app_ip={{ wg_app_ip }},
+      wg_db_ip={{ wg_db_ip }}, wg_subnet={{ wg_subnet }}. Les deux adresses doivent
+      être DANS le sous-réseau. C'est aussi ce sous-réseau qui est autorisé dans le
+      pg_hba du VPS base (postgres_allowed_cidr) : une adresse hors sujet donne un
+      délai d'attente sur la base, jamais un refus explicite.
+    quiet: true
+  when:
+    - use_external_database | default(false)
+    - wg_db_ip is defined
+    - wg_subnet is defined
+
 # La chaîne de connexion externe interpole npgsql_max_pool_size. Non défini, le
 # gabarit échoue sur « variable is undefined » sans dire laquelle manque.
 - name: Exiger un plafond de pool quand la base est EXTERNE
