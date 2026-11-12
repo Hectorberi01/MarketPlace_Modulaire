@@ -1,31 +1,19 @@
 ---
-# Variables NON sensibles du staging (les secrets sont dans vault.yml).
 target_env: staging
 compose_file: docker-compose.staging.yml
 app_dir: /opt/marketplace-staging
 
-# --- Mode déploiement ---
-# false : le serveur COMPILE les images (lent, gourmand en RAM).
-# true  : le serveur ne fait que PULL depuis le registry (rapide).
-#   1) build+push local :  IMAGE_PREFIX=ghcr.io/hectorberi01 IMAGE_TAG=staging ./deploy/build-and-push.sh
-#   2) images privées → registry_token dans le vault (login auto avant le pull)
 use_registry: true
 image_prefix: ghcr.io/hectorberi01
 image_tag: staging
 registry_host: ghcr.io
 registry_username: hectorberi01   # (le token va dans vault.yml : registry_token)
 
-# Edge / TLS — un sous-domaine par surface sous ce root :
-#   api.marketplace-staging.hba-marketplace.fr, m., web., seller., admin.
-# (underscore INTERDIT en DNS → tiret « marketplace-staging »)
-root_domain: marketplace-staging.hba-marketplace.fr
-acme_email: admin@hba-marketplace.fr
-# ACME PROD (certificats fiables) : requis pour que l'app mobile accepte le TLS.
-# Repasser sur l'URL staging (acme-staging-v02) pour tester sans rate-limit.
+root_domain: 
+acme_email: 
+
 acme_caserver: https://acme-v02.api.letsencrypt.org/directory
-# Décommenter si staging cohabite avec la prod sur le même hôte :
-# traefik_http_port: 8081
-# traefik_https_port: 8443
+
 
 # Portainer (visualisation des conteneurs) → https://portainer.marketplace-staging.hba-marketplace.fr
 enable_portainer: true
@@ -45,35 +33,16 @@ grafana_host: "grafana.hba-marketplace.fr"
 # partage le réseau « marketplace-staging-net ». Vides = monitoring désactivé.
 otel_endpoint: "http://otel-collector:4317"
 prometheus_url: "http://prometheus:9090"
-# URLs navigateur (Grafana) : renseigner quand Grafana est exposé (sous-domaine).
 grafana_url: "https://grafana.hba-marketplace.fr"
 grafana_embed_url: "https://grafana.hba-marketplace.fr/d/app-overview/apps-net-opentelemetry?orgId=1&kiosk&theme=light"
-# Portainer (gestion des conteneurs) — bouton dans la page Système.
-# Le fragment « /#!/auth » ouvre directement l'écran de connexion Portainer.
+
 portainer_url: "https://portainer.marketplace-staging.hba-marketplace.fr/#!/auth"
 
 # --- E-mails transactionnels (Resend) : vérification d'adresse + reset mot de passe ---
-# Secret DANS LE VAULT : resend_api_key. Ici, uniquement du non-sensible.
-# Expéditeur : le DOMAINE (ici le SOUS-DOMAINE d'envoi) doit être « Verified »
-# chez Resend (SPF+DKIM). La partie locale (no-reply, etc.) est libre.
-# ⚠️ On vérifie le sous-domaine updates.hbatechettrade.com → l'adresse DOIT être
-#    @updates.hbatechettrade.com (une adresse @hbatechettrade.com ne serait PAS
-#    couverte par la vérification du sous-domaine → 403).
-#    Tant que le sous-domaine n'est pas « Verified », repasser à
-#    "onboarding@resend.dev" (bac à sable : ne livre qu'à l'adresse du compte Resend).
 email_from: "HBA Express <no-reply@updates.hbatechettrade.com>"
-# Base des liens cliquables des e-mails (vérif. adresse, reset mot de passe).
-# Doit être un hôte qui RÉSOUT et qui SERT les pages (/reinitialiser-mot-de-passe…).
-# ⚠️ admin.${ROOT_DOMAIN} = le BFF Admin (backend), PAS la console Next.
-# La console (Admin_MP_Next) n'est pas encore déployée en staging. Cible réservée
-# ci-dessous : il faut (1) un enregistrement DNS A pour ce sous-domaine, et
-# (2) déployer la console derrière (service compose + Traefik). Tant que ce n'est
-# pas fait, les liens des e-mails ne seront pas cliquables (compléter le reset via l'API).
+
 email_app_base_url: "https://console.marketplace-staging.hba-marketplace.fr"
 
-# --- Alertmanager (notifications d'alerte) ---
-# Secrets DANS LE VAULT : alertmanager_slack_webhook_url, smtp_password.
-# Laisser une valeur vide désactive le canal correspondant.
 alert_slack_channel: "#alerts"
 smtp_host: "smtp.hostinger.com"                                     # ex. "smtp.gmail.com" — vide = pas d'e-mail
 smtp_port: 587
@@ -82,8 +51,8 @@ smtp_username: "smtp.hostinger.com"                                 # identifian
 alert_email_to: "hector.adjakpa@gmail.com"        # destinataire des alertes critiques
 
 # R2 — noms de buckets (non sensibles)
-r2_bucket_name: documents-pdf
+r2_bucket_name: 
 r2_public_base_url: ""
-r2_media_bucket_name: images
-r2_media_key_prefix: MarketPlace-staging
-r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
+r2_media_bucket_name: 
+r2_media_key_prefix: 
+r2_media_public_base_url: ""
