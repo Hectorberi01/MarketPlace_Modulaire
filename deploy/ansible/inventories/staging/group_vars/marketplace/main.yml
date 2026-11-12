@@ -101,7 +101,7 @@ r2_media_bucket_chat: "hbaexpress-messagerie-staging"
 r2_media_url_chat: ""
 r2_media_public_base_url: "https://pub-8e7535243a4a42098fef8c12ba605154.r2.dev"
 
-admin_email: "hector.adjakpa@hbatechettrade.com"
+admin_email: ""
 
 # ── Vérification après déploiement : URL testées à travers Traefik ───────────
 # `api` n'a un routeur que sur certains préfixes : sa racine renverrait un 404 de
